@@ -1,0 +1,232 @@
+// ==========================================
+// MENU SYSTEM & WORLD SETTINGS
+// ==========================================
+
+const SPLASH_TEXTS = [
+    "Also try Minceraft!", "Now with more blocks!", "100% genuine!",
+    "Woo, mincecraft!", "Singleplayer only!", "As seen on TV!",
+    "Pixels!", "Hot!", "9.99 is a steal!", "Infinite worlds!*",
+    "Tell your friends!", "*not actually infinite", "Closed source!",
+    "Breathing manually!", "HODL!", "Bigger than ever!",
+    "Free range voxels!", "Not affiliated with Mojang!",
+    "Procedurally generated!", "Exploding creepers!", "Mince the craft!",
+    "Terrain ahoy!", "Voxel-based!", "Written in JavaScript!",
+    "Now with biomes!", "Contains nuts!", "Limited edition!",
+    "Seeded!", "12345 is a good seed!", "Try seed 404!",
+    "1024 blocks wide!", "Subterranean adventure!", "Ooh, shiny ores!",
+];
+
+function pickSplash() {
+    const el = document.getElementById('splash-text');
+    el.textContent = SPLASH_TEXTS[Math.floor(Math.random() * SPLASH_TEXTS.length)];
+}
+
+// Draw repeating dirt texture on a canvas
+function drawDirtBg(canvasId) {
+    try {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        const ctx = canvas.getContext('2d');
+        const tileSize = 64;
+    
+    // Generate one dirt tile
+    const tile = document.createElement('canvas');
+    tile.width = tileSize;
+    tile.height = tileSize;
+    const tc = tile.getContext('2d');
+    
+    // Seeded random for consistent dirt texture  
+    let ds = 42;
+    const dRand = () => { ds = (ds * 1103515245 + 12345) & 0x7fffffff; return ds / 0x80000000; };
+    
+    for (let x = 0; x < tileSize; x++) {
+        for (let y = 0; y < tileSize; y++) {
+            const c = 60 + dRand() * 30;
+            const r = c + 15 + dRand() * 8;
+            const g = c - 5 + dRand() * 5;
+            const b = c - 15 + dRand() * 5;
+            tc.fillStyle = `rgb(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)})`;
+            tc.fillRect(x, y, 1, 1);
+        }
+    }
+    
+    // Darken overlay
+    tc.fillStyle = 'rgba(0,0,0,0.55)';
+    tc.fillRect(0, 0, tileSize, tileSize);
+    
+    const pattern = ctx.createPattern(tile, 'repeat');
+    ctx.fillStyle = pattern;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    } catch(e) { console.error('drawDirtBg error:', e); }
+}
+
+// Toggle options state
+const worldOptions = {
+    worldsize: 0, // 0=1024, 1=512, 2=256, 3=2048, 4=4096, 5=8192
+    structures: true,
+    caves: true,
+    lava: true,
+    gamemode: 'survival' // <-- Tracks the menu selection
+};
+const worldSizeLabels = ['1024 × 1024', '512 × 512', '256 × 256', '2048 × 2048', '4096 × 4096', '8192 × 8192'];
+const worldSizeChunks = [64, 32, 16, 128, 256, 512];
+
+function toggleOption(key) {
+    if (key === 'worldsize') {
+        worldOptions.worldsize = (worldOptions.worldsize + 1) % 6;
+        document.getElementById('opt-worldsize').textContent = worldSizeLabels[worldOptions.worldsize];
+    } else if (key === 'gamemode') {
+        worldOptions.gamemode = worldOptions.gamemode === 'survival' ? 'creative' : 'survival';
+        document.getElementById('opt-gamemode').textContent = worldOptions.gamemode === 'survival' ? 'Survival' : 'Creative';
+    } else {
+        worldOptions[key] = !worldOptions[key];
+        document.getElementById('opt-' + key).textContent = worldOptions[key] ? 'ON' : 'OFF';
+    }
+}
+
+function updateSliderVal(slider, valId) {
+    const el = document.getElementById(valId);
+    if (valId.includes('density') || valId.includes('abundance') || valId.includes('volatility') || valId.includes('foliage')) {
+        el.textContent = slider.value + '%';
+    } else {
+        el.textContent = slider.value;
+    }
+}
+
+function showMainMenu() {
+    document.getElementById('main-menu').classList.remove('hidden');
+    document.getElementById('create-world').classList.add('hidden');
+    document.getElementById('loading-screen').classList.add('hidden');
+    pickSplash();
+}
+
+function showCreateWorld() {
+    document.getElementById('main-menu').classList.add('hidden');
+    document.getElementById('create-world').classList.remove('hidden');
+    requestAnimationFrame(() => drawDirtBg('dirt-bg-2'));
+}
+
+function hashSeedString(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const c = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + c;
+        hash = hash & 0x7fffffff;
+    }
+    return hash;
+}
+
+// Seeded PRNG for world gen (replaces Math.random in generateWorld)
+let _worldSeed = 0;
+let _rngState = 0;
+function seedRng(seed) {
+    _worldSeed = seed;
+    _rngState = seed;
+}
+function seededRandom() {
+    _rngState = (_rngState * 1103515245 + 12345) & 0x7fffffff;
+    return _rngState / 0x80000000;
+}
+
+// World gen parameters (set from UI before generation)
+let GEN_SEA_LEVEL = 62;
+let GEN_TERRAIN_HEIGHT = 80;
+let GEN_CAVE_DENSITY = 50;
+let GEN_TREE_DENSITY = 100;
+let GEN_ORE_ABUNDANCE = 100;
+let GEN_STRUCTURES = true;
+let GEN_CAVES = true;
+let GEN_LAVA = true;
+let GEN_BIOME_SCALE = 300;
+let GEN_SMOOTHNESS = 150;
+
+// New Custom Variables
+let GEN_VOLATILITY_MULT = 100;
+let GEN_TEMP_OFFSET = 0;
+let GEN_HUMID_OFFSET = 0;
+let GEN_FOLIAGE_DENSITY = 100;
+
+// Nether generation parameters
+let GEN_NETHER_LAVA_LEVEL = 31;
+let GEN_NETHER_OPENNESS = 100;
+let GEN_NETHER_GLOW = 100;
+let GEN_NETHER_FIRE = 100;
+let GEN_NETHER_SOULSAND = 100;
+let GEN_NETHER_LAVAFALLS = 100;
+let GEN_NETHER_GRAVEL = 100;
+let GEN_NETHER_QUARTZ = 100;
+
+async function startWorldCreation() {
+    // Read settings from UI
+    const seedStr = document.getElementById('world-seed').value.trim();
+    const worldName = document.getElementById('world-name').value.trim() || 'New World';
+    
+    let seed;
+    if (seedStr === '') {
+        seed = Math.floor(Math.random() * 2147483647);
+    } else if (/^\d+$/.test(seedStr)) {
+        seed = parseInt(seedStr) & 0x7fffffff;
+    } else {
+        seed = hashSeedString(seedStr);
+    }
+    
+    seedRng(seed);
+
+    // Read slider values
+    GEN_SEA_LEVEL = parseInt(document.getElementById('sl-sealevel').value);
+    GEN_TERRAIN_HEIGHT = parseInt(document.getElementById('sl-terrainheight').value);
+    GEN_CAVE_DENSITY = parseInt(document.getElementById('sl-cavedensity').value);
+    GEN_TREE_DENSITY = parseInt(document.getElementById('sl-treedensity').value);
+    GEN_ORE_ABUNDANCE = parseInt(document.getElementById('sl-oreabundance').value);
+    GEN_STRUCTURES = worldOptions.structures;
+    GEN_CAVES = worldOptions.caves;
+    GEN_LAVA = worldOptions.lava;
+    GEN_BIOME_SCALE = parseInt(document.getElementById('sl-biomescale').value);
+    GEN_SMOOTHNESS = parseInt(document.getElementById('sl-smoothness').value);
+    
+    // Read new custom slider values
+    GEN_VOLATILITY_MULT = parseInt(document.getElementById('sl-volatility').value);
+    GEN_TEMP_OFFSET = parseInt(document.getElementById('sl-temp').value);
+    GEN_HUMID_OFFSET = parseInt(document.getElementById('sl-humid').value);
+    GEN_FOLIAGE_DENSITY = parseInt(document.getElementById('sl-foliage').value);
+    
+    // Read nether settings
+    GEN_NETHER_LAVA_LEVEL = parseInt(document.getElementById('sl-nether-lava').value);
+    GEN_NETHER_OPENNESS = parseInt(document.getElementById('sl-nether-openness').value);
+    GEN_NETHER_GLOW = parseInt(document.getElementById('sl-nether-glow').value);
+    GEN_NETHER_FIRE = parseInt(document.getElementById('sl-nether-fire').value);
+    GEN_NETHER_SOULSAND = parseInt(document.getElementById('sl-nether-soulsand').value);
+    GEN_NETHER_LAVAFALLS = parseInt(document.getElementById('sl-nether-lavafalls').value);
+    GEN_NETHER_GRAVEL = parseInt(document.getElementById('sl-nether-gravel').value);
+    GEN_NETHER_QUARTZ = parseInt(document.getElementById('sl-nether-quartz').value);
+    
+    // Inject the selected game mode into the global tracker before booting!
+    gameMode = worldOptions.gamemode;
+    
+    // Set world size
+    const sizeIdx = worldOptions.worldsize;
+    CHUNKS_X_ACTIVE = worldSizeChunks[sizeIdx];
+    CHUNKS_Z_ACTIVE = worldSizeChunks[sizeIdx];
+
+    // Show loading screen
+    document.getElementById('create-world').classList.add('hidden');
+    document.getElementById('loading-screen').classList.remove('hidden');
+    document.getElementById('loading-world-name').textContent = worldName + ' (Seed: ' + seed + ')';
+    drawDirtBg('dirt-bg-3');
+
+    await yieldToUI();
+    await init(seed);
+}
+
+// Initialize dirt backgrounds and splash on load
+window.addEventListener('load', () => {
+    drawDirtBg('dirt-bg');
+    pickSplash();
+});
+window.addEventListener('resize', () => {
+    if (!document.getElementById('main-menu').classList.contains('hidden')) drawDirtBg('dirt-bg');
+    if (!document.getElementById('create-world').classList.contains('hidden')) drawDirtBg('dirt-bg-2');
+    if (!document.getElementById('loading-screen').classList.contains('hidden')) drawDirtBg('dirt-bg-3');
+});

@@ -1,0 +1,303 @@
+// ==========================================
+// BLOCK HELPER FUNCTIONS
+// ==========================================
+
+function isLeafBlock(id) {
+    return (id === 14 || id === 22 || id === 43 || id === 97); 
+}
+
+// Pre-computed transparency lookup table (256 entries, rebuilt when graphics setting changes)
+const _transparentLUT = new Uint8Array(256);
+const _transparentFancyLUT = new Uint8Array(256);
+(function() {
+    // Added 62, 63, 64 for Farming, 66 for Vine, 67 for Lily Pad, 70-76 Slabs, 80-86 Stairs
+    const transparentIds = [0, 4, 14, 16, 17, 20, 22, 23, 24, 26, 27, 38, 40, 42, 43, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 89, 90, 93, 94, 95, 97, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150];
+    const transparentFastIds = [0, 4, 16, 17, 20, 23, 24, 26, 27, 38, 40, 42, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 90, 93, 94, 95, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150]; // leaves opaque in Fast mode
+    for (const id of transparentIds) _transparentFancyLUT[id] = 1;
+    for (const id of transparentFastIds) _transparentLUT[id] = 1;
+})();
+
+function isBlockTransparent(id) {
+    return settingGraphicsFancy ? _transparentFancyLUT[id] : _transparentLUT[id];
+}
+
+const _fluidLUT = new Uint8Array(256);
+_fluidLUT[4] = 1; _fluidLUT[27] = 1;
+function isFluidBlock(id) { return _fluidLUT[id]; }
+
+const _crossLUT = new Uint8Array(256);
+_crossLUT[16] = 1; _crossLUT[23] = 1; _crossLUT[24] = 1; _crossLUT[26] = 1; _crossLUT[42] = 1; _crossLUT[52] = 1; _crossLUT[53] = 1; _crossLUT[89] = 1;
+_crossLUT[116] = 1; _crossLUT[117] = 1; _crossLUT[118] = 1; _crossLUT[137] = 1;
+function isCrossBlock(id) { return _crossLUT[id]; }
+
+function isSnowLayer(id) {
+    return id === 40;
+}
+
+const _slabLUT = new Uint8Array(256);
+_slabLUT[70] = 1; _slabLUT[71] = 1; _slabLUT[72] = 1; _slabLUT[73] = 1; _slabLUT[74] = 1; _slabLUT[75] = 1; _slabLUT[76] = 1; _slabLUT[77] = 1;
+function isSlabBlock(id) { return _slabLUT[id]; }
+
+const _stairLUT = new Uint8Array(256);
+_stairLUT[80] = 1; _stairLUT[81] = 1; _stairLUT[82] = 1; _stairLUT[83] = 1; _stairLUT[84] = 1; _stairLUT[85] = 1; _stairLUT[86] = 1; _stairLUT[94] = 1;
+function isStairBlock(id) { return _stairLUT[id]; }
+
+const _fenceLUT = new Uint8Array(256);
+_fenceLUT[144] = 1; _fenceLUT[145] = 1; _fenceLUT[146] = 1; _fenceLUT[147] = 1; _fenceLUT[148] = 1;
+function isFenceBlock(id) { return _fenceLUT[id]; }
+
+function getBlockBounds(id, val, bx, by, bz) {
+    let b = { minX: 0, maxX: 1, minY: 0, maxY: 1, minZ: 0, maxZ: 1 };
+    
+    // --- NEW: Smart Fire Hitboxes ---
+    if (id === 89) {
+        const dir = (val >> 9) & 0x7;
+        // Floor fire (dir === 0) keeps the default full 1x1x1 bounding box!
+        if (dir === 1) { b.maxX = 0.1; }       // Attached to -X wall
+        else if (dir === 2) { b.minX = 0.9; }  // Attached to +X wall
+        else if (dir === 3) { b.maxZ = 0.1; }  // Attached to -Z wall
+        else if (dir === 4) { b.minZ = 0.9; }  // Attached to +Z wall
+    } 
+    else if (id === 40) {
+        const layers = Math.max(1, Math.min(8, (val >> 8) & 0xF));
+        b.maxY = layers / 8.0;
+    } else if (id === 16 || id === 23 || id === 24 || id === 26 || id === 42 || id === 52 || id === 53 || id === 116 || id === 117 || id === 118) {
+        b.minX = 0.1; b.maxX = 0.9; b.minY = 0.0; b.maxY = 0.8; b.minZ = 0.1; b.maxZ = 0.9;
+    } else if (id === 20) {
+        b.minX = 0.0625; b.maxX = 0.9375; b.minY = 0.0; b.maxY = 1.0; b.minZ = 0.0625; b.maxZ = 0.9375;
+    } else if (id === 17) {
+        const level = (val >> 8) & 0xF;
+        if (level === 0) { b.minX=0.4; b.maxX=0.6; b.minY=0.0; b.maxY=0.6; b.minZ=0.4; b.maxZ=0.6; }
+        else if (level === 1) { b.minX=0.0; b.maxX=0.2; b.minY=0.2; b.maxY=0.8; b.minZ=0.4; b.maxZ=0.6; }
+        else if (level === 2) { b.minX=0.8; b.maxX=1.0; b.minY=0.2; b.maxY=0.8; b.minZ=0.4; b.maxZ=0.6; }
+        else if (level === 3) { b.minX=0.4; b.maxX=0.6; b.minY=0.2; b.maxY=0.8; b.minZ=0.0; b.maxZ=0.2; }
+        else if (level === 4) { b.minX=0.4; b.maxX=0.6; b.minY=0.2; b.maxY=0.8; b.minZ=0.8; b.maxZ=1.0; }
+    }
+    
+    // --- Farming Block Bounds ---
+    if (id === 62 || id === 63) {
+        b.maxY = 0.9375; // 15/16 pixels high
+    } else if (id === 64) {
+        // Proper crop raycast hitbox
+        b.minX = 0.0; b.maxX = 1.0; b.minY = 0.0; b.maxY = 0.25; b.minZ = 0.0; b.maxZ = 1.0;
+    } else if (id === 67) {
+        // Lily pad: flat thin plane on water surface
+        b.minX = 0.0; b.maxX = 1.0; b.minY = 0.0; b.maxY = 0.1; b.minZ = 0.0; b.maxZ = 1.0;
+    } else if (id === 68) {
+        // Glass Pane: hitbox follows connectivity (Multi-AABB)
+        
+        // If bx is not defined (fallback), just return the center post
+        if (bx === undefined || typeof getVoxel !== 'function') {
+            return { minX: 0.4375, maxX: 0.5625, minY: 0, maxY: 1, minZ: 0.4375, maxZ: 0.5625 };
+        }
+
+        const canConnect = (nx, nz) => {
+            const nId = getVoxel(nx, by, nz) & 0xFF;
+            return nId !== 0 && !isFluidBlock(nId) && !isCrossBlock(nId) && nId !== 17 && nId !== 40 && nId !== 66 && nId !== 67;
+        };
+
+        const cXN = canConnect(bx - 1, bz);
+        const cXP = canConnect(bx + 1, bz);
+        const cZN = canConnect(bx, bz - 1);
+        const cZP = canConnect(bx, bz + 1);
+
+        const bounds = [];
+        
+        // Always add the center pole (4 pixels wide)
+        bounds.push({ minX: 0.4375, maxX: 0.5625, minY: 0, maxY: 1, minZ: 0.4375, maxZ: 0.5625 });
+        
+        // Add attached arms only where there is a valid connection
+        if (cXN) bounds.push({ minX: 0, maxX: 0.4375, minY: 0, maxY: 1, minZ: 0.4375, maxZ: 0.5625 });
+        if (cXP) bounds.push({ minX: 0.5625, maxX: 1, minY: 0, maxY: 1, minZ: 0.4375, maxZ: 0.5625 });
+        if (cZN) bounds.push({ minX: 0.4375, maxX: 0.5625, minY: 0, maxY: 1, minZ: 0, maxZ: 0.4375 });
+        if (cZP) bounds.push({ minX: 0.4375, maxX: 0.5625, minY: 0, maxY: 1, minZ: 0.5625, maxZ: 1 });
+        
+        // Exit early and return the array of hitboxes
+        return bounds;
+    } else if (id === 90) {
+        // Nether Portal: 2 pixels thick, directional like glass panes
+        const dir = (val >> 8) & 0x1;
+        if (dir === 1) { // Z-axis (portal faces E/W)
+            b.minX = 0.375; b.maxX = 0.625; b.minY = 0.0; b.maxY = 1.0; b.minZ = 0.0; b.maxZ = 1.0;
+        } else { // X-axis (portal faces N/S)
+            b.minX = 0.0; b.maxX = 1.0; b.minY = 0.0; b.maxY = 1.0; b.minZ = 0.375; b.maxZ = 0.625;
+        }
+    } else if (id === 66) {
+        // Vine: thin plane on a wall face
+        const level = (val >> 8) & 0xF;
+        if (level === 1) { b.minX = 0.0; b.maxX = 0.1; } // West face (-X)
+        else if (level === 2) { b.minX = 0.9; b.maxX = 1.0; } // East face (+X)
+        else if (level === 3) { b.minZ = 0.0; b.maxZ = 0.1; } // North face (-Z)
+        else if (level === 4) { b.minZ = 0.9; b.maxZ = 1.0; } // South face (+Z)
+        else { b.minX = 0.0; b.maxX = 1.0; b.minY = 0.9; b.maxY = 1.0; } // Default hanging
+    } else if (isSlabBlock(id)) {
+        const isTop = (val >> 8) & 0x1;
+        if (isTop) { b.minY = 0.5; b.maxY = 1.0; }
+        else { b.minY = 0.0; b.maxY = 0.5; }
+    } else if (typeof isStairBlock === 'function' && isStairBlock(id)) {
+        // Check if the stair was placed upside-down (bit 2 = 4)
+        const isUpsideDown = (val >> 8) & 0x4; 
+        
+        if (isUpsideDown) {
+            // Upside-down stair: collision is on the top half so you can walk under it
+            b.minX = 0.0; b.maxX = 1.0; b.minY = 0.5; b.maxY = 1.0; b.minZ = 0.0; b.maxZ = 1.0;
+        } else {
+            // Normal stair: collision is on the bottom half so the player auto-steps up it
+            b.minX = 0.0; b.maxX = 1.0; b.minY = 0.0; b.maxY = 0.5; b.minZ = 0.0; b.maxZ = 1.0;
+        }
+    } else if (typeof isFenceBlock === 'function' && isFenceBlock(id)) {
+        // Fence collision
+        b.minX = 0.0; b.maxX = 1.0; b.minY = 0.0; b.maxY = 1.5; b.minZ = 0.0; b.maxZ = 1.0;
+    } else if (id === 149) {
+        // Door: hitbox must match mesh renderer positions exactly
+        const dir = (val >> 8) & 0x3;
+        const isOpen = (val >> 10) & 0x1;
+        const hinge = (val >> 12) & 0x1;
+        const D = 3/16;
+        const E = 0.005;
+        b.minY = 0.0; b.maxY = 1.0;
+        if (!isOpen) {
+            if (dir === 0) { b.minX=0; b.maxX=1; b.minZ=E; b.maxZ=D; }
+            else if (dir === 1) { b.minX=1-D; b.maxX=1-E; b.minZ=0; b.maxZ=1; }
+            else if (dir === 2) { b.minX=0; b.maxX=1; b.minZ=1-D; b.maxZ=1-E; }
+            else { b.minX=E; b.maxX=D; b.minZ=0; b.maxZ=1; }
+        } else {
+            if (dir === 0) {
+                if (hinge===0) { b.minX=E; b.maxX=D; b.minZ=0; b.maxZ=1; }
+                else { b.minX=1-D; b.maxX=1-E; b.minZ=0; b.maxZ=1; }
+            } else if (dir === 1) {
+                if (hinge===0) { b.minX=0; b.maxX=1; b.minZ=E; b.maxZ=D; }
+                else { b.minX=0; b.maxX=1; b.minZ=1-D; b.maxZ=1-E; }
+            } else if (dir === 2) {
+                if (hinge===0) { b.minX=1-D; b.maxX=1-E; b.minZ=0; b.maxZ=1; }
+                else { b.minX=E; b.maxX=D; b.minZ=0; b.maxZ=1; }
+            } else {
+                if (hinge===0) { b.minX=0; b.maxX=1; b.minZ=1-D; b.maxZ=1-E; }
+                else { b.minX=0; b.maxX=1; b.minZ=E; b.maxZ=D; }
+            }
+        }
+    } else if (id === 150) {
+        // Trapdoor
+        const isOpen = (val >> 10) & 0x1;
+        const isTop = (val >> 11) & 0x1;
+        const dir = (val >> 8) & 0x3;
+        if (!isOpen) {
+            b.minX=0; b.maxX=1; b.minZ=0; b.maxZ=1;
+            if (isTop) {b.minY=0.8125;b.maxY=1;} else {b.minY=0;b.maxY=0.1875;}
+        } else {
+            b.minY=0; b.maxY=1;
+            if (dir===0) {b.minX=0;b.maxX=1;b.minZ=0;b.maxZ=0.1875;}
+            else if (dir===1) {b.minX=0.8125;b.maxX=1;b.minZ=0;b.maxZ=1;}
+            else if (dir===2) {b.minX=0;b.maxX=1;b.minZ=0.8125;b.maxZ=1;}
+            else {b.minX=0;b.maxX=0.1875;b.minZ=0;b.maxZ=1;}
+        }
+    } // <--- end of collision bounds
+
+    // Now this applies to EVERY block, preventing the crash
+    return b; 
+}
+
+function canSupport(id) {
+    if (id === 0 || id === 4 || id === 27 || isCrossBlock(id) || id === 20 || id === 40 || id === 38 || id === 17 || id === 64 || id === 66 || id === 67 || id === 68) return false;
+    return true;
+}
+
+function canPlaceBlock(id, x, y, z, normal) {
+    // Lily pad: can only be placed on top of water
+    if (id === 67) {
+        const below = getVoxel(x, y-1, z) & 0xFF;
+        return below === 4;
+    }
+    // Vine: must attach to a solid block face
+    if (id === 66) {
+        if (normal[0] === 1) return canSupport(getVoxel(x-1, y, z) & 0xFF);
+        if (normal[0] === -1) return canSupport(getVoxel(x+1, y, z) & 0xFF);
+        if (normal[2] === 1) return canSupport(getVoxel(x, y, z-1) & 0xFF);
+        if (normal[2] === -1) return canSupport(getVoxel(x, y, z+1) & 0xFF);
+        if (normal[1] === -1) return canSupport(getVoxel(x, y+1, z) & 0xFF);
+        return false;
+    }
+    if (isCrossBlock(id) || id === 64) {
+        const below = getVoxel(x, y-1, z) & 0xFF;
+        
+        if (id === 52) { 
+            if (below === 52) return true;
+            if (below !== 1 && below !== 2 && below !== 15 && below !== 5) return false;
+            let hasWater = false;
+            for (let [dx, dy, dz] of [[1,0,0], [-1,0,0], [0,0,1], [0,0,-1]]) {
+                if ((getVoxel(x+dx, y-1, z+dz) & 0xFF) === 4) { hasWater = true; break; }
+            }
+            return hasWater;
+        }
+        if (id === 64) {
+            return (below === 62 || below === 63);
+        }
+        return (below === 1 || below === 2); 
+    }
+    if (id === 17) {
+        if (normal[1] === 1) return canSupport(getVoxel(x, y-1, z) & 0xFF);
+        if (normal[0] === 1) return canSupport(getVoxel(x-1, y, z) & 0xFF);
+        if (normal[0] === -1) return canSupport(getVoxel(x+1, y, z) & 0xFF);
+        if (normal[2] === 1) return canSupport(getVoxel(x, y, z-1) & 0xFF);
+        if (normal[2] === -1) return canSupport(getVoxel(x, y, z+1) & 0xFF);
+        return false; 
+    }
+    if (id === 20) {
+        const below = getVoxel(x, y-1, z) & 0xFF;
+        return (below === 15 || below === 20); 
+    }
+    return true;
+}
+
+function checkSupport(x, y, z) {
+    const val = getVoxel(x, y, z);
+    const id = val & 0xFF;
+    if (id === 0) return true; 
+    
+    if (isCrossBlock(id) || id === 64) {
+        const below = getVoxel(x, y-1, z) & 0xFF;
+        
+        if (id === 52) {
+            if (below === 52) return true;
+            if (below !== 1 && below !== 2 && below !== 15 && below !== 5) return false;
+            let hasWater = false;
+            for (let [dx, dy, dz] of [[1,0,0], [-1,0,0], [0,0,1], [0,0,-1]]) {
+                if ((getVoxel(x+dx, y-1, z+dz) & 0xFF) === 4) { hasWater = true; break; }
+            }
+            return hasWater;
+        }
+        if (id === 64) {
+            return (below === 62 || below === 63);
+        }
+        return (below === 1 || below === 2);
+    }
+    if (id === 17) {
+        const level = (val >> 8) & 0xF;
+        if (level === 0) return canSupport(getVoxel(x, y-1, z) & 0xFF);
+        if (level === 1) return canSupport(getVoxel(x-1, y, z) & 0xFF);
+        if (level === 2) return canSupport(getVoxel(x+1, y, z) & 0xFF);
+        if (level === 3) return canSupport(getVoxel(x, y, z-1) & 0xFF);
+        if (level === 4) return canSupport(getVoxel(x, y, z+1) & 0xFF);
+        return true;
+    }
+    if (id === 20) {
+        const below = getVoxel(x, y-1, z) & 0xFF;
+        return (below === 15 || below === 20);
+    }
+    // Vine: needs solid anchor block on its face OR a vine/leaf block above
+    if (id === 66) {
+        const vineDir = (val >> 8) & 0xF;
+        const aboveId = getVoxel(x, y + 1, z) & 0xFF;
+        if (aboveId === 66 || isLeafBlock(aboveId)) return true;
+        if (vineDir === 1 && canSupport(getVoxel(x - 1, y, z) & 0xFF)) return true;
+        if (vineDir === 2 && canSupport(getVoxel(x + 1, y, z) & 0xFF)) return true;
+        if (vineDir === 3 && canSupport(getVoxel(x, y, z - 1) & 0xFF)) return true;
+        if (vineDir === 4 && canSupport(getVoxel(x, y, z + 1) & 0xFF)) return true;
+        return false;
+    }
+    // Lily pad: needs water below
+    if (id === 67) {
+        return (getVoxel(x, y - 1, z) & 0xFF) === 4;
+    }
+    return true;
+}

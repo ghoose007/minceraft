@@ -1,0 +1,1367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mincecraft</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap');
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #87CEEB;
+            font-family: 'Silkscreen', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+        }
+
+        /* ===== MINECRAFT BETA STYLE MENU SYSTEM ===== */
+        .mc-screen {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 100;
+            color: white;
+            image-rendering: pixelated;
+            overflow-y: auto;
+            background: #3b2914;
+        }
+
+        .mc-screen > *:not(canvas) {
+            position: relative;
+            z-index: 1;
+        }
+
+        #dirt-bg, #dirt-bg-2, #dirt-bg-3, #dirt-bg-ws {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: -1;
+        }
+
+        /* Title Logo */
+        .mc-title-area {
+            margin-top: 30px;
+            text-align: center;
+            position: relative;
+        }
+
+        .mc-logo {
+            font-family: 'Silkscreen', monospace;
+            font-size: 52px;
+            font-weight: 700;
+            color: #fff;
+            text-shadow:
+                3px 3px 0px #3f3f3f,
+                4px 4px 0px #2a2a2a,
+                0px 0px 0px #000,
+                -1px -1px 0px #555;
+            letter-spacing: 4px;
+            background: linear-gradient(180deg, #fff 0%, #c0c0c0 40%, #a0a0a0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(3px 4px 0px #2a2a2a) drop-shadow(-1px -1px 0 #555);
+            position: relative;
+        }
+
+        .mc-logo-shadow {
+            position: absolute;
+            top: 4px; left: 4px;
+            font-family: 'Silkscreen', monospace;
+            font-size: 52px;
+            font-weight: 700;
+            color: #3f3f3f;
+            letter-spacing: 4px;
+            z-index: -1;
+        }
+
+        .mc-splash {
+            position: absolute;
+            right: -40px;
+            top: 30px;
+            font-size: 16px;
+            font-weight: 700;
+            color: #ff0;
+            transform: rotate(-20deg);
+            text-shadow: 2px 2px 0 #3f3f00;
+            animation: mc-splash-pulse 1.2s ease-in-out infinite alternate;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+
+        @keyframes mc-splash-pulse {
+            0% { transform: rotate(-20deg) scale(1); }
+            100% { transform: rotate(-20deg) scale(1.12); }
+        }
+
+        /* ===== UNIFIED CLASSIC MINECRAFT BUTTON ===== */
+        .mc-button {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 400px;
+            max-width: 80vw;
+            height: 40px;
+            background-color: #7A7A7A;
+            border: 2px solid #000;
+            color: #E0E0E0;
+            font-family: 'Silkscreen', monospace;
+            font-size: 14px;
+            text-shadow: 2px 2px 0px #3f3f3f;
+            cursor: pointer;
+            box-shadow: inset 2px 2px 0px 0px #9E9E9E, inset -2px -2px 0px 0px #5A5A5A;
+            margin: 4px auto;
+        }
+
+        .mc-button:hover:not(.disabled) {
+            background-color: #6C81B5;
+            box-shadow: inset 2px 2px 0px 0px #8CA1D5, inset -2px -2px 0px 0px #4C6195;
+            color: #FFFFA0;
+            text-shadow: 2px 2px 0px #304060;
+        }
+
+        .mc-button:active:not(.disabled) {
+            background-color: #4C6195;
+            box-shadow: inset 2px 2px 0px 0px #304060, inset -2px -2px 0px 0px #8CA1D5;
+        }
+
+        .mc-button.disabled {
+            color: #606060;
+            text-shadow: 1px 1px 0px #3f3f3f;
+            cursor: not-allowed;
+        }
+
+        .btn-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            width: 400px;
+            max-width: 80vw;
+            margin: 4px auto;
+        }
+
+        .btn-grid .mc-button {
+            width: 100%;
+            margin: 0;
+        }
+
+        .mc-menu-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding-bottom: 40px;
+        }
+
+        .mc-version {
+            position: absolute;
+            bottom: 6px;
+            left: 8px;
+            font-size: 10px;
+            color: #aaa;
+            text-shadow: 1px 1px 0 #222;
+        }
+
+        .mc-copyright {
+            position: absolute;
+            bottom: 6px;
+            right: 8px;
+            font-size: 10px;
+            color: #aaa;
+            text-shadow: 1px 1px 0 #222;
+        }
+
+        /* ===== WORLD CREATION SCREEN ===== */
+        .mc-create-title {
+            font-size: 18px;
+            color: #fff;
+            text-shadow: 2px 2px 0 #2a2a2a;
+            margin: 20px 0 10px;
+        }
+
+        .mc-settings-scroll {
+            width: 440px;
+            max-width: 85vw;
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+            padding: 8px;
+            background: rgba(0,0,0,0.4);
+            border: 2px solid #000;
+            box-shadow: inset 2px 2px 0px #111, inset -2px -2px 0px #555;
+        }
+
+        .mc-settings-scroll::-webkit-scrollbar { width: 8px; }
+        .mc-settings-scroll::-webkit-scrollbar-track { background: #2a2a2a; }
+        .mc-settings-scroll::-webkit-scrollbar-thumb { background: #6a6a6a; border: 1px solid #444; }
+
+        .mc-setting-group { margin-bottom: 12px; }
+
+        .mc-setting-label {
+            font-size: 11px;
+            color: #ccc;
+            text-shadow: 1px 1px 0 #222;
+            margin-bottom: 4px;
+        }
+
+        .mc-input {
+            width: 100%;
+            height: 32px;
+            background: #000;
+            border: 2px solid #a0a0a0;
+            border-right-color: #505050;
+            border-bottom-color: #505050;
+            color: #e0e0e0;
+            font-family: 'Silkscreen', monospace;
+            font-size: 12px;
+            padding: 0 8px;
+            outline: none;
+        }
+        .mc-input:focus { border-color: #8888c0; }
+
+        .mc-slider-row { display: flex; align-items: center; gap: 8px; }
+
+        .mc-slider {
+            flex: 1;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 6px;
+            background: #333;
+            border: 1px solid #555;
+            outline: none;
+        }
+        .mc-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 12px;
+            height: 20px;
+            background: #7A7A7A;
+            border: 2px solid #000;
+            box-shadow: inset 2px 2px 0px #9E9E9E, inset -2px -2px 0px #5A5A5A;
+            cursor: pointer;
+        }
+
+        .mc-slider-val {
+            font-size: 11px;
+            color: #ccc;
+            min-width: 36px;
+            text-align: right;
+            text-shadow: 1px 1px 0 #222;
+        }
+
+        .mc-separator {
+            width: 100%;
+            height: 2px;
+            background: #444;
+            margin: 10px 0;
+        }
+
+        /* World Select Screen */
+        #world-select { justify-content: center; padding-bottom: 20px; }
+        .world-list { width: 440px; max-height: 300px; overflow-y: auto; margin: 10px 0; }
+        .world-slot {
+            background: rgba(0,0,0,0.5); border: 1px solid #555; padding: 10px 14px;
+            margin-bottom: 4px; cursor: pointer; display: flex; align-items: center; gap: 12px;
+            transition: background 0.1s;
+        }
+        .world-slot:hover { background: rgba(80,80,80,0.6); }
+        .world-slot.selected { background: rgba(60,60,120,0.7); border-color: #88f; }
+        .world-slot.empty { opacity: 0.4; cursor: default; }
+        .world-slot.empty:hover { background: rgba(0,0,0,0.5); }
+        .world-slot-icon {
+            width: 48px; height: 48px; background: #222; border: 1px solid #444;
+            display: flex; align-items: center; justify-content: center; font-size: 24px;
+            flex-shrink: 0; image-rendering: pixelated;
+        }
+        .world-slot-info { flex: 1; min-width: 0; }
+        .world-slot-name {
+            font-family: 'Silkscreen', monospace; font-size: 13px; color: #fff;
+            text-shadow: 1px 1px 0 #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .world-slot-details { font-size: 10px; color: #aaa; text-shadow: 1px 1px 0 #222; margin-top: 2px; }
+        .world-select-buttons {
+            display: flex; gap: 6px; width: 440px; flex-wrap: wrap; justify-content: center;
+        }
+        .world-select-buttons .mc-button { flex: 1; min-width: 140px; }
+
+        /* Loading screen */
+        #loading-screen {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            color: white;
+            font-family: 'Silkscreen', monospace;
+        }
+        #loading-screen h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 0px #000;
+        }
+        .loading-subtitle {
+            font-size: 12px;
+            color: #aaa;
+            margin-bottom: 20px;
+        }
+        #loading-bar-container {
+            width: 400px;
+            max-width: 80vw;
+            height: 20px;
+            background: #333;
+            border: 2px solid #555;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        #loading-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #4CAF50, #8BC34A);
+            transition: width 0.15s;
+        }
+        #loading-status { font-size: 11px; color: #ccc; }
+
+        /* ===== IN-GAME UI & PAUSE MENU ===== */
+        #pause-menu {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(0, 0, 0, 0.6);
+            z-index: 2000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Silkscreen', monospace;
+        }
+
+        .menu-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+        }
+
+        .menu-screen h2 {
+            color: white;
+            text-shadow: 2px 2px 0px #3f3f3f;
+            margin-bottom: 30px;
+            font-size: 20px;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.6);
+            color: white;
+            z-index: 10;
+            cursor: pointer;
+            transition: opacity 0.3s;
+        }
+
+        #ui-layer h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 0px #000;
+        }
+
+        #ui-layer p {
+            font-size: 13px;
+            margin-bottom: 20px;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: auto auto;
+            gap: 8px 24px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 16px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #ddd;
+        }
+
+        .controls span { color: #fff; font-weight: bold; }
+
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 16px;
+            height: 16px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 5;
+            display: none;
+            mix-blend-mode: difference;
+        }
+
+        #crosshair::before, #crosshair::after {
+            content: '';
+            position: absolute;
+            background-color: white;
+        }
+
+        #crosshair::before { top: 7px; left: 0; width: 16px; height: 2px; }
+        #crosshair::after { top: 0; left: 7px; width: 2px; height: 16px; }
+
+        .hidden { display: none !important; }
+
+        /* ===== AUTHENTIC HOTBAR & INVENTORY ===== */
+        #hud-layer {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        #action-text {
+            color: white;
+            font-size: 16px;
+            text-shadow: 2px 2px 0px rgba(0,0,0,0.8);
+            margin-bottom: 12px;
+            opacity: 0;
+            transition: opacity 0.2s;
+            text-align: center;
+            width: 100%;
+        }
+
+        #hud-bars {
+            width: 384px; /* Exact width of the hotbar */
+            display: flex;
+            justify-content: flex-start;
+            margin-bottom: 2px;
+        }
+
+        #health-bar {
+            display: flex;
+            gap: 0px;
+        }
+
+        .heart {
+            width: 18px;
+            height: 18px;
+            background-size: 162px 162px;
+            image-rendering: pixelated;
+        }
+
+        .heart.empty { background-image: url('textures/ui.png'); background-position: 0px 0px; }
+        .heart.full { background-image: url('textures/ui.png'), url('textures/ui.png'); background-size: 162px 162px, 162px 162px; background-position: -18px 0px, 0px 0px; }
+        .heart.half { background-image: url('textures/ui.png'), url('textures/ui.png'); background-size: 162px 162px, 162px 162px; background-position: -36px 0px, 0px 0px; }
+
+        .hotbar-container {
+            display: flex;
+            background-color: rgba(139, 139, 139, 0.7);
+            border: 2px solid #222;
+            padding: 2px;
+            gap: 2px;
+            pointer-events: auto;
+        }
+
+        .item-slot {
+            width: 40px;
+            height: 40px;
+            background-color: #8B8B8B;
+            border: 2px solid #000;
+            box-shadow: inset 2px 2px 0px 0px #373737, inset -2px -2px 0px 0px #FFF;
+            position: relative;
+            cursor: pointer;
+            box-sizing: border-box;
+        }
+
+        .item-slot.active {
+            outline: 3px solid #FFF;
+            outline-offset: -3px;
+            z-index: 2;
+        }
+
+        .item-icon {
+            width: 32px;
+            height: 32px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            image-rendering: pixelated;
+        }
+        
+        .item-count {
+            position: absolute;
+            bottom: 1px;
+            right: 3px;
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            text-shadow: 2px 2px 0px #3f3f3f, -1px -1px 0px #3f3f3f, 1px -1px 0px #3f3f3f, -1px 1px 0px #3f3f3f, 1px 1px 0px #3f3f3f;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        /* ===== CREATIVE INVENTORY MODAL ===== */
+        #inventory-modal {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 420px;
+            max-height: 80vh;
+            background-color: #C6C6C6;
+            border: 2px solid #000;
+            box-shadow: inset 3px 3px 0px 0px #FFF, inset -3px -3px 0px 0px #555;
+            z-index: 15;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #inventory-modal h2 {
+            color: #333;
+            margin: 0 0 15px 0;
+            align-self: flex-start;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        #inventory-grid {
+            display: grid;
+            grid-template-columns: repeat(9, 1fr);
+            gap: 2px;
+            background-color: #8B8B8B;
+            padding: 2px;
+            border: 2px solid #222;
+            margin-bottom: 20px;
+            max-height: 290px;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        #inventory-grid::-webkit-scrollbar {
+            width: 8px;
+        }
+        #inventory-grid::-webkit-scrollbar-track {
+            background: #555;
+        }
+        #inventory-grid::-webkit-scrollbar-thumb {
+            background: #999;
+            border: 1px solid #333;
+        }
+        #inventory-grid::-webkit-scrollbar-thumb:hover {
+            background: #aaa;
+        }
+
+        /* ===== SURVIVAL INVENTORY MODALS ===== */
+        #survival-inventory-modal, #crafting-table-modal, #furnace-modal, #chest-modal {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 432px; 
+            background-color: #C6C6C6;
+            border: 2px solid #000;
+            box-shadow: inset 3px 3px 0px 0px #FFF, inset -3px -3px 0px 0px #555;
+            z-index: 15;
+            padding: 20px 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .surv-top-half {
+            display: flex;
+            height: 172px; 
+            margin-bottom: 12px;
+        }
+
+        .surv-armor-col {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-right: 10px;
+        }
+
+        .surv-player-box {
+            width: 90px;
+            height: 172px;
+            background-color: #000;
+            border: 2px solid #222;
+            box-shadow: inset 2px 2px 0px 0px #555, inset -2px -2px 0px 0px #FFF;
+            margin-right: 36px;
+        }
+
+        .surv-crafting-sect {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .surv-crafting-sect h3 {
+            margin: 0 0 8px 0;
+            font-size: 14px;
+            color: #333;
+            font-weight: normal;
+        }
+
+        .surv-crafting-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .surv-crafting-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px;
+        }
+
+        .surv-craft-arrow-container {
+            display: flex;
+            align-items: center;
+        }
+
+        .surv-arrow-shaft {
+            width: 18px;
+            height: 14px;
+            background-color: #8B8B8B;
+            border-top: 2px solid #373737;
+            border-left: 2px solid #373737;
+            border-bottom: 2px solid #FFF;
+        }
+
+        .surv-arrow-head {
+            width: 0;
+            height: 0;
+            border-top: 14px solid transparent;
+            border-bottom: 14px solid transparent;
+            border-left: 14px solid #8B8B8B;
+            filter: drop-shadow(2px 2px 0px #FFF) drop-shadow(-2px -2px 0px #373737);
+        }
+
+        /* Furnace Specific UI Styling */
+        .furnace-flame-container {
+            width: 14px;
+            height: 14px;
+            background: #373737;
+            border-bottom: 2px solid #FFF;
+            border-right: 2px solid #FFF;
+            margin: 6px auto;
+            position: relative;
+        }
+        .furnace-flame-fill {
+            position: absolute;
+            bottom: 0; left: 0;
+            width: 100%; height: 0%;
+            background: #FF9900; /* Fire orange */
+            transition: height 0.1s linear;
+        }
+        .furnace-arrow-container {
+            width: 24px;
+            height: 16px;
+            background: #373737;
+            border-bottom: 2px solid #FFF;
+            border-right: 2px solid #FFF;
+            margin: 0 20px;
+            position: relative;
+        }
+        .furnace-arrow-fill {
+            position: absolute;
+            top: 0; left: 0;
+            height: 100%; width: 0%;
+            background: #FFF;
+            transition: width 0.1s linear;
+        }
+
+        .surv-inv-grid {
+            display: grid;
+            grid-template-columns: repeat(9, 1fr);
+            gap: 4px;
+            margin-bottom: 8px; 
+        }
+
+        .surv-hotbar-grid {
+            display: grid;
+            grid-template-columns: repeat(9, 1fr);
+            gap: 4px;
+        }
+
+        /* ===== STRUCTURE BLOCK MODAL ===== */
+        #structure-modal {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 320px;
+            background-color: #C6C6C6;
+            border: 2px solid #000;
+            box-shadow: inset 3px 3px 0px 0px #FFF, inset -3px -3px 0px 0px #555;
+            z-index: 20;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            font-family: 'Silkscreen', monospace;
+        }
+        #structure-modal h2 { margin: 0 0 12px 0; font-size: 16px; color: #333; text-align: center; }
+        .struct-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .struct-input { width: 60px; background: #000; color: #fff; border: 2px solid #888; padding: 4px; font-family: inherit; }
+        .struct-name-input { width: 100%; background: #000; color: #fff; border: 2px solid #888; padding: 4px; font-family: inherit; margin-bottom: 12px; }
+
+        /* ===== DRAGGED CURSOR ITEM ===== */
+        #dragged-item {
+            position: fixed;
+            width: 40px;
+            height: 40px;
+            pointer-events: none;
+            z-index: 9999;
+            transform: translate(-50%, -50%);
+        }
+
+        /* Tooltip */
+        #item-tooltip {
+            position: absolute;
+            background-color: rgba(16, 0, 16, 0.95);
+            color: #FFF;
+            border: 2px solid #280228;
+            border-radius: 2px;
+            padding: 4px 6px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 20;
+            white-space: nowrap;
+            text-shadow: 2px 2px 0px #000;
+            box-shadow: 2px 2px 0px rgba(0,0,0,0.5);
+        }
+
+        #clock-container {
+            position: absolute;
+            top: 20px; right: 20px;
+            width: 64px; height: 64px;
+            border: 4px solid #FFF;
+            background-color: #8B8B8B;
+            border-radius: 8px;
+            z-index: 10;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
+        }
+
+        #underwater-overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background-color: rgba(0, 30, 100, 0.5);
+            pointer-events: none;
+            z-index: 4;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        #debug-info {
+            position: absolute;
+            top: 10px; left: 10px;
+            color: white;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            white-space: pre;
+            text-shadow: 1px 1px 0px rgba(0,0,0,0.8);
+            z-index: 5;
+            pointer-events: none;
+            background: rgba(0,0,0,0.3);
+            padding: 6px 10px;
+            border-radius: 4px;
+        }
+
+        #coordinates-display {
+            position: absolute;
+            top: 60px; left: 10px;
+            color: white;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            white-space: pre;
+            text-shadow: 1px 1px 0px rgba(0,0,0,0.8);
+            z-index: 5;
+            pointer-events: none;
+            background: rgba(0,0,0,0.3);
+            padding: 6px 10px;
+            border-radius: 4px;
+            display: none;
+        }
+
+        #flight-indicator {
+            position: absolute;
+            top: 50px; left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-family: 'Silkscreen', monospace;
+            font-size: 12px;
+            text-shadow: 2px 2px 0px rgba(0,0,0,0.8);
+            z-index: 5;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            background: rgba(0,0,0,0.4);
+            padding: 4px 12px;
+            border-radius: 4px;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <div id="main-menu" class="mc-screen">
+        <canvas id="dirt-bg" width="1" height="1"></canvas>
+        <div class="mc-title-area">
+            <div class="mc-logo-shadow">MINCECRAFT</div>
+            <div class="mc-logo">MINCECRAFT</div>
+            <div id="splash-text" class="mc-splash">Also try Minceraft!</div>
+        </div>
+        <div class="mc-menu-content">
+            <button class="mc-button" id="btn-singleplayer" onclick="showWorldSelect()">Singleplayer</button>
+            <button class="mc-button disabled">Multiplayer</button>
+            <button class="mc-button disabled">Mincecraft Realms</button>
+            <div style="height: 12px;"></div>
+            <div class="btn-grid">
+                <button class="mc-button disabled">Options...</button>
+                <button class="mc-button disabled">Quit Game</button>
+            </div>
+        </div>
+        <div class="mc-version">Mincecraft Beta 1.7.3</div>
+        <div class="mc-copyright">Copyright Mojang AB. Do not distribute!</div>
+    </div>
+
+    <div id="world-select" class="mc-screen hidden">
+        <canvas id="dirt-bg-ws" width="1" height="1"></canvas>
+        <div class="mc-create-title" style="margin-top:20px; margin-bottom:10px;">Select World</div>
+        <div class="world-list" id="world-list"></div>
+        <div style="height:6px"></div>
+        <div class="world-select-buttons">
+            <button class="mc-button" id="btn-play-world" onclick="loadSelectedWorld()" disabled>Play Selected World</button>
+            <button class="mc-button" id="btn-delete-world" onclick="deleteSelectedWorld()" disabled>Delete</button>
+        </div>
+        <div style="height:6px"></div>
+        <div class="world-select-buttons">
+            <button class="mc-button" onclick="showCreateWorld()">Create New World</button>
+            <button class="mc-button" onclick="showMainMenu()">Cancel</button>
+        </div>
+    </div>
+
+    <div id="create-world" class="mc-screen hidden">
+        <canvas id="dirt-bg-2" width="1" height="1"></canvas>
+        <div class="mc-create-title">Create New World</div>
+        <div class="mc-settings-scroll" id="settings-scroll">
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">World Name</div>
+                <input class="mc-input" id="world-name" type="text" value="New World" maxlength="32">
+            </div>
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Seed for the World Generator (leave blank for random)</div>
+                <input class="mc-input" id="world-seed" type="text" placeholder="Random" maxlength="20">
+            </div>
+
+            <div class="mc-setting-group" style="margin-top: 12px;">
+                <div class="mc-setting-label">Game Mode</div>
+                <button class="mc-button" style="width: 100%; height: 32px;" id="opt-gamemode" onclick="toggleOption('gamemode')">Survival</button>
+            </div>
+
+            <div class="mc-separator"></div>
+            <div class="mc-setting-label" style="color:#fff; font-size:13px; margin-bottom:8px;">World Generation Settings</div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">World Size</div>
+                <button class="mc-button" style="width: 100%; height: 32px;" id="opt-worldsize" onclick="toggleOption('worldsize')">1024 × 1024</button>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Sea Level</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-sealevel" type="range" min="40" max="80" value="62" oninput="updateSliderVal(this, 'val-sealevel')">
+                    <div class="mc-slider-val" id="val-sealevel">62</div>
+                </div>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Terrain Height</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-terrainheight" type="range" min="30" max="120" value="80" oninput="updateSliderVal(this, 'val-terrainheight')">
+                    <div class="mc-slider-val" id="val-terrainheight">80</div>
+                </div>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Cave Density</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-cavedensity" type="range" min="0" max="100" value="50" oninput="updateSliderVal(this, 'val-cavedensity')">
+                    <div class="mc-slider-val" id="val-cavedensity">50%</div>
+                </div>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Tree Density</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-treedensity" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-treedensity')">
+                    <div class="mc-slider-val" id="val-treedensity">100%</div>
+                </div>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Ore Abundance</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-oreabundance" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-oreabundance')">
+                    <div class="mc-slider-val" id="val-oreabundance">100%</div>
+                </div>
+            </div>
+
+            <div class="mc-separator"></div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Generate Structures (Trees, Ponds, Cacti)</div>
+                <button class="mc-button" style="width: 100%; height: 32px;" id="opt-structures" onclick="toggleOption('structures')">ON</button>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Generate Caves</div>
+                <button class="mc-button" style="width: 100%; height: 32px;" id="opt-caves" onclick="toggleOption('caves')">ON</button>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Generate Lava Lakes</div>
+                <button class="mc-button" style="width: 100%; height: 32px;" id="opt-lava" onclick="toggleOption('lava')">ON</button>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Biome Scale</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-biomescale" type="range" min="50" max="600" value="300" oninput="updateSliderVal(this, 'val-biomescale')">
+                    <div class="mc-slider-val" id="val-biomescale">300</div>
+                </div>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Terrain Smoothness</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-smoothness" type="range" min="50" max="300" value="150" oninput="updateSliderVal(this, 'val-smoothness')">
+                    <div class="mc-slider-val" id="val-smoothness">150</div>
+                </div>
+            </div>
+            
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Mountain Volatility</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-volatility" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-volatility')">
+                    <div class="mc-slider-val" id="val-volatility">100%</div>
+                </div>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Temperature Climate (Cold to Hot)</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-temp" type="range" min="-100" max="100" value="0" oninput="updateSliderVal(this, 'val-temp')">
+                    <div class="mc-slider-val" id="val-temp">0</div>
+                </div>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Humidity Climate (Dry to Wet)</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-humid" type="range" min="-100" max="100" value="0" oninput="updateSliderVal(this, 'val-humid')">
+                    <div class="mc-slider-val" id="val-humid">0</div>
+                </div>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Foliage Density</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-foliage" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-foliage')">
+                    <div class="mc-slider-val" id="val-foliage">100%</div>
+                </div>
+            </div>
+
+            <div style="margin: 16px 0 8px 0; color: #aaa; text-align: center; font-size: 18px; letter-spacing: 1px;">— Nether Settings —</div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Nether Lava Level</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-nether-lava" type="range" min="1" max="60" value="31" oninput="updateSliderVal(this, 'val-nether-lava')">
+                    <div class="mc-slider-val" id="val-nether-lava">31</div>
+                </div>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Nether Openness</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-nether-openness" type="range" min="25" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-openness')">
+                    <div class="mc-slider-val" id="val-nether-openness">100%</div>
+                </div>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Glowstone Density</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-nether-glow" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-glow')">
+                    <div class="mc-slider-val" id="val-nether-glow">100%</div>
+                </div>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Nether Fire Patches</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-nether-fire" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-fire')">
+                    <div class="mc-slider-val" id="val-nether-fire">100%</div>
+                </div>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Soul Sand Density</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-nether-soulsand" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-soulsand')">
+                    <div class="mc-slider-val" id="val-nether-soulsand">100%</div>
+                </div>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Lava Falls</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-nether-lavafalls" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-lavafalls')">
+                    <div class="mc-slider-val" id="val-nether-lavafalls">100%</div>
+                </div>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Gravel Shores</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-nether-gravel" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-gravel')">
+                    <div class="mc-slider-val" id="val-nether-gravel">100%</div>
+                </div>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">Quartz Ore Abundance</div>
+                <div class="mc-slider-row">
+                    <input class="mc-slider" id="sl-nether-quartz" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-quartz')">
+                    <div class="mc-slider-val" id="val-nether-quartz">100%</div>
+                </div>
+            </div>
+
+        </div>
+        <div style="height: 10px;"></div>
+        <div class="btn-grid">
+            <button class="mc-button" onclick="startWorldCreation()">Create New World</button>
+            <button class="mc-button" onclick="showMainMenu()">Cancel</button>
+        </div>
+        <div style="height: 16px;"></div>
+    </div>
+
+    <div id="loading-screen" class="mc-screen hidden">
+        <canvas id="dirt-bg-3" width="1" height="1"></canvas>
+        <div style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+            <h1 id="loading-title" style="font-size:20px; margin-bottom:8px; text-shadow:2px 2px 0 #000;">Generating world...</h1>
+            <div class="loading-subtitle" id="loading-world-name">New World</div>
+            <div id="loading-bar-container"><div id="loading-bar"></div></div>
+            <div id="loading-status">Initializing...</div>
+        </div>
+    </div>
+
+    <div id="pause-menu" class="hidden">
+        <div id="pause-main" class="menu-screen">
+            <h2>Game menu</h2>
+            <button class="mc-button" style="width: 408px;" onclick="document.body.requestPointerLock()">Back to game</button>
+            <div class="btn-grid">
+                <button class="mc-button disabled">Achievements</button>
+                <button class="mc-button disabled">Statistics</button>
+            </div>
+            <button class="mc-button" style="width: 408px;" onclick="showPauseScreen('options-menu')">Options...</button>
+            <button class="mc-button" style="width: 408px;" onclick="saveAndQuit()">Save and quit to title</button>
+        </div>
+
+        <div id="options-menu" class="menu-screen hidden">
+            <h2>Options</h2>
+            <div class="btn-grid">
+                <button class="mc-button disabled">Music: 100%</button>
+                <button class="mc-button disabled">Sound: 100%</button>
+                <button class="mc-button disabled">Invert Mouse: OFF</button>
+                <button class="mc-button disabled">Sensitivity: 100%</button>
+                <button class="mc-button" onclick="showPauseScreen('video-settings-menu')">Video Settings...</button>
+                <button class="mc-button" onclick="showPauseScreen('controls-menu')">Controls...</button>
+                <button class="mc-button disabled">Difficulty: Normal</button>
+            </div>
+            <button class="mc-button" style="width: 408px;" onclick="showPauseScreen('pause-main'); checkRemesh();">Done</button>
+        </div>
+
+        <div id="video-settings-menu" class="menu-screen hidden">
+            <h2>Video Settings</h2>
+            <div class="btn-grid">
+                <button class="mc-button" id="btn-graphics" onclick="toggleGraphics()">Graphics: Fancy</button>
+                <button class="mc-button" id="btn-render-dist" onclick="toggleRenderDist()">Render Distance: Normal</button>
+                <button class="mc-button" id="btn-smooth-light" onclick="toggleSmoothLighting()">Smooth Lighting: ON</button>
+                <button class="mc-button disabled">Performance: Max FPS</button>
+                <button class="mc-button disabled">3D Anaglyph: OFF</button>
+                <button class="mc-button" id="btn-view-bobbing" onclick="toggleViewBobbing()">View Bobbing: ON</button>
+                <button class="mc-button" id="btn-gui-scale" onclick="toggleGUIScale()">GUI Scale: Auto</button>
+                <button class="mc-button disabled">Advanced OpenGL: OFF</button>
+            </div>
+            <button class="mc-button" style="width: 408px;" onclick="showPauseScreen('options-menu'); checkRemesh();">Done</button>
+        </div>
+
+        <div id="controls-menu" class="menu-screen hidden">
+            <h2>Controls</h2>
+            <div class="btn-grid">
+                <button class="mc-button disabled">W,A,S,D: Move</button>
+                <button class="mc-button disabled">Space: Jump / Fly</button>
+                <button class="mc-button disabled">Shift: Sneak</button>
+                <button class="mc-button disabled">Ctrl: Sprint</button>
+                <button class="mc-button disabled">E: Inventory</button>
+                <button class="mc-button disabled">F: Render Distance</button>
+            </div>
+            <button class="mc-button" style="width: 408px;" onclick="showPauseScreen('options-menu')">Done</button>
+        </div>
+    </div>
+
+    <div id="ui-layer" class="hidden">
+        <h1>Game Paused</h1>
+        <p>Click anywhere to resume</p>
+        <div class="controls">
+            <span>[W] [A] [S] [D]</span> Walk
+            <span>[Mouse]</span> Look Around
+            <span>[Space]</span> Jump
+            <span>[Dbl Space]</span> Toggle Fly
+            <span>[Shift]</span> Crouch / Descend
+            <span>[E]</span> Inventory
+            <span>[F]</span> Render Dist
+            <span>[1-9] / Scroll</span> Hotbar
+        </div>
+    </div>
+
+    <div id="crosshair"></div>
+    <div id="debug-info"></div>
+    <div id="coordinates-display"></div>
+    <div id="flight-indicator"></div>
+
+    <div id="clock-container" style="display:none;">
+        <canvas id="clock-canvas" width="64" height="64" style="width: 100%; height: 100%; image-rendering: pixelated;"></canvas>
+    </div>
+
+    <div id="underwater-overlay"></div>
+    <div id="hud-layer" style="display:none;">
+        <div id="action-text">Grass Block</div>
+        <div id="hud-bars">
+            <div id="health-bar"></div>
+        </div>
+        <div id="main-hotbar" class="hotbar-container"></div>
+    </div>
+
+    <div id="inventory-modal" class="hidden">
+        <h2>Creative Inventory</h2>
+        <div id="inventory-grid"></div>
+        <div id="inv-hotbar" class="hotbar-container"></div>
+    </div>
+
+    <div id="survival-inventory-modal" class="hidden">
+        <div class="surv-top-half">
+            <div class="surv-armor-col" id="surv-armor"></div>
+            <div class="surv-player-box"></div>
+            <div class="surv-crafting-sect">
+                <h3>Crafting</h3>
+                <div class="surv-crafting-row">
+                    <div class="surv-crafting-grid" id="surv-crafting-input"></div>
+                    <div class="surv-craft-arrow-container">
+                        <div class="surv-arrow-shaft"></div>
+                        <div class="surv-arrow-head"></div>
+                    </div>
+                    <div class="item-slot" id="surv-crafting-output"></div>
+                </div>
+            </div>
+        </div>
+        <div class="surv-inv-grid" id="surv-main-inv"></div>
+        <div class="surv-hotbar-grid" id="surv-hotbar"></div>
+    </div>
+
+    <div id="crafting-table-modal" class="hidden">
+        <div style="display: flex; flex-direction: column; margin-bottom: 12px;">
+            <h3 style="margin: 0 0 8px 0; font-size: 14px; color: #333; font-weight: normal;">Crafting</h3>
+            <div class="surv-crafting-row" style="padding-left: 20px;">
+                <div class="surv-crafting-grid" id="table-crafting-input" style="grid-template-columns: repeat(3, 40px); gap: 4px;"></div>
+                <div class="surv-craft-arrow-container" style="margin: 0 24px;">
+                    <div class="surv-arrow-shaft"></div>
+                    <div class="surv-arrow-head"></div>
+                </div>
+                <div class="item-slot" id="table-crafting-output"></div>
+            </div>
+        </div>
+        <h3 style="margin: 0 0 8px 0; font-size: 14px; color: #333; font-weight: normal;">Inventory</h3>
+        <div class="surv-inv-grid" id="table-main-inv"></div>
+        <div class="surv-hotbar-grid" id="table-hotbar" style="margin-top: 8px;"></div>
+    </div>
+
+    <div id="furnace-modal" class="hidden">
+        <div style="display: flex; flex-direction: column; margin-bottom: 12px; align-items: center;">
+            <h3 style="margin: 0 0 8px 0; font-size: 14px; color: #333; font-weight: normal;">Furnace</h3>
+            <div class="surv-crafting-row" style="justify-content: center;">
+                <div style="display: flex; flex-direction: column; align-items: center;">
+                    <div id="furnace-input" class="item-slot"></div>
+                    <div class="furnace-flame-container">
+                        <div id="furnace-flame-fill" class="furnace-flame-fill"></div>
+                    </div>
+                    <div id="furnace-fuel" class="item-slot"></div>
+                </div>
+                <div class="furnace-arrow-container">
+                    <div id="furnace-arrow-fill" class="furnace-arrow-fill"></div>
+                </div>
+                <div id="furnace-output" class="item-slot" style="width: 50px; height: 50px;"></div>
+            </div>
+        </div>
+        <h3 style="margin: 0 0 8px 0; font-size: 14px; color: #333; font-weight: normal;">Inventory</h3>
+        <div class="surv-inv-grid" id="furnace-main-inv"></div>
+        <div class="surv-hotbar-grid" id="furnace-hotbar" style="margin-top: 8px;"></div>
+    </div>
+
+    <div id="chest-modal" class="hidden">
+        <h3 id="chest-title" style="margin: 0 0 8px 0; font-size: 14px; color: #333; font-weight: normal;">Chest</h3>
+        <div class="surv-inv-grid" id="chest-slots" style="margin-bottom: 12px;"></div>
+        <h3 style="margin: 0 0 8px 0; font-size: 14px; color: #333; font-weight: normal;">Inventory</h3>
+        <div class="surv-inv-grid" id="chest-main-inv"></div>
+        <div class="surv-hotbar-grid" id="chest-hotbar" style="margin-top: 8px;"></div>
+    </div>
+
+    <div id="structure-modal" class="hidden">
+        <h2>Structure Block</h2>
+        <div class="struct-row" style="justify-content: center; gap: 8px; margin-bottom: 16px;">
+            <button class="mc-button" id="btn-struct-save" style="width: 100px; height: 30px;" onclick="setStructMode('SAVE')">SAVE</button>
+            <button class="mc-button" id="btn-struct-load" style="width: 100px; height: 30px; background-color: #555;" onclick="setStructMode('LOAD')">LOAD</button>
+        </div>
+        
+        <input type="text" id="struct-name" class="struct-name-input" placeholder="Structure Name" oninput="if(typeof updateStructurePreview === 'function') updateStructurePreview()">
+        
+        <div id="struct-size-container">
+            <div class="struct-row">
+                <span style="font-size: 12px; color: #333;">Size X (Width):</span>
+                <input type="number" id="struct-x" class="struct-input" value="5" min="1" max="32" oninput="if(typeof updateStructurePreview === 'function') updateStructurePreview()">
+            </div>
+            <div class="struct-row">
+                <span style="font-size: 12px; color: #333;">Size Y (Height):</span>
+                <input type="number" id="struct-y" class="struct-input" value="5" min="1" max="32" oninput="if(typeof updateStructurePreview === 'function') updateStructurePreview()">
+            </div>
+            <div class="struct-row">
+                <span style="font-size: 12px; color: #333;">Size Z (Depth):</span>
+                <input type="number" id="struct-z" class="struct-input" value="5" min="1" max="32" oninput="if(typeof updateStructurePreview === 'function') updateStructurePreview()">
+            </div>
+            <div class="struct-row" style="margin-top: 8px;">
+                <span style="font-size: 12px; color: #333;">Dimension:</span>
+                <select id="struct-dimension" style="background:#000;color:#fff;border:2px solid #888;padding:2px 4px;font-family:inherit;">
+                    <option value="any">Any</option>
+                    <option value="overworld">Overworld</option>
+                    <option value="nether">Nether</option>
+                </select>
+            </div>
+            <div class="struct-row">
+                <span style="font-size: 12px; color: #333;">Biome:</span>
+                <select id="struct-biome" style="background:#000;color:#fff;border:2px solid #888;padding:2px 4px;font-family:inherit;">
+                    <option value="any">Any</option>
+                    <option value="plains">Plains</option>
+                    <option value="forest">Forest</option>
+                    <option value="desert">Desert</option>
+                    <option value="taiga">Taiga</option>
+                    <option value="tundra">Tundra</option>
+                    <option value="swamp">Swamp</option>
+                    <option value="rainforest">Rainforest</option>
+                    <option value="ocean">Ocean</option>
+                </select>
+            </div>
+        </div>
+
+        <div style="height: 12px;"></div>
+        <button class="mc-button" id="btn-struct-action" style="width: 100%; height: 32px;" onclick="executeStructureBlock()">SAVE STRUCTURE</button>
+        <button class="mc-button" style="width: 100%; height: 32px; margin-top: 4px; background-color: #4CAF50;" onclick="closeStructureUI(true)">PREVIEW BOUNDS</button>
+        <button class="mc-button" style="width: 100%; height: 32px; margin-top: 4px;" onclick="closeStructureUI(false)">CANCEL</button>
+    </div>
+
+    <div id="dragged-item" class="hidden">
+        <div class="item-icon" id="dragged-item-icon"></div>
+        <div class="item-count" id="dragged-item-count"></div>
+    </div>
+
+    <div id="item-tooltip" class="hidden">Tooltip</div>
+
+    <script src="js/config/constants.js?v=3"></script>
+    <script src="js/config/state.js?v=3"></script>
+    <script src="js/config/blocks.js?v=3"></script>
+    <script src="js/config/tools.js?v=3"></script>
+    <script src="js/config/recipes.js?v=3"></script>
+
+    <script src="js/ui/menu.js?v=3"></script>
+    <script src="js/render/lighting-shader.js?v=3"></script>
+    <script src="js/ui/pause-menu.js?v=3"></script>
+
+    <script src="js/world/voxel.js?v=3"></script>
+    <script src="js/world/block-helpers.js?v=3"></script>
+    <script src="js/world/block-updates.js?v=3"></script>
+    <script src="js/world/fluid-interaction.js?v=3"></script>
+    <script src="js/world/lighting.js?v=3"></script>
+    <script src="js/world/trees.js?v=3"></script>
+    <script src="js/world/random-ticks.js?v=3"></script>
+    <script src="js/world/fire.js?v=3"></script>
+
+    <script src="js/render/textures.js?v=3"></script>
+    <script src="js/render/faces.js?v=3"></script>
+    <script src="js/render/particles.js?v=3"></script>
+    <script src="js/render/chunk-mesh.js?v=3"></script>
+    <script src="js/render/item-mesh.js?v=3"></script>
+
+    <script src="js/world/fluids.js?v=3"></script>
+    <script src="js/world/noise.js?v=3"></script>
+
+    <script src="js/worldgen/noise-init.js?v=3"></script>
+    <script src="js/worldgen/biomes.js?v=3"></script>
+    <script src="js/worldgen/overworld.js?v=3"></script>
+    <script src="js/worldgen/nether.js?v=3"></script>
+
+    <script src="js/ui/hud.js?v=3"></script>
+    <script src="js/ui/crafting.js?v=3"></script>
+    <script src="js/ui/furnace.js?v=3"></script>
+    <script src="js/ui/inventory.js?v=3"></script>
+    <script src="js/ui/chest.js?v=3"></script>
+    <script src="js/ui/death-screen.js?v=3"></script>
+
+    <script src="js/core/physics.js?v=3"></script>
+
+    <script src="js/gameplay/block-breaking.js?v=3"></script>
+    <script src="js/gameplay/portals-detect.js?v=3"></script>
+    <script src="js/gameplay/dropped-items.js?v=3"></script>
+    <script src="js/gameplay/tnt.js?v=3"></script>
+    <script src="js/gameplay/dimension-switch.js?v=3"></script>
+    <script src="js/gameplay/spawners.js?v=3"></script>
+    <script src="js/gameplay/structures.js?v=3"></script>
+
+    <script src="js/core/init.js?v=3"></script>
+    <script src="js/core/game-loop.js?v=3"></script>
+
+    <script src="js/mobs/mob-core.js?v=3"></script>
+    <script src="js/mobs/pathfinding.js?v=3"></script>
+    <script src="js/mobs/pig.js?v=3"></script>
+    <script src="js/mobs/zombie.js?v=3"></script>
+    <script src="js/mobs/sheep.js?v=3"></script>
+    <script src="js/mobs/skeleton.js?v=3"></script>
+    <script src="js/mobs/mob-spawning.js?v=3"></script>
+    <script src="js/mobs/mob-particles.js?v=3"></script>
+
+    <script src="js/core/save-load.js?v=3"></script>
+
+    <script src="js/player/model.js?v=3"></script>
+    <script src="js/player/camera.js?v=3"></script>
+    <script src="js/player/death-anim.js?v=3"></script>
+    <script src="js/player/fire-effects.js?v=3"></script>
+
+    <script src="js/entities/herobrine.js?v=3"></script>
+
+    <script src="js/core/sounds.js?v=3"></script>
+</body>
+</html>
