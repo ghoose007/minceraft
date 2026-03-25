@@ -34,9 +34,9 @@ function dbPut(data) {
         const db = await openSaveDB();
         const tx = db.transaction(SAVE_STORE, 'readwrite');
         const store = tx.objectStore(SAVE_STORE);
-        const req = store.put(data);
-        req.onsuccess = () => resolve();
-        req.onerror = (e) => reject(e);
+        store.put(data);
+        tx.oncomplete = () => resolve();
+        tx.onerror = (e) => reject(e);
     });
 }
 
@@ -239,7 +239,7 @@ async function saveWorld(slot) {
             highestY: player.highestY
         },
         inventory: inventory.map(s => s.id !== 0 ? { id: s.id, count: s.count } : null),
-        generatedFlags: Array.from(owGenFlags || generatedChunksArr),
+        generatedFlags: owGenFlags ? Array.from(owGenFlags) : Array.from(generatedChunksArr),
         netherGeneratedFlags: ntGenFlags ? Array.from(ntGenFlags) : null,
         // Chest inventories
         chests: (() => {
@@ -365,6 +365,13 @@ async function saveAndQuit() {
     
     try {
         await saveWorld(activeWorldSlot);
+        // Close the database connection to ensure all writes are flushed
+        if (_saveDB) {
+            _saveDB.close();
+            _saveDB = null;
+        }
+        // Small delay to let IndexedDB fully commit before page unload
+        await new Promise(r => setTimeout(r, 100));
     } catch(e) {
         console.error('Save failed:', e);
     }

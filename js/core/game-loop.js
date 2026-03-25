@@ -784,6 +784,7 @@ function animate() {
                         if (typeof window.addToInventory === 'function') {
                             const leftover = window.addToInventory(item.id, item.count);
                             if (leftover === 0) {
+                                if (typeof window.playItemSound === 'function') window.playItemSound(0.3);
                                 itemsToRemove.push(i);
                                 continue;
                             } else item.count = leftover;

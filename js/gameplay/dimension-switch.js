@@ -199,6 +199,20 @@ window.switchDimension = async function() {
 
         if (linkedDest) {
             // Existing link — teleport to linked nether portal
+            // Ensure chunks around linked destination are generated
+            const halfW = Math.floor(WORLD_WIDTH / 2);
+            const halfD = Math.floor(WORLD_DEPTH / 2);
+            const ldCX = Math.floor((linkedDest.x + halfW) / CHUNK_SIZE);
+            const ldCZ = Math.floor((linkedDest.z + halfD) / CHUNK_SIZE);
+            for (let dcx = ldCX - 3; dcx <= ldCX + 3; dcx++) {
+                for (let dcz = ldCZ - 3; dcz <= ldCZ + 3; dcz++) {
+                    if (dcx >= 0 && dcx < CHUNKS_X && dcz >= 0 && dcz < CHUNKS_Z) {
+                        if (!_isChunkGenerated(dcx, dcz)) {
+                            generateNetherChunkColumn(dcx, dcz);
+                        }
+                    }
+                }
+            }
             player.x = linkedDest.x + 0.5;
             player.y = linkedDest.y;
             player.z = linkedDest.z + 0.5;
@@ -206,6 +220,23 @@ window.switchDimension = async function() {
             // No link — spawn a new nether portal and register the link
             const destX = Math.floor(savedX);
             const destZ = Math.floor(savedZ);
+            
+            // Ensure nether chunks around the destination are generated
+            const halfW = Math.floor(WORLD_WIDTH / 2);
+            const halfD = Math.floor(WORLD_DEPTH / 2);
+            const destCX = Math.floor((destX + halfW) / CHUNK_SIZE);
+            const destCZ = Math.floor((destZ + halfD) / CHUNK_SIZE);
+            const genRadius = 3; // Generate a small area around the destination
+            for (let dcx = destCX - genRadius; dcx <= destCX + genRadius; dcx++) {
+                for (let dcz = destCZ - genRadius; dcz <= destCZ + genRadius; dcz++) {
+                    if (dcx >= 0 && dcx < CHUNKS_X && dcz >= 0 && dcz < CHUNKS_Z) {
+                        if (!_isChunkGenerated(dcx, dcz)) {
+                            generateNetherChunkColumn(dcx, dcz);
+                        }
+                    }
+                }
+            }
+            
             const portalPos = _spawnNetherPortal(destX, destZ);
             
             player.x = portalPos.x + 0.5;
@@ -235,6 +266,18 @@ window.switchDimension = async function() {
 
         if (linkedDest) {
             // Existing link — teleport to linked overworld portal
+            // Ensure chunks around linked destination are generated
+            if (useLazyGeneration && typeof ensureChunkGenerated === 'function') {
+                const halfW = Math.floor(WORLD_WIDTH / 2);
+                const halfD = Math.floor(WORLD_DEPTH / 2);
+                const ldCX = Math.floor((linkedDest.x + halfW) / CHUNK_SIZE);
+                const ldCZ = Math.floor((linkedDest.z + halfD) / CHUNK_SIZE);
+                for (let dcx = ldCX - 3; dcx <= ldCX + 3; dcx++) {
+                    for (let dcz = ldCZ - 3; dcz <= ldCZ + 3; dcz++) {
+                        ensureChunkGenerated(dcx, dcz);
+                    }
+                }
+            }
             player.x = linkedDest.x + 0.5;
             player.y = linkedDest.y;
             player.z = linkedDest.z + 0.5;
@@ -242,6 +285,20 @@ window.switchDimension = async function() {
             // No link found — spawn a new overworld portal and register it
             const destX = Math.floor(savedX);
             const destZ = Math.floor(savedZ);
+            
+            // Ensure overworld chunks around destination are generated (for lazy-gen worlds)
+            if (useLazyGeneration && typeof ensureChunkGenerated === 'function') {
+                const halfW = Math.floor(WORLD_WIDTH / 2);
+                const halfD = Math.floor(WORLD_DEPTH / 2);
+                const destCX = Math.floor((destX + halfW) / CHUNK_SIZE);
+                const destCZ = Math.floor((destZ + halfD) / CHUNK_SIZE);
+                for (let dcx = destCX - 3; dcx <= destCX + 3; dcx++) {
+                    for (let dcz = destCZ - 3; dcz <= destCZ + 3; dcz++) {
+                        ensureChunkGenerated(dcx, dcz);
+                    }
+                }
+            }
+            
             const destY = getHighestBlock(destX, destZ) + 1;
             const portalPos = _spawnOverworldPortal(destX, destY, destZ);
             
