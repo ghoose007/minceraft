@@ -506,6 +506,39 @@ async function init(seed, loadedData) {
             return;
         }
 
+        // F3 + M: toggle mob spawn menu
+        if (e.code === 'KeyM' && window.showDebugScreen && uiState === 'PLAYING') {
+            e.preventDefault();
+            window._toggleMobSpawnMenu();
+            return;
+        }
+
+        // F3 + P: toggle gamemode between creative and survival (dev shortcut)
+        if (e.code === 'KeyP' && window.showDebugScreen) {
+            e.preventDefault();
+            gameMode = (gameMode === 'creative') ? 'survival' : 'creative';
+
+            // If switching to survival while flying, disable flight
+            if (gameMode === 'survival' && player.flying) {
+                player.flying = false;
+                player.vy = 0;
+                const flightEl = document.getElementById('flight-indicator');
+                if (flightEl) { flightEl.textContent = '✦ Not Flying'; flightEl.style.opacity = '1'; setTimeout(() => flightEl.style.opacity = '0', 1500); }
+            }
+
+            // Refresh health bar visibility
+            if (typeof updateHealthUI === 'function') updateHealthUI();
+            if (typeof buildUI === 'function') buildUI();
+
+            const el = document.getElementById('action-text');
+            if (el) {
+                el.textContent = 'Game Mode: ' + (gameMode === 'creative' ? 'Creative' : 'Survival');
+                el.style.opacity = '1';
+                clearTimeout(window._actionTextTO);
+                window._actionTextTO = setTimeout(() => el.style.opacity = '0', 2000);
+            }
+            return;
+        } 
         if (e.repeat) return; 
 
         if(uiState === 'PLAYING') {
@@ -540,10 +573,6 @@ async function init(seed, loadedData) {
                     const dropCount = keys.ShiftLeft ? item.count : 1;
                     
                     window.tossItem(item.id, dropCount);
-
-                    if (typeof window.playItemSound === 'function') window.playItemSound(0.3);
-
-                    item.count -= dropCount;
 
                     item.count -= dropCount;
                     if (item.count <= 0) {
@@ -667,9 +696,6 @@ window.getTargetedMob = function() {
 
             if (!clickedInside) {
                 window.tossItem(cursorItem.id, cursorItem.count);
-                // ADD THIS LINE HERE:
-                if (typeof window.playItemSound === 'function') window.playItemSound(0.3);
-                
                 cursorItem = null;
                 if (typeof updateCursorItemUI === 'function') updateCursorItemUI(e);
                 return;
@@ -692,9 +718,6 @@ window.getTargetedMob = function() {
             if (player.health < player.maxHealth) {
                 player.health = Math.min(player.maxHealth, player.health + healAmount); 
                 if (typeof updateHealthUI === 'function') updateHealthUI();
-
-                if (typeof window.playBurpSound === 'function') window.playBurpSound();
-                swingAnimation = 1.0;
                 
                 if (typeof gameMode !== 'undefined' && gameMode === 'survival') {
                     inventory[activeSlot].count--;
@@ -720,10 +743,6 @@ window.getTargetedMob = function() {
             if (hitMob) {
                 swingAnimation = 1.0; // Swing arm
                 
-                // FIXED: If the mob is already dead, dying, or in its damage cooldown (i-frames), 
-                // ignore the click so we don't spam sounds or waste weapon durability!
-                if (hitMob.hurtTime > 0 || hitMob.dying || hitMob.dead) return;
-                
                 // Calculate Damage (Default fist = 1)
                 let damage = 1; 
                 if (currentBuildBlock !== 0 && typeof TOOL_DATA !== 'undefined' && TOOL_DATA[currentBuildBlock]) {
@@ -732,7 +751,7 @@ window.getTargetedMob = function() {
                 
                 hitMob.takeDamage(damage, player.x, player.z);
                 window.damageHeldTool(2); // Hitting a mob costs 2 durability in MC
-                return; // Stop here so we don't break the block behind the mob!
+                return; // Stop here so we don't break the block behind the pig!
             }
             // --------------------------------------------------
 
@@ -749,7 +768,7 @@ window.getTargetedMob = function() {
                     window.blockBreakCooldown = 0.3;
                 } else {
                     window.breakBlock(x, y, z);
-                    window.blockBreakCooldown = 0.3; 
+                    window.blockBreakCooldown = 0.1; 
                 }
             } else {
                 miningState.isMining = true;
@@ -923,7 +942,7 @@ window.getTargetedMob = function() {
             // Block placement of tools/items — only allow actual placeable blocks and saplings
             if (currentBuildBlock >= 100) {
                 // These are placeable despite being >= 100
-                const placeableHighIds = [116, 117, 118, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151];
+                const placeableHighIds = [116, 117, 118, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156];
                 if (!placeableHighIds.includes(currentBuildBlock)) return;
             }
 
@@ -1011,10 +1030,6 @@ window.getTargetedMob = function() {
                         if (typeof buildUI === 'function') buildUI();
                         swingAnimation = 1.0;
                         return;
-                    }
-                    // Play the ignition sound (fire_ignite.ogg)
-                    if (typeof window.playFlintAndSteelSound === 'function') {
-                        window.playFlintAndSteelSound(px, py, pz);
                     }
                     
                     let fireDir = 0; 
@@ -1350,8 +1365,7 @@ window.damageHeldTool = function(amount) {
     item.durability -= amount;
 
     if (item.durability <= 0) {
-        inventory[activeSlot] = { id: 0, count: 0 }; 
-        if (typeof window.playToolBreakSound === 'function') window.playToolBreakSound();
+        inventory[activeSlot] = { id: 0, count: 0 }; // Tool breaks
     }
     
     // Refresh the UI to update the colored bar

@@ -11,8 +11,8 @@ const _transparentLUT = new Uint8Array(256);
 const _transparentFancyLUT = new Uint8Array(256);
 (function() {
     // Added 62, 63, 64 for Farming, 66 for Vine, 67 for Lily Pad, 70-76 Slabs, 80-86 Stairs
-    const transparentIds = [0, 4, 14, 16, 17, 20, 22, 23, 24, 26, 27, 38, 40, 42, 43, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 89, 90, 93, 94, 95, 97, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150];
-    const transparentFastIds = [0, 4, 16, 17, 20, 23, 24, 26, 27, 38, 40, 42, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 90, 93, 94, 95, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150]; // leaves opaque in Fast mode
+    const transparentIds = [0, 4, 14, 16, 17, 20, 22, 23, 24, 26, 27, 38, 40, 42, 43, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 89, 90, 93, 94, 95, 97, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152];
+    const transparentFastIds = [0, 4, 16, 17, 20, 23, 24, 26, 27, 38, 40, 42, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 90, 93, 94, 95, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152]; // leaves opaque in Fast mode
     for (const id of transparentIds) _transparentFancyLUT[id] = 1;
     for (const id of transparentFastIds) _transparentLUT[id] = 1;
 })();
@@ -39,7 +39,7 @@ _slabLUT[70] = 1; _slabLUT[71] = 1; _slabLUT[72] = 1; _slabLUT[73] = 1; _slabLUT
 function isSlabBlock(id) { return _slabLUT[id]; }
 
 const _stairLUT = new Uint8Array(256);
-_stairLUT[80] = 1; _stairLUT[81] = 1; _stairLUT[82] = 1; _stairLUT[83] = 1; _stairLUT[84] = 1; _stairLUT[85] = 1; _stairLUT[86] = 1; _stairLUT[94] = 1;
+_stairLUT[80] = 1; _stairLUT[81] = 1; _stairLUT[82] = 1; _stairLUT[83] = 1; _stairLUT[84] = 1; _stairLUT[85] = 1; _stairLUT[86] = 1; _stairLUT[94] = 1; _stairLUT[152] = 1;
 function isStairBlock(id) { return _stairLUT[id]; }
 
 const _fenceLUT = new Uint8Array(256);
@@ -84,36 +84,23 @@ function getBlockBounds(id, val, bx, by, bz) {
         // Lily pad: flat thin plane on water surface
         b.minX = 0.0; b.maxX = 1.0; b.minY = 0.0; b.maxY = 0.1; b.minZ = 0.0; b.maxZ = 1.0;
     } else if (id === 68) {
-        // Glass Pane: hitbox follows connectivity (Multi-AABB)
-        
-        // If bx is not defined (fallback), just return the center post
-        if (bx === undefined || typeof getVoxel !== 'function') {
-            return { minX: 0.4375, maxX: 0.5625, minY: 0, maxY: 1, minZ: 0.4375, maxZ: 0.5625 };
+        // Glass Pane: hitbox follows connectivity
+        const T0 = 7/16, T1 = 9/16;
+        b.minY = 0; b.maxY = 1;
+        if (bx !== undefined && typeof getVoxel === 'function') {
+            const gn = (nx,nz) => { const nId = getVoxel(nx,by,nz)&0xFF; return nId===68 || (nId!==0 && !isBlockTransparent(nId)); };
+            const hXN=gn(bx-1,bz), hXP=gn(bx+1,bz), hZN=gn(bx,bz-1), hZP=gn(bx,bz+1);
+            const hX=hXN||hXP, hZ=hZN||hZP;
+            if (hX && hZ) { b.minX=0; b.maxX=1; b.minZ=0; b.maxZ=1; }
+            else if (hX) { b.minX=hXN?0:T0; b.maxX=hXP?1:T1; b.minZ=T0; b.maxZ=T1; }
+            else if (hZ) { b.minX=T0; b.maxX=T1; b.minZ=hZN?0:T0; b.maxZ=hZP?1:T1; }
+            else { b.minX=T0; b.maxX=T1; b.minZ=T0; b.maxZ=T1; } // isolated: just center post
+        } else {
+            // Fallback: use stored direction
+            const pdir = (val >> 8) & 0x1;
+            if (pdir === 1) { b.minX=T0; b.maxX=T1; b.minZ=0; b.maxZ=1; }
+            else { b.minX=0; b.maxX=1; b.minZ=T0; b.maxZ=T1; }
         }
-
-        const canConnect = (nx, nz) => {
-            const nId = getVoxel(nx, by, nz) & 0xFF;
-            return nId !== 0 && !isFluidBlock(nId) && !isCrossBlock(nId) && nId !== 17 && nId !== 40 && nId !== 66 && nId !== 67;
-        };
-
-        const cXN = canConnect(bx - 1, bz);
-        const cXP = canConnect(bx + 1, bz);
-        const cZN = canConnect(bx, bz - 1);
-        const cZP = canConnect(bx, bz + 1);
-
-        const bounds = [];
-        
-        // Always add the center pole (4 pixels wide)
-        bounds.push({ minX: 0.4375, maxX: 0.5625, minY: 0, maxY: 1, minZ: 0.4375, maxZ: 0.5625 });
-        
-        // Add attached arms only where there is a valid connection
-        if (cXN) bounds.push({ minX: 0, maxX: 0.4375, minY: 0, maxY: 1, minZ: 0.4375, maxZ: 0.5625 });
-        if (cXP) bounds.push({ minX: 0.5625, maxX: 1, minY: 0, maxY: 1, minZ: 0.4375, maxZ: 0.5625 });
-        if (cZN) bounds.push({ minX: 0.4375, maxX: 0.5625, minY: 0, maxY: 1, minZ: 0, maxZ: 0.4375 });
-        if (cZP) bounds.push({ minX: 0.4375, maxX: 0.5625, minY: 0, maxY: 1, minZ: 0.5625, maxZ: 1 });
-        
-        // Exit early and return the array of hitboxes
-        return bounds;
     } else if (id === 90) {
         // Nether Portal: 2 pixels thick, directional like glass panes
         const dir = (val >> 8) & 0x1;
@@ -135,14 +122,12 @@ function getBlockBounds(id, val, bx, by, bz) {
         if (isTop) { b.minY = 0.5; b.maxY = 1.0; }
         else { b.minY = 0.0; b.maxY = 0.5; }
     } else if (typeof isStairBlock === 'function' && isStairBlock(id)) {
-        // Check if the stair was placed upside-down (bit 2 = 4)
-        const isUpsideDown = (val >> 8) & 0x4; 
-        
+        // Stairs return the bottom slab as the primary AABB.
+        // The upper step is handled by getStairUpperBounds() checked separately in physics.
+        const isUpsideDown = (val >> 8) & 0x4;
         if (isUpsideDown) {
-            // Upside-down stair: collision is on the top half so you can walk under it
             b.minX = 0.0; b.maxX = 1.0; b.minY = 0.5; b.maxY = 1.0; b.minZ = 0.0; b.maxZ = 1.0;
         } else {
-            // Normal stair: collision is on the bottom half so the player auto-steps up it
             b.minX = 0.0; b.maxX = 1.0; b.minY = 0.0; b.maxY = 0.5; b.minZ = 0.0; b.maxZ = 1.0;
         }
     } else if (typeof isFenceBlock === 'function' && isFenceBlock(id)) {
@@ -200,6 +185,32 @@ function getBlockBounds(id, val, bx, by, bz) {
 function canSupport(id) {
     if (id === 0 || id === 4 || id === 27 || isCrossBlock(id) || id === 20 || id === 40 || id === 38 || id === 17 || id === 64 || id === 66 || id === 67 || id === 68) return false;
     return true;
+}
+
+// Returns the upper step AABB for a stair block, or null if not a stair.
+// The bottom slab is returned by getBlockBounds; this is the second collision box.
+// val is the raw voxel value: bits 8-9 = direction (sd), bit 10 = upside-down
+// sd: 0=back+Z, 1=back-Z, 2=back+X, 3=back-X
+function getStairUpperBounds(id, val) {
+    if (!isStairBlock(id)) return null;
+    const sd = (val >> 8) & 0x3;
+    const isUpsideDown = (val >> 8) & 0x4;
+    const b = {};
+    
+    if (isUpsideDown) {
+        // Upside-down: full slab on top (y 0.5-1), step extends down (y 0-0.5) on back side
+        if (sd === 0) { b.minX=0; b.maxX=1; b.minY=0; b.maxY=0.5; b.minZ=0.5; b.maxZ=1; }
+        else if (sd === 1) { b.minX=0; b.maxX=1; b.minY=0; b.maxY=0.5; b.minZ=0; b.maxZ=0.5; }
+        else if (sd === 2) { b.minX=0.5; b.maxX=1; b.minY=0; b.maxY=0.5; b.minZ=0; b.maxZ=1; }
+        else { b.minX=0; b.maxX=0.5; b.minY=0; b.maxY=0.5; b.minZ=0; b.maxZ=1; }
+    } else {
+        // Normal: full slab on bottom (y 0-0.5), step extends up (y 0.5-1) on back side
+        if (sd === 0) { b.minX=0; b.maxX=1; b.minY=0.5; b.maxY=1; b.minZ=0.5; b.maxZ=1; }
+        else if (sd === 1) { b.minX=0; b.maxX=1; b.minY=0.5; b.maxY=1; b.minZ=0; b.maxZ=0.5; }
+        else if (sd === 2) { b.minX=0.5; b.maxX=1; b.minY=0.5; b.maxY=1; b.minZ=0; b.maxZ=1; }
+        else { b.minX=0; b.maxX=0.5; b.minY=0.5; b.maxY=1; b.minZ=0; b.maxZ=1; }
+    }
+    return b;
 }
 
 function canPlaceBlock(id, x, y, z, normal) {

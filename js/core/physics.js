@@ -42,42 +42,38 @@ function raycastVoxel() {
         const id = val & 0xFF;
         
         if (id !== 0 && !isFluidBlock(id)) {
-            const bRaw = getBlockBounds(id, val, vx, vy, vz);
-            const boundsList = Array.isArray(bRaw) ? bRaw : [bRaw]; // Allow Arrays
+            const b = getBlockBounds(id, val, vx, vy, vz);
+            const localX = x - vx;
+            const localY = y - vy;
+            const localZ = z - vz;
             
-            for (let i = 0; i < boundsList.length; i++) {
-                const b = boundsList[i];
-                const localX = x - vx;
-                const localY = y - vy;
-                const localZ = z - vz;
-                
-                if (localX >= b.minX && localX <= b.maxX &&
-                    localY >= b.minY && localY <= b.maxY &&
-                    localZ >= b.minZ && localZ <= b.maxZ) {
-                    
-                    // FIXED: Calculate normal based on the closest AABB face to the hit point, 
-                    // completely eliminating the [0,0,0] placement bug on complex blocks.
-                    const dists = [
-                        { n: [-1, 0, 0], d: Math.abs(localX - b.minX) },
-                        { n: [1, 0, 0],  d: Math.abs(b.maxX - localX) },
-                        { n: [0, -1, 0], d: Math.abs(localY - b.minY) },
-                        { n: [0, 1, 0],  d: Math.abs(b.maxY - localY) },
-                        { n: [0, 0, -1], d: Math.abs(localZ - b.minZ) },
-                        { n: [0, 0, 1],  d: Math.abs(b.maxZ - localZ) }
-                    ];
-
-                    let normal = dists[0].n;
-                    let minDist = dists[0].d;
-
-                    for (let j = 1; j < 6; j++) {
-                        if (dists[j].d < minDist) {
-                            minDist = dists[j].d;
-                            normal = dists[j].n;
-                        }
-                    }
-                    
-                    return { hit: [vx, vy, vz], normal: normal, id: id, val: val };
+            let hit = false;
+            if (localX >= b.minX && localX <= b.maxX &&
+                localY >= b.minY && localY <= b.maxY &&
+                localZ >= b.minZ && localZ <= b.maxZ) {
+                hit = true;
+            }
+            // Also check the upper step for stairs
+            if (!hit && typeof isStairBlock === 'function' && isStairBlock(id)) {
+                const ub = getStairUpperBounds(id, val);
+                if (ub && localX >= ub.minX && localX <= ub.maxX &&
+                    localY >= ub.minY && localY <= ub.maxY &&
+                    localZ >= ub.minZ && localZ <= ub.maxZ) {
+                    hit = true;
                 }
+            }
+            
+            if (hit) {
+                const dx = lastX - vx;
+                const dy = lastY - vy;
+                const dz = lastZ - vz;
+                let normal = [0, 0, 0];
+                
+                if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > Math.abs(dz)) normal[0] = Math.sign(dx);
+                else if (Math.abs(dy) > Math.abs(dz)) normal[1] = Math.sign(dy);
+                else normal[2] = Math.sign(dz);
+                
+                return { hit: [vx, vy, vz], normal: normal, id: id, val: val };
             }
         }
         
@@ -126,25 +122,33 @@ function sweepAxis(axis, dist, pos, height) {
                 for (let bz = sMinZ; bz <= sMaxZ; bz++) {
                     const val = getVoxel(bx, by, bz);
                     const id = val & 0xFF;
-                    // Exclude fluids, torches, roses, crops, vines, and tall grass
+                    // Exclude fluids, torches, roses, crops, vines, and tall grass from physical body collision
                     if (id !== 0 && !isFluidBlock(id) && id !== 17 && id !== 23 && id !== 64 && id !== 66 && id !== 90 && !isCrossBlock(id)) {
-                        
-                        const bRaw = getBlockBounds(id, val, bx, by, bz);
-                        const boundsList = Array.isArray(bRaw) ? bRaw : [bRaw]; // Allow Arrays
-                        
-                        for (let i = 0; i < boundsList.length; i++) {
-                            const b = boundsList[i];
-                            const blockAABB = {
-                                minX: bx + b.minX, maxX: bx + b.maxX,
-                                minY: by + b.minY, maxY: by + b.maxY,
-                                minZ: bz + b.minZ, maxZ: bz + b.maxZ
-                            };
-                            if (checkAABB(playerAABB, blockAABB)) {
-                                collided = true;
-                                break;
+                        const b = getBlockBounds(id, val, bx, by, bz);
+                        const blockAABB = {
+                            minX: bx + b.minX, maxX: bx + b.maxX,
+                            minY: by + b.minY, maxY: by + b.maxY,
+                            minZ: bz + b.minZ, maxZ: bz + b.maxZ
+                        };
+                        if (checkAABB(playerAABB, blockAABB)) {
+                            collided = true;
+                            break;
+                        }
+                        // Stairs have a second AABB for the upper step
+                        if (typeof isStairBlock === 'function' && isStairBlock(id)) {
+                            const ub = getStairUpperBounds(id, val);
+                            if (ub) {
+                                const upperAABB = {
+                                    minX: bx + ub.minX, maxX: bx + ub.maxX,
+                                    minY: by + ub.minY, maxY: by + ub.maxY,
+                                    minZ: bz + ub.minZ, maxZ: bz + ub.maxZ
+                                };
+                                if (checkAABB(playerAABB, upperAABB)) {
+                                    collided = true;
+                                    break;
+                                }
                             }
                         }
-                        if (collided) break;
                     }
                 }
                 if (collided) break;
@@ -463,13 +467,19 @@ function movePlayer(dt) {
     if (typeof window._lastPortalUse === 'undefined') window._lastPortalUse = 0;
     const isSwitching = (typeof _dimensionSwitching !== 'undefined' && _dimensionSwitching);
     if (!isSwitching && now - window._lastPortalUse > 4000) { // 4 second cooldown
-        const px = Math.floor(player.x);
-        const pzPortal = Math.floor(player.z);
+        // Check a small area around the player to catch thin portals on block boundaries
+        const checkXs = [Math.floor(player.x), Math.floor(player.x + 0.3), Math.floor(player.x - 0.3)];
+        const checkZs = [Math.floor(player.z), Math.floor(player.z + 0.3), Math.floor(player.z - 0.3)];
         let inPortal = false;
-        for (let checkY = Math.floor(player.y); checkY <= Math.floor(player.y + player.height); checkY++) {
-            if ((getVoxel(px, checkY, pzPortal) & 0xFF) === 90) {
-                inPortal = true;
-                break;
+        outer:
+        for (const cpx of checkXs) {
+            for (const cpz of checkZs) {
+                for (let checkY = Math.floor(player.y); checkY <= Math.floor(player.y + player.height); checkY++) {
+                    if ((getVoxel(cpx, checkY, cpz) & 0xFF) === 90) {
+                        inPortal = true;
+                        break outer;
+                    }
+                }
             }
         }
         if (inPortal && typeof window.switchDimension === 'function') {

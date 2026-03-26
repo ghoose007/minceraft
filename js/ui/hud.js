@@ -245,8 +245,8 @@ function updateClock(t) {
 function getIconStyle(blockId) {
     const id = parseInt(blockId);
     
-    // Terrain Items (Sticks, Saplings, Food, Seeds 128, Wheat 129)
-    if ((id >= 112 && id <= 123) || id === 128 || id === 129 || id === 134) {
+    // Terrain Items (Sticks, Saplings, Food, Seeds 128, Wheat 129, Quartz 153)
+    if ((id >= 112 && id <= 123) || id === 128 || id === 129 || id === 134 || id === 153) {
         const data = BLOCK_DATA[id] || TOOL_DATA[id];
         if (!data) return '';
         const atlasIdx = data.atlasIdx;
@@ -279,8 +279,8 @@ function createIconElement(id) {
     icon.className = 'item-icon';
     const parsedId = parseInt(id);
     
-    // Terrain Items (Sticks, Saplings, Food, Seeds 128, Wheat 129, Nether Brick 142, Gold Ingot 143)
-    if ((parsedId >= 112 && parsedId <= 123) || parsedId === 128 || parsedId === 129 || parsedId === 134 || parsedId === 135 || parsedId === 137 || parsedId === 142 || parsedId === 143 || parsedId === 151) {
+    // Terrain Items (Sticks, Saplings, Food, Seeds 128, Wheat 129, Nether Brick 142, Gold Ingot 143, Quartz 153)
+    if ((parsedId >= 112 && parsedId <= 123) || parsedId === 128 || parsedId === 129 || parsedId === 134 || parsedId === 135 || parsedId === 137 || parsedId === 142 || parsedId === 143 || parsedId === 151 || parsedId === 153) {
         const data = BLOCK_DATA[parsedId] || TOOL_DATA[parsedId];
         if (data) {
             const atlasIdx = data.atlasIdx;
@@ -320,9 +320,6 @@ function createIconElement(id) {
             canvas.style.cssText = 'image-rendering: pixelated; width: 32px; height: 32px; pointer-events: none;';
             const ctx2 = canvas.getContext('2d');
             
-            // FIX 1: Explicitly disable anti-aliasing for the Canvas context!
-            ctx2.imageSmoothingEnabled = false; 
-            
             const img = new Image();
             img.src = 'textures/terrain.png';
             img.onload = () => {
@@ -359,11 +356,9 @@ function createIconElement(id) {
                 tintFilter = 'filter: sepia(1) hue-rotate(55deg) saturate(3.5) brightness(0.9);';
             }
             let topTint = tintFilter;
-            
-            // FIX 2: Grass Block needs top tint ONLY. Do NOT tint the dirt sides!
             if (parsedId === 1) {
                 topTint = 'filter: sepia(1) hue-rotate(55deg) saturate(3.5) brightness(0.9);';
-                tintFilter = ''; 
+                tintFilter = topTint; // Grass side overlay also needs green tint
             }
 
             const getBgPos = (idx) => `background-position: -${(idx % 16) * 100}% -${Math.floor(idx / 16) * 100}%;`;
@@ -387,28 +382,10 @@ function createIconElement(id) {
                 `;
             } else {
                 // Standard Blocks
-                let extraOverlays = '';
-                
-                // FIX 2.5: Render Grass Overhang Overlay
-                if (parsedId === 1) {
-                    const overlayIdx = typeof block.atlasIdx === 'object' && block.atlasIdx.overlay !== undefined ? block.atlasIdx.overlay : 1;
-                    // Push the overlay out by 0.1px so it sits perfectly on top of the dirt face
-                    extraOverlays = `
-                        <div class="face right" style="${getBgPos(overlayIdx)} ${topTint} transform: rotateY(90deg) translateZ(10.1px) !important;"></div>
-                        <div class="face front" style="${getBgPos(overlayIdx)} ${topTint} transform: translateZ(10.1px) !important;"></div>
-                    `;
-                }
-                
-                // FIX 3: Shrink the Cactus Block 
-                if (parsedId === 20) {
-                    icon.style.setProperty('transform', 'translate(-50%, -50%) rotateX(-25deg) rotateY(-45deg) scale(0.85)', 'important');
-                }
-
                 icon.innerHTML = `
                     <div class="face top" style="${getBgPos(texTop)} ${topTint}"></div>
                     <div class="face right" style="${getBgPos(texSide)} ${tintFilter}"></div>
                     <div class="face front" style="${getBgPos(texFront)} ${tintFilter}"></div>
-                    ${extraOverlays}
                 `;
             }
         }

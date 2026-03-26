@@ -14,19 +14,22 @@ let _dimensionSwitching = false;
 
 // Find which portal the player is standing in (returns {x,y,z} of any portal block nearby)
 function _findPlayerPortal() {
-    const px = Math.floor(player.x);
-    const pz = Math.floor(player.z);
-    for (let checkY = Math.floor(player.y); checkY <= Math.floor(player.y + player.height); checkY++) {
-        if ((getVoxel(px, checkY, pz) & 0xFF) === 90) {
-            // Scan to find the bottom-left corner of this portal cluster
-            let minX = px, minY = checkY, minZ = pz;
-            // Scan down
-            while ((getVoxel(minX, minY - 1, minZ) & 0xFF) === 90) minY--;
-            // Scan left (X-)
-            while ((getVoxel(minX - 1, minY, minZ) & 0xFF) === 90) minX--;
-            // Scan left (Z-)  
-            while ((getVoxel(minX, minY, minZ - 1) & 0xFF) === 90) minZ--;
-            return { x: minX, y: minY, z: minZ };
+    // Check a 2x2 area around the player to account for hitbox straddling block boundaries
+    const checkXs = [Math.floor(player.x), Math.floor(player.x + 0.3), Math.floor(player.x - 0.3)];
+    const checkZs = [Math.floor(player.z), Math.floor(player.z + 0.3), Math.floor(player.z - 0.3)];
+    
+    for (const px of checkXs) {
+        for (const pz of checkZs) {
+            for (let checkY = Math.floor(player.y); checkY <= Math.floor(player.y + player.height); checkY++) {
+                if ((getVoxel(px, checkY, pz) & 0xFF) === 90) {
+                    // Scan to find the bottom-left corner of this portal cluster
+                    let minX = px, minY = checkY, minZ = pz;
+                    while ((getVoxel(minX, minY - 1, minZ) & 0xFF) === 90) minY--;
+                    while ((getVoxel(minX - 1, minY, minZ) & 0xFF) === 90) minX--;
+                    while ((getVoxel(minX, minY, minZ - 1) & 0xFF) === 90) minZ--;
+                    return { x: minX, y: minY, z: minZ };
+                }
+            }
         }
     }
     return null;
@@ -243,10 +246,9 @@ window.switchDimension = async function() {
             player.y = portalPos.y;
             player.z = portalPos.z + 0.5;
             
-            // Register the link
-            if (entryPortal) {
-                _registerPortalLink(entryPortal.x, entryPortal.y, entryPortal.z, portalPos.x, portalPos.y, portalPos.z);
-            }
+            // Always register the link — use player's overworld position as fallback if portal wasn't detected
+            const owSide = entryPortal || { x: Math.floor(savedX), y: Math.floor(savedY), z: Math.floor(savedZ) };
+            _registerPortalLink(owSide.x, owSide.y, owSide.z, portalPos.x, portalPos.y, portalPos.z);
         }
         player.yaw = savedYaw;
         player.pitch = savedPitch;
@@ -306,9 +308,9 @@ window.switchDimension = async function() {
             player.y = portalPos.y;
             player.z = portalPos.z + 0.5;
             
-            if (entryPortal) {
-                _registerPortalLink(portalPos.x, portalPos.y, portalPos.z, entryPortal.x, entryPortal.y, entryPortal.z);
-            }
+            // Always register the link — use player's nether position as fallback if portal wasn't detected
+            const netherSide = entryPortal || { x: Math.floor(savedX), y: Math.floor(savedY), z: Math.floor(savedZ) };
+            _registerPortalLink(portalPos.x, portalPos.y, portalPos.z, netherSide.x, netherSide.y, netherSide.z);
         }
         player.yaw = savedYaw;
         player.pitch = savedPitch;

@@ -50,5 +50,6 @@ const TOOL_DATA = {
     136: { name: 'Flint and Steel', atlasIdx: 20, type: 'flint_and_steel', tier: 1, speed: 1.0, maxDurability: 64, isTool: true },
     142: { name: 'Nether Brick', atlasIdx: 127, type: 'material', tier: 0, speed: 1.0 },
     143: { name: 'Gold Ingot', atlasIdx: 132, type: 'material', tier: 0, speed: 1.0 },
-    151: { name: 'Oak Door Item', atlasIdx: 135, type: 'material', tier: 0, speed: 1.0 }
+    151: { name: 'Oak Door Item', atlasIdx: 135, type: 'material', tier: 0, speed: 1.0 },
+    153: { name: 'Quartz', atlasIdx: 139, type: 'material', tier: 0, speed: 1.0 }
 };

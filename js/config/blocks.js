@@ -5,7 +5,7 @@
 const BLOCK_DATA = {
     1: { name: 'Grass Block', atlasIdx: { top: 0, bottom: 2, side: 28, overlay: 1 }, hardness: 0.6, dropId: 2 },
     2: { name: 'Dirt', atlasIdx: 2, hardness: 0.5 },
-    3: { name: 'Stone', atlasIdx: 3, hardness: 3.0, dropId: 33 }, 
+    3: { name: 'Stone', atlasIdx: 3, hardness: 1.5, dropId: 33 }, 
     4: { name: 'Water', atlasIdx: -1, hardness: -1, dropId: 0 }, 
     5: { name: 'Gravel', atlasIdx: 4, hardness: 0.6 },
     6: { name: 'Iron Ore', atlasIdx: 5, hardness: 3.0 },
@@ -83,7 +83,7 @@ const BLOCK_DATA = {
     86: { name: 'Brick Stairs', atlasIdx: 34, hardness: 2.0, type: 'stair', parentTex: 34 },
     94: { name: 'Jungle Stairs', atlasIdx: 125, hardness: 2.0, type: 'stair', parentTex: 125 },
     87: { name: 'Netherrack', atlasIdx: 116, hardness: 0.4 }, // NEW
-    88: { name: 'Nether Quartz Ore', atlasIdx: 117, hardness: 3.0 }, // NEW
+    88: { name: 'Nether Quartz Ore', atlasIdx: 117, hardness: 3.0, dropId: 153 }, // NEW
     89: { name: 'Fire', atlasIdx: 118, hardness: 0.0, dropId: 0 }, // NEW
     90: { name: 'Nether Portal', atlasIdx: 111, hardness: -1, dropId: 0 }, // NETHER PORTAL
     91: { name: 'Glowstone', atlasIdx: 118, hardness: 0.3 },
@@ -106,8 +106,12 @@ const BLOCK_DATA = {
     146: { name: 'Spruce Fence', atlasIdx: 33, hardness: 2.0 },
     147: { name: 'Jungle Fence', atlasIdx: 125, hardness: 2.0 },
     148: { name: 'Nether Brick Fence', atlasIdx: 126, hardness: 2.0 },
-    149: { name: 'Oak Door', atlasIdx: { bottom: 138, top: 137, backTop: 134, backBottom: 133 }, hardness: 3.0, dropId: 151 },
-    150: { name: 'Oak Trapdoor', atlasIdx: 136, hardness: 3.0 }
+    149: { name: 'Oak Door', atlasIdx: { bottom: 133, top: 134, backTop: 137, backBottom: 138 }, hardness: 3.0, dropId: 151 },
+    150: { name: 'Oak Trapdoor', atlasIdx: 136, hardness: 3.0 },
+    152: { name: 'Nether Brick Stairs', atlasIdx: 126, hardness: 2.0, type: 'stair', parentTex: 126 },
+    154: { name: 'Quartz Block', atlasIdx: 140, hardness: 0.8 },
+    155: { name: 'Quartz Pillar', atlasIdx: { top: 142, bottom: 142, side: 141 }, hardness: 0.8 },
+    156: { name: 'Smooth Stone', atlasIdx: 143, hardness: 1.5 }
 };
 
 const blockRequirements = {
@@ -128,7 +132,11 @@ const blockRequirements = {
     138: { optTool: 'pickaxe' },               // Packed Ice
     139: { reqTool: 'pickaxe', reqTier: 1 },   // Iron Block
     140: { reqTool: 'pickaxe', reqTier: 2 },   // Gold Block
-    141: { reqTool: 'pickaxe', reqTier: 2 }    // Diamond Block
+    141: { reqTool: 'pickaxe', reqTier: 2 },    // Diamond Block
+    152: { reqTool: 'pickaxe', reqTier: 0 },    // Nether Brick Stairs
+    154: { reqTool: 'pickaxe', reqTier: 0 },    // Quartz Block
+    155: { reqTool: 'pickaxe', reqTier: 0 },    // Quartz Pillar
+    156: { reqTool: 'pickaxe', reqTier: 0 }     // Smooth Stone
 };
 for (let id in blockRequirements) {
     if (BLOCK_DATA[id]) Object.assign(BLOCK_DATA[id], blockRequirements[id]);

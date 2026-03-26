@@ -126,7 +126,17 @@ const RECIPES = [
     { pattern: [[29, 29, 29], [29, 29, 29]], output: { id: 150, count: 2 } },     // Oak Trapdoor
     { pattern: [[44, 44, 44], [44, 44, 44]], output: { id: 150, count: 2 } },     // Birch Trapdoor
     { pattern: [[30, 30, 30], [30, 30, 30]], output: { id: 150, count: 2 } },     // Spruce Trapdoor
-    { pattern: [[98, 98, 98], [98, 98, 98]], output: { id: 150, count: 2 } }      // Jungle Trapdoor
+    { pattern: [[98, 98, 98], [98, 98, 98]], output: { id: 150, count: 2 } },     // Jungle Trapdoor
+
+    // --- Nether Brick Stairs ---
+    { pattern: [[99, 0, 0], [99, 99, 0], [99, 99, 99]], output: { id: 152, count: 4 } },
+    { pattern: [[0, 0, 99], [0, 99, 99], [99, 99, 99]], output: { id: 152, count: 4 } },
+
+    // --- Quartz Block (2x2 quartz items) ---
+    { pattern: [[153, 153], [153, 153]], output: { id: 154, count: 1 } },
+
+    // --- Quartz Pillar (1x2 quartz blocks) ---
+    { pattern: [[154], [154]], output: { id: 155, count: 2 } }
 
 ];
 
@@ -137,7 +147,8 @@ const SMELTING_RECIPES = {
     122: { id: 123, count: 1 }, // Raw Porkchop -> Cooked Porkchop
     33: { id: 3, count: 1 },   // Cobblestone -> Stone
     87: { id: 142, count: 1 },  // Netherrack -> Nether Brick
-    8: { id: 143, count: 1 }    // Gold Ore -> Gold Ingot
+    8: { id: 143, count: 1 },    // Gold Ore -> Gold Ingot
+    3: { id: 156, count: 1 }     // Stone -> Smooth Stone
 };
 
 // Burn time in seconds

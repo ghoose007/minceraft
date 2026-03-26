@@ -153,36 +153,6 @@
                 _buffers['plop'] = await ctx.decodeAudioData(arrayBuf);
             }
         } catch(e) { console.error("Could not load plop.ogg", e); }
-
-        // Load TNT fuse sound
-        try {
-            const resp = await fetch(`sounds/fuse.ogg`);
-            if (resp.ok) {
-                const arrayBuf = await resp.arrayBuffer();
-                _buffers['fuse'] = await ctx.decodeAudioData(arrayBuf);
-            }
-        } catch(e) { console.error("Could not load fuse.ogg", e); }
-
-        // Load TNT explosion sounds (explode_0 is mp3, 1-4 are ogg)
-        const explodeExts = ['mp3', 'ogg', 'ogg', 'ogg', 'ogg'];
-        for (let v = 0; v < 5; v++) {
-            try {
-                const resp = await fetch(`sounds/explode_${v}.${explodeExts[v]}`);
-                if (resp.ok) {
-                    const arrayBuf = await resp.arrayBuffer();
-                    _buffers[`explode_${v}`] = await ctx.decodeAudioData(arrayBuf);
-                }
-            } catch(e) { console.error(`Could not load explode_${v}`, e); }
-        }
-
-        // Load fizz sound (lava/water conversion)
-        try {
-            const resp = await fetch(`sounds/fizz.ogg`);
-            if (resp.ok) {
-                const arrayBuf = await resp.arrayBuffer();
-                _buffers['fizz'] = await ctx.decodeAudioData(arrayBuf);
-            }
-        } catch(e) { console.error("Could not load fizz.ogg", e); }
     }
     loadAllSounds();
 
@@ -198,7 +168,7 @@
     _setCategory([13, 21, 41, 96, 29, 30, 44, 98, 58, 69, 93, 51, 70, 71, 72, 77, 80, 81, 82, 94, 144, 145, 146, 147, 149, 150], 1);
     _setCategory([3, 33, 32, 10, 11, 12, 48, 6, 7, 8, 9, 49, 50, 88, 31, 28, 87, 59, 91,
                   73, 74, 75, 76, 83, 84, 85, 86, 54, 60, 38, 68, 95, 90,
-                  99, 138, 139, 140, 141, 148], 2);
+                  99, 138, 139, 140, 141, 148, 152, 154, 155, 156], 2);
     _setCategory([2, 5, 92, 61, 62, 63], 3);
     _setCategory([39, 40], 4);
     _setCategory([34, 35, 36, 37, 20], 5);
@@ -793,29 +763,5 @@
     window.playToolBreakSound = () => { if (_buffers['tool_break']) playNamedSound('tool_break', 0.6, 0.9, 1.1); };
     window.playBurpSound = () => { if (_buffers['burp']) playNamedSound('burp', 0.5, 0.9, 1.1); };
     window.playFlintAndSteelSound = (wx, wy, wz) => playNamedSoundAt('flint_and_steel', 0.6, 0.9, 1.1, wx + 0.5, wy + 0.5, wz + 0.5);
-
-    // --- TNT FUSE SOUND (spatial, loops until explosion) ---
-    window.playFuseSound = function(wx, wy, wz) {
-        const buf = _buffers['fuse'];
-        if (!buf) return;
-        const ctx = getAudioCtx();
-        if (ctx.state === 'suspended') ctx.resume();
-        _playSpatial(buf, 0.7, 0.9, 1.1, wx + 0.5, wy + 0.5, wz + 0.5);
-    };
-
-    // --- TNT EXPLOSION SOUND (spatial, random variant from 5) ---
-    window.playExplosionSound = function(wx, wy, wz) {
-        const variant = Math.floor(Math.random() * 5);
-        const buf = _buffers[`explode_${variant}`];
-        if (!buf) return;
-        _playSpatial(buf, 1.0, 0.8, 1.0, wx, wy, wz);
-    };
-
-    // --- FIZZ SOUND (lava/water conversion → obsidian/cobblestone) ---
-    window.playFizzSound = function(wx, wy, wz) {
-        const buf = _buffers['fizz'];
-        if (!buf) return;
-        _playSpatial(buf, 0.5, 0.8, 1.2, wx + 0.5, wy + 0.5, wz + 0.5);
-    };
 
 })();
