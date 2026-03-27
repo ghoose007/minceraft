@@ -120,7 +120,7 @@ if (!document.getElementById('mc-3d-styles')) {
 
         .durability-bar {
             position: absolute;
-            bottom: 4px;
+            bottom: 7px;
             left: 4px;
             right: 4px;
             height: 3px;

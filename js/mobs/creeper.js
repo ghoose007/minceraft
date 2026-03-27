@@ -145,22 +145,8 @@ class Creeper extends Mob {
         if (this.dying) { this._tickDying(dt); return; }
         if (this.hurtTime > 0) { this.hurtTime -= dt; if (this.hurtTime <= 0) this.material.color.setHex(0xffffff); }
 
-        // Sun burning (like zombie)
-        let isBurningFromSun = false;
-        if (this.health > 0 && !this.inWater && !this.inLava) {
-            const timeOfDay = typeof globalTime !== 'undefined' ? globalTime : 0;
-            const DAY_LENGTH = typeof DAY_TIME !== 'undefined' ? DAY_TIME : 24000;
-            const isDaytime = (timeOfDay >= DAY_LENGTH * 0.05 && timeOfDay <= DAY_LENGTH * 0.45);
-            if (isDaytime) {
-                const headY = Math.floor(this.y + this.height);
-                if (typeof getSunLight === 'function' && getSunLight(Math.floor(this.x), headY, Math.floor(this.z)) === 15) {
-                    isBurningFromSun = true;
-                    this.burningTimer += dt;
-                    if (this.burningTimer > 1.0) { this.burningTimer = 0; this.takeDamage(1, this.x, this.z, true); }
-                } else this.burningTimer = 0;
-            } else this.burningTimer = 0;
-        }
-        const isVisiblyOnFire = this.inLava || (getVoxel(Math.floor(this.x), Math.floor(this.y), Math.floor(this.z)) & 0xFF) === 89 || isBurningFromSun;
+        // Creepers do NOT burn in sunlight (unlike zombies/skeletons)
+        const isVisiblyOnFire = this.inLava || (getVoxel(Math.floor(this.x), Math.floor(this.y), Math.floor(this.z)) & 0xFF) === 89;
         _tickMobFireMeshes(this, isVisiblyOnFire);
         _tickMobEnvironmentDamage(this, dt);
 

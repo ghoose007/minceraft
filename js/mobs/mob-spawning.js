@@ -65,7 +65,11 @@ window.updateMobs = function(dt) {
         const inSpawnChunks = _isInSpawnChunks(mob.x, mob.z);
 
         let shouldDespawn = false;
-        if (!inSpawnChunks) {
+        const isPassive = _isPassiveMob(mob);
+        // Only passive mobs are protected by spawn chunks
+        const spawnProtected = isPassive && _isInSpawnChunks(mob.x, mob.z);
+
+        if (!spawnProtected) {
             if (distSq > 128 * 128) {
                 shouldDespawn = true;
             } else if (distSq > 32 * 32) {
