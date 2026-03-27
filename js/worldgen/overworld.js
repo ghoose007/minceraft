@@ -833,6 +833,10 @@ function generateChunkColumn(cx, cz) {
         // Pick a random center for the herd
         const packX = startX + Math.floor(seededRandom() * 12) + 2;
         const packZ = startZ + Math.floor(seededRandom() * 12) + 2;
+
+        // Equal chance for each passive mob type
+        const mobRoll = seededRandom();
+        const mobType = mobRoll < 0.33 ? 'pig' : (mobRoll < 0.66 ? 'sheep' : 'cow');
         
         for (let i = 0; i < packSize; i++) {
             // Scatter them slightly around the pack center
@@ -840,12 +844,15 @@ function generateChunkColumn(cx, cz) {
             const dz = packZ + Math.floor(seededRandom() * 3) - 1;
             const py = getHighestBlock(dx, dz);
             
-            // MINECRAFT RULE: Passive mobs can ONLY spawn on Grass Blocks (ID: 2)
+            // MINECRAFT RULE: Passive mobs can ONLY spawn on Grass Blocks (ID: 1)
             if ((getVoxel(dx, py, dz) & 0xFF) === 1) {
-                // Safety cap to prevent lag on slower machines (Max 40 passive mobs loaded at once)
-                if (typeof globalMobs !== 'undefined' && globalMobs.length < 40) {
-                    if (typeof spawnMob === 'function') {
-                        spawnMob('pig', dx + 0.5, py + 1.0, dz + 0.5);
+                // Cap to MOB_CAP_PASSIVE to prevent overpopulation
+                if (typeof globalMobs !== 'undefined' && typeof _isPassiveMob === 'function') {
+                    const passiveCount = globalMobs.filter(_isPassiveMob).length;
+                    if (passiveCount < (typeof MOB_CAP_PASSIVE !== 'undefined' ? MOB_CAP_PASSIVE : 10)) {
+                        if (typeof spawnMob === 'function') {
+                            spawnMob(mobType, dx + 0.5, py + 1.0, dz + 0.5);
+                        }
                     }
                 }
             }

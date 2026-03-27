@@ -99,6 +99,7 @@ function animate() {
 
         if (typeof updateMobs === 'function') updateMobs(dt);
         if (typeof tickMobSpawning === 'function') tickMobSpawning(dt);
+        if (typeof updateArrows === 'function') updateArrows(dt);
         if (typeof tickSpawnerBlocks === 'function') tickSpawnerBlocks(dt);
         if (typeof updateTNTEntities === 'function') updateTNTEntities(dt);
         if (typeof window.updateHerobrineEntities === 'function') window.updateHerobrineEntities(dt);

@@ -338,7 +338,7 @@ class Zombie extends Mob {
             if (this.state === 'wander') {
                 const vxCandidate = Math.sin(this.yaw) * ZOMBIE_SPEED * 0.5;
                 const vzCandidate = Math.cos(this.yaw) * ZOMBIE_SPEED * 0.5;
-                if (this.onGround && _mobStepIsDangerous(this, vxCandidate, vzCandidate)) {
+                if (this.onGround && _mobStepIsDangerous(this, vxCandidate, vzCandidate) || _mobWallAhead(this, vxCandidate, vzCandidate)) {
                     this.state = 'idle';
                     this.timer = 1.0 + Math.random() * 1.5;
                     this.targetYaw = this.yaw + Math.PI + (Math.random() - 0.5) * Math.PI;

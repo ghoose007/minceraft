@@ -385,7 +385,7 @@ class ZombiePigman extends Mob {
             if (this.state === 'wander') {
                 const vxC = Math.sin(this.yaw) * PIGMAN_SPEED * 0.35;
                 const vzC = Math.cos(this.yaw) * PIGMAN_SPEED * 0.35;
-                if (this.onGround && _mobStepIsDangerous(this, vxC, vzC)) {
+                if (this.onGround && _mobStepIsDangerous(this, vxC, vzC) || _mobWallAhead(this, vxC, vzC)) {
                     this.state = 'idle';
                     this.timer = 1.0 + Math.random() * 1.5;
                     this.targetYaw = this.yaw + Math.PI + (Math.random() - 0.5) * Math.PI;

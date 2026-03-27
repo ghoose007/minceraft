@@ -471,7 +471,7 @@ class Pig extends Mob {
             speed = 2.0;
             const vxC = Math.sin(this.yaw) * speed;
             const vzC = Math.cos(this.yaw) * speed;
-            if (this.onGround && _mobStepIsDangerous(this, vxC, vzC)) {
+            if (this.onGround && (_mobStepIsDangerous(this, vxC, vzC) || _mobWallAhead(this, vxC, vzC))) {
                 this.state = 'idle';
                 this.timer = 1.0 + Math.random() * 1.5;
                 this.targetYaw = this.yaw + Math.PI + (Math.random() - 0.5) * Math.PI;

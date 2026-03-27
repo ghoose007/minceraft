@@ -5,7 +5,7 @@
 const BLOCK_DATA = {
     1: { name: 'Grass Block', atlasIdx: { top: 0, bottom: 2, side: 28, overlay: 1 }, hardness: 0.6, dropId: 2 },
     2: { name: 'Dirt', atlasIdx: 2, hardness: 0.5 },
-    3: { name: 'Stone', atlasIdx: 3, hardness: 1.5, dropId: 33 }, 
+    3: { name: 'Stone', atlasIdx: 3, hardness: 2.75, dropId: 33 }, 
     4: { name: 'Water', atlasIdx: -1, hardness: -1, dropId: 0 }, 
     5: { name: 'Gravel', atlasIdx: 4, hardness: 0.6 },
     6: { name: 'Iron Ore', atlasIdx: 5, hardness: 3.0 },

@@ -485,6 +485,35 @@ class Mob {
 
 // ---- SHARED MOB HAZARD HELPERS ----
 
+// Returns true if there is a solid wall at foot/body height in the direction the mob is moving.
+// Used by passive and hostile wander AI to avoid walking into walls.
+function _mobWallAhead(mob, vx, vz) {
+    if (Math.abs(vx) < 0.001 && Math.abs(vz) < 0.001) return false;
+    const len = Math.sqrt(vx * vx + vz * vz);
+    const nx = vx / len;
+    const nz = vz / len;
+    const probeX = Math.floor(mob.x + nx * (mob.width * 0.5 + 0.4));
+    const probeZ = Math.floor(mob.z + nz * (mob.width * 0.5 + 0.4));
+    const feetY = Math.floor(mob.y);
+    // Check for solid block at foot level and one above (body height)
+    for (let h = 0; h < Math.ceil(mob.height); h++) {
+        const bid = getVoxel(probeX, feetY + h, probeZ) & 0xFF;
+        if (bid !== 0 && !isFluidBlock(bid) && !isCrossBlock(bid) && bid !== 17 && bid !== 23 && bid !== 64 && bid !== 66 && bid !== 90) {
+            // There's a wall — check if it's jumpable (just 1 block high with clearance above)
+            if (h === 0) {
+                const aboveWall = getVoxel(probeX, feetY + 1, probeZ) & 0xFF;
+                const aboveWall2 = getVoxel(probeX, feetY + 2, probeZ) & 0xFF;
+                const isPassthrough = (id) => id === 0 || isFluidBlock(id) || isCrossBlock(id) || id === 17 || id === 23 || id === 64 || id === 66 || id === 90;
+                if (isPassthrough(aboveWall) && isPassthrough(aboveWall2)) {
+                    return false; // Jumpable 1-block wall, physics will handle the jump
+                }
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 // Returns true if stepping one block in (vx,vz) direction would put the mob
 // over a dangerous drop (> dropThreshold blocks) or directly into lava/fire.
 // Used by passive AI and zombie passive wander to steer away from hazards.

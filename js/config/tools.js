@@ -58,5 +58,9 @@ const TOOL_DATA = {
     142: { name: 'Nether Brick', atlasIdx: 127, type: 'material', tier: 0, speed: 1.0 },
     143: { name: 'Gold Ingot', atlasIdx: 132, type: 'material', tier: 0, speed: 1.0 },
     151: { name: 'Oak Door Item', atlasIdx: 135, type: 'material', tier: 0, speed: 1.0 },
-    153: { name: 'Quartz', atlasIdx: 139, type: 'material', tier: 0, speed: 1.0 }
+    153: { name: 'Quartz', atlasIdx: 139, type: 'material', tier: 0, speed: 1.0 },
+
+    // Bow & Arrow
+    164: { name: 'Bow', atlasIdx: 26, type: 'bow', tier: 0, speed: 1.0, damage: 0, maxDurability: 384 },
+    165: { name: 'Arrow', atlasIdx: 146, type: 'ammo', tier: 0, speed: 1.0, isTerrainAtlas: true }
 };

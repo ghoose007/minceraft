@@ -2,7 +2,7 @@
 // CONFIGURATION CONSTANTS
 // ==========================================
 
-const ASSET_VERSION = "14";
+const ASSET_VERSION = "43";
 
 const CHUNK_SIZE = 16;
 const CHUNK_HEIGHT = 256; 

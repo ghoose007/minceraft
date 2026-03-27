@@ -22,6 +22,22 @@ function pickSplash() {
 }
 
 // Draw repeating dirt texture on a canvas
+// Dirt tile image cache
+let _dirtTileImg = null;
+function _loadDirtTile() {
+    if (_dirtTileImg) return;
+    _dirtTileImg = new Image();
+    _dirtTileImg.crossOrigin = 'anonymous';
+    _dirtTileImg.src = 'textures/terrain.png';
+    _dirtTileImg.onload = () => {
+        // Redraw any visible dirt backgrounds once loaded
+        if (!document.getElementById('main-menu').classList.contains('hidden')) drawDirtBg('dirt-bg');
+        if (!document.getElementById('create-world').classList.contains('hidden')) drawDirtBg('dirt-bg-2');
+        if (!document.getElementById('loading-screen').classList.contains('hidden')) drawDirtBg('dirt-bg-3');
+    };
+}
+_loadDirtTile();
+
 function drawDirtBg(canvasId) {
     try {
         const canvas = document.getElementById(canvasId);
@@ -29,36 +45,46 @@ function drawDirtBg(canvasId) {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
         const ctx = canvas.getContext('2d');
-        const tileSize = 64;
-    
-    // Generate one dirt tile
-    const tile = document.createElement('canvas');
-    tile.width = tileSize;
-    tile.height = tileSize;
-    const tc = tile.getContext('2d');
-    
-    // Seeded random for consistent dirt texture  
-    let ds = 42;
-    const dRand = () => { ds = (ds * 1103515245 + 12345) & 0x7fffffff; return ds / 0x80000000; };
-    
-    for (let x = 0; x < tileSize; x++) {
-        for (let y = 0; y < tileSize; y++) {
-            const c = 60 + dRand() * 30;
-            const r = c + 15 + dRand() * 8;
-            const g = c - 5 + dRand() * 5;
-            const b = c - 15 + dRand() * 5;
-            tc.fillStyle = `rgb(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)})`;
-            tc.fillRect(x, y, 1, 1);
+
+        // Extract the dirt texture (atlas index 2 = col 2, row 0) from terrain.png
+        // Each tile is 16x16 in a 256x256 atlas
+        const tileSize = 64; // Display size of each tile on screen
+
+        if (_dirtTileImg && _dirtTileImg.complete && _dirtTileImg.naturalWidth > 0) {
+            // Extract dirt tile (index 2: col=2, row=0 -> x=32, y=0 in 256x256 atlas)
+            const tile = document.createElement('canvas');
+            tile.width = tileSize; tile.height = tileSize;
+            const tc = tile.getContext('2d');
+            tc.imageSmoothingEnabled = false;
+            // Draw the 16x16 dirt tile scaled up to tileSize
+            tc.drawImage(_dirtTileImg, 32, 0, 16, 16, 0, 0, tileSize, tileSize);
+            // Dark overlay
+            tc.fillStyle = 'rgba(0,0,0,0.55)';
+            tc.fillRect(0, 0, tileSize, tileSize);
+
+            const pattern = ctx.createPattern(tile, 'repeat');
+            ctx.fillStyle = pattern;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        } else {
+            // Fallback: procedural dirt if texture not loaded yet
+            const tile = document.createElement('canvas');
+            tile.width = tileSize; tile.height = tileSize;
+            const tc = tile.getContext('2d');
+            let ds = 42;
+            const dRand = () => { ds = (ds * 1103515245 + 12345) & 0x7fffffff; return ds / 0x80000000; };
+            for (let x = 0; x < tileSize; x++) {
+                for (let y = 0; y < tileSize; y++) {
+                    const c = 60 + dRand() * 30;
+                    tc.fillStyle = `rgb(${Math.floor(c+15+dRand()*8)}, ${Math.floor(c-5+dRand()*5)}, ${Math.floor(c-15+dRand()*5)})`;
+                    tc.fillRect(x, y, 1, 1);
+                }
+            }
+            tc.fillStyle = 'rgba(0,0,0,0.55)';
+            tc.fillRect(0, 0, tileSize, tileSize);
+            const pattern = ctx.createPattern(tile, 'repeat');
+            ctx.fillStyle = pattern;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
-    }
-    
-    // Darken overlay
-    tc.fillStyle = 'rgba(0,0,0,0.55)';
-    tc.fillRect(0, 0, tileSize, tileSize);
-    
-    const pattern = ctx.createPattern(tile, 'repeat');
-    ctx.fillStyle = pattern;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
     } catch(e) { console.error('drawDirtBg error:', e); }
 }
 

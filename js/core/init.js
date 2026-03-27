@@ -728,9 +728,23 @@ window.getTargetedMob = function() {
 
         if (!isPointerLocked || uiState !== 'PLAYING') return;
         
+        // --- BOW SHOOTING (before swing animation) ---
+        // Right-click (button 2) with bow equipped fires an arrow
+        if (currentBuildBlock === 164 && e.button === 2) {
+            e.preventDefault();
+            console.log('[BOW] Right-click detected with bow, calling shootArrow');
+            if (typeof window.shootArrow === 'function') {
+                window.shootArrow();
+            } else {
+                console.error('[BOW] window.shootArrow is not defined!');
+            }
+            return;
+        }
+
         swingAnimation = 1.0;
 
         // --- EAT FOOD INTERACTION (Independent of block targeting) ---
+
         if (e.button === 2 && (currentBuildBlock === 115 || currentBuildBlock === 122 || currentBuildBlock === 123 || currentBuildBlock === 134) && uiState === 'PLAYING') {
             
             let healAmount = 0;

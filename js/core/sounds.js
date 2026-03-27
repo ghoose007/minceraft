@@ -128,7 +128,12 @@
             { key: 'explode_1', file: 'explode_1.ogg' },
             { key: 'explode_2', file: 'explode_2.ogg' },
             { key: 'explode_3', file: 'explode_3.ogg' },
-            { key: 'explode_4', file: 'explode_4.ogg' }
+            { key: 'explode_4', file: 'explode_4.ogg' },
+            { key: 'bow', file: 'bow.ogg' },
+            { key: 'arrow_hit_0', file: 'arrow_hit_0.ogg' },
+            { key: 'arrow_hit_1', file: 'arrow_hit_1.ogg' },
+            { key: 'arrow_hit_2', file: 'arrow_hit_2.ogg' },
+            { key: 'arrow_hit_3', file: 'arrow_hit_3.ogg' }
         ];
         for (const s of extraSounds) {
             try {
@@ -681,7 +686,9 @@
         zombie: { say: 3, step: 4, hurt: 2, death: 1 },
         skeleton: { say: 3, step: 3, hurt: 3, death: 1 },
         sheep: { say: 3, step: 4, death: 0 }, // Fallback to 'say'
-        zpig: { idle: 4, angry: 4, hurt: 2, death: 1 }
+        zpig: { idle: 4, angry: 4, hurt: 2, death: 1 },
+        cow: { say: 4, step: 4, hurt: 3, death: 0 },
+        creeper: { hurt: 4, death: 1 }
     };
 
     async function loadMobCustomSounds() {
@@ -793,6 +800,18 @@
     window.playFizzSound = function(wx, wy, wz) {
         if (!_buffers['fizz']) return;
         playNamedSoundAt('fizz', 0.4, 0.8, 1.2, wx + 0.5, wy + 0.5, wz + 0.5);
+    };
+
+    window.playBowSound = function() {
+        if (!_buffers['bow']) return;
+        playNamedSound('bow', 0.6, 0.9, 1.1);
+    };
+
+    window.playArrowHitSound = function(wx, wy, wz) {
+        const idx = Math.floor(Math.random() * 4);
+        const key = 'arrow_hit_' + idx;
+        if (!_buffers[key]) return;
+        playNamedSoundAt(key, 0.5, 0.9, 1.1, wx, wy, wz);
     };
 
 })();
