@@ -228,6 +228,16 @@ function buildBlockItemMesh(blockId) {
     if (block.type === 'slab') {
         const geo = new THREE.BoxGeometry(1, 0.5, 1).toNonIndexed();
         const uvs = geo.attributes.uv.array;
+        
+        // Resolve per-face textures for slabs with different top/side textures
+        let slabTexTop, slabTexSide;
+        if (typeof block.atlasIdx === 'object') {
+            slabTexTop = block.atlasIdx.top;
+            slabTexSide = block.atlasIdx.side;
+        } else {
+            slabTexTop = slabTexSide = block.atlasIdx;
+        }
+        
         const setFaceUV = (faceIdx, tIdx, halfV) => {
             const col = tIdx % 16, row = Math.floor(tIdx / 16);
             const uMin = col / 16, uMax = (col + 1) / 16;
@@ -236,14 +246,69 @@ function buildBlockItemMesh(blockId) {
             const uvArr = [ uMin, vMax, uMin, vMid, uMax, vMax, uMin, vMid, uMax, vMid, uMax, vMax ];
             for(let i=0; i<6; i++) { uvs[(faceIdx * 6 + i) * 2] = uvArr[i*2]; uvs[(faceIdx * 6 + i) * 2 + 1] = uvArr[i*2+1]; }
         };
-        setFaceUV(0, texIdx, true); setFaceUV(1, texIdx, true); setFaceUV(2, texIdx, false);
-        setFaceUV(3, texIdx, false); setFaceUV(4, texIdx, true); setFaceUV(5, texIdx, true);
+        // faces: 0=+X side, 1=-X side, 2=top, 3=bottom, 4=+Z side, 5=-Z side
+        setFaceUV(0, slabTexSide, true); setFaceUV(1, slabTexSide, true); setFaceUV(2, slabTexTop, false);
+        setFaceUV(3, slabTexTop, false); setFaceUV(4, slabTexSide, true); setFaceUV(5, slabTexSide, true);
         const colors = new Float32Array(geo.attributes.position.count * 3).fill(1);
         geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
         const biomeTints = new Float32Array(geo.attributes.position.count * 3).fill(1);
         geo.setAttribute('aBiomeTint', new THREE.BufferAttribute(biomeTints, 3));
         const mesh = new THREE.Mesh(geo, solidMaterial);
         mesh.position.set(-0.5, -0.75, -0.5);
+        mesh.rotation.set(0, 45 * Math.PI / 180, 0);
+        mesh.scale.set(0.40 / 0.35, 0.40 / 0.35, 0.40 / 0.35);
+        const group = new THREE.Group();
+        group.add(mesh);
+        return group;
+    }
+    
+    // Glass Pane / Iron Bars: thin cross-shaped item mesh
+    if (blockId === 68 || blockId === 158) {
+        const TX = texIdx % 16, TY = Math.floor(texIdx / 16);
+        const U = (px) => (TX + px/16) / 16;
+        const V = (py) => 1 - (TY + py/16) / 16;
+        
+        const pos = [], uv = [], nrm = [];
+        
+        const Q = (ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz,
+                   au,av, bu,bv, cu,cv, du,dv, nx,ny,nz) => {
+            pos.push(ax,ay,az, bx,by,bz, cx,cy,cz, ax,ay,az, cx,cy,cz, dx,dy,dz);
+            uv.push(au,av, bu,bv, cu,cv, au,av, cu,cv, du,dv);
+            for(let i=0;i<6;i++) nrm.push(nx,ny,nz);
+            pos.push(ax,ay,az, cx,cy,cz, bx,by,bz, ax,ay,az, dx,dy,dz, cx,cy,cz);
+            uv.push(au,av, cu,cv, bu,bv, au,av, du,dv, cu,cv);
+            for(let i=0;i<6;i++) nrm.push(-nx,-ny,-nz);
+        };
+        
+        const T0 = 7/16, T1 = 9/16;
+        const fu0=U(0), fu1=U(16), fv0=V(16), fv1=V(0);
+        const eu0=U(7), eu1=U(9);
+        
+        // X-aligned full-width segment
+        // Front face (+Z)
+        Q(0,1,T1, 0,0,T1, 1,0,T1, 1,1,T1, fu0,fv1, fu0,fv0, fu1,fv0, fu1,fv1, 0,0,1);
+        // Back face (-Z) 
+        Q(1,1,T0, 1,0,T0, 0,0,T0, 0,1,T0, fu1,fv1, fu1,fv0, fu0,fv0, fu0,fv1, 0,0,-1);
+        // Top
+        Q(0,1,T0, 0,1,T1, 1,1,T1, 1,1,T0, eu0,fv1, eu1,fv1, eu1,fv0, eu0,fv0, 0,1,0);
+        // Bottom
+        Q(0,0,T1, 0,0,T0, 1,0,T0, 1,0,T1, eu0,fv1, eu1,fv1, eu1,fv0, eu0,fv0, 0,-1,0);
+        // Left end cap
+        Q(0,1,T0, 0,0,T0, 0,0,T1, 0,1,T1, eu0,fv1, eu0,fv0, eu1,fv0, eu1,fv1, -1,0,0);
+        // Right end cap
+        Q(1,1,T1, 1,0,T1, 1,0,T0, 1,1,T0, eu0,fv1, eu0,fv0, eu1,fv0, eu1,fv1, 1,0,0);
+        
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+        const c = new Float32Array(pos.length).fill(1);
+        geo.setAttribute('color', new THREE.BufferAttribute(c, 3));
+        geo.setAttribute('aBiomeTint', new THREE.BufferAttribute(new Float32Array(pos.length).fill(1), 3));
+        
+        const mat = blockId === 68 ? (typeof glassMaterial !== 'undefined' ? glassMaterial : solidMaterial) : solidMaterial;
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(-0.5, -0.5, -0.5);
         mesh.rotation.set(0, 45 * Math.PI / 180, 0);
         mesh.scale.set(0.40 / 0.35, 0.40 / 0.35, 0.40 / 0.35);
         const group = new THREE.Group();

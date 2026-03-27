@@ -165,7 +165,7 @@ function renderInventory() {
 
 function applyDirtBackground() {
     const img = new Image();
-    img.src = 'textures/terrain.png';
+    img.src = 'textures/terrain.png?v=' + ASSET_VERSION;
     img.onload = () => {
         const canvas = document.createElement('canvas');
         canvas.width = 16; canvas.height = 16;

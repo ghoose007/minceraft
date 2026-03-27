@@ -11,8 +11,8 @@ const _transparentLUT = new Uint8Array(256);
 const _transparentFancyLUT = new Uint8Array(256);
 (function() {
     // Added 62, 63, 64 for Farming, 66 for Vine, 67 for Lily Pad, 70-76 Slabs, 80-86 Stairs
-    const transparentIds = [0, 4, 14, 16, 17, 20, 22, 23, 24, 26, 27, 38, 40, 42, 43, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 89, 90, 93, 94, 95, 97, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152];
-    const transparentFastIds = [0, 4, 16, 17, 20, 23, 24, 26, 27, 38, 40, 42, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 90, 93, 94, 95, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152]; // leaves opaque in Fast mode
+    const transparentIds = [0, 4, 14, 16, 17, 20, 22, 23, 24, 26, 27, 38, 40, 42, 43, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 89, 90, 93, 94, 95, 97, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158];
+    const transparentFastIds = [0, 4, 16, 17, 20, 23, 24, 26, 27, 38, 40, 42, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 90, 93, 94, 95, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158]; // leaves opaque in Fast mode
     for (const id of transparentIds) _transparentFancyLUT[id] = 1;
     for (const id of transparentFastIds) _transparentLUT[id] = 1;
 })();
@@ -35,7 +35,7 @@ function isSnowLayer(id) {
 }
 
 const _slabLUT = new Uint8Array(256);
-_slabLUT[70] = 1; _slabLUT[71] = 1; _slabLUT[72] = 1; _slabLUT[73] = 1; _slabLUT[74] = 1; _slabLUT[75] = 1; _slabLUT[76] = 1; _slabLUT[77] = 1;
+_slabLUT[70] = 1; _slabLUT[71] = 1; _slabLUT[72] = 1; _slabLUT[73] = 1; _slabLUT[74] = 1; _slabLUT[75] = 1; _slabLUT[76] = 1; _slabLUT[77] = 1; _slabLUT[157] = 1;
 function isSlabBlock(id) { return _slabLUT[id]; }
 
 const _stairLUT = new Uint8Array(256);
@@ -83,12 +83,12 @@ function getBlockBounds(id, val, bx, by, bz) {
     } else if (id === 67) {
         // Lily pad: flat thin plane on water surface
         b.minX = 0.0; b.maxX = 1.0; b.minY = 0.0; b.maxY = 0.1; b.minZ = 0.0; b.maxZ = 1.0;
-    } else if (id === 68) {
-        // Glass Pane: hitbox follows connectivity
+    } else if (id === 68 || id === 158) {
+        // Glass Pane / Iron Bars: hitbox follows connectivity
         const T0 = 7/16, T1 = 9/16;
         b.minY = 0; b.maxY = 1;
         if (bx !== undefined && typeof getVoxel === 'function') {
-            const gn = (nx,nz) => { const nId = getVoxel(nx,by,nz)&0xFF; return nId===68 || (nId!==0 && !isBlockTransparent(nId)); };
+            const gn = (nx,nz) => { const nId = getVoxel(nx,by,nz)&0xFF; return nId===68 || nId===158 || (nId!==0 && !isBlockTransparent(nId)); };
             const hXN=gn(bx-1,bz), hXP=gn(bx+1,bz), hZN=gn(bx,bz-1), hZP=gn(bx,bz+1);
             const hX=hXN||hXP, hZ=hZN||hZP;
             if (hX && hZ) { b.minX=0; b.maxX=1; b.minZ=0; b.maxZ=1; }
@@ -183,7 +183,7 @@ function getBlockBounds(id, val, bx, by, bz) {
 }
 
 function canSupport(id) {
-    if (id === 0 || id === 4 || id === 27 || isCrossBlock(id) || id === 20 || id === 40 || id === 38 || id === 17 || id === 64 || id === 66 || id === 67 || id === 68) return false;
+    if (id === 0 || id === 4 || id === 27 || isCrossBlock(id) || id === 20 || id === 40 || id === 38 || id === 17 || id === 64 || id === 66 || id === 67 || id === 68 || id === 158) return false;
     return true;
 }
 

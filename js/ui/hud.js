@@ -16,7 +16,7 @@ if (!document.getElementById('mc-3d-styles')) {
             display: flex;
             width: 364px; 
             height: 44px;
-            background-image: url('textures/gui.png');
+            background-image: url('textures/gui.png?v=${ASSET_VERSION}');
             background-size: 512px 512px; /* 2x Scale */
             background-position: 0 0;
             background-repeat: no-repeat !important; /* CRITICAL: Stops white border bleed */
@@ -50,7 +50,7 @@ if (!document.getElementById('mc-3d-styles')) {
             height: 44px;
             top: 0;
             left: -4px; 
-            background-image: url('textures/gui.png');
+            background-image: url('textures/gui.png?v=${ASSET_VERSION}');
             background-size: 512px 512px;
             background-position: 0 -44px; 
             background-repeat: no-repeat !important;
@@ -91,7 +91,7 @@ if (!document.getElementById('mc-3d-styles')) {
         .item-icon.is-3d-block .face {
             position: absolute;
             width: 20px; height: 20px;
-            background-image: url('textures/terrain.png');
+            background-image: url('textures/terrain.png?v=${ASSET_VERSION}');
             background-size: 1600% 1600%;
             image-rendering: pixelated;
         }
@@ -209,9 +209,9 @@ function updateDurabilityBar(slotEl, item) {
 
 
 window.isStackable = function(id) {
-    // Wood/Stone/Iron (100-111), Diamond (124-127), Hoes (130-133), and Flint & Steel (136) are NOT stackable
-    const isTool = (id >= 100 && id <= 111) || (id >= 124 && id <= 127) || (id >= 130 && id <= 133) || id === 136;
-    return !isTool;
+    // Any item in TOOL_DATA that has maxDurability is a tool and NOT stackable
+    if (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[id] && TOOL_DATA[id].maxDurability) return false;
+    return true;
 };
 
 // --- UI MANAGEMENT ---
@@ -251,27 +251,27 @@ function getIconStyle(blockId) {
         if (!data) return '';
         const atlasIdx = data.atlasIdx;
         const col = atlasIdx % 16, row = Math.floor(atlasIdx / 16);
-        return `background-image: url('textures/terrain.png'); background-position: -${col * 100}% -${row * 100}%; background-size: 1600% 1600%; image-rendering: pixelated;`;
+        return `background-image: url('textures/terrain.png?v=${ASSET_VERSION}'); background-position: -${col * 100}% -${row * 100}%; background-size: 1600% 1600%; image-rendering: pixelated;`;
     }
     
-    // Tools (Iron/Wood/Stone 100-111, Diamond 124-127, Hoes 130-133)
-    if ((id >= 100 && id <= 111) || (id >= 124 && id <= 127) || (id >= 130 && id <= 133)) {
+    // Tools — any item in TOOL_DATA with an atlasIdx that maps to tools.png
+    if (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[id] && TOOL_DATA[id].maxDurability) {
         const data = TOOL_DATA[id];
         if (!data) return '';
         const atlasIdx = data.atlasIdx;
         const col = atlasIdx % 16, row = Math.floor(atlasIdx / 16);
-        return `background-image: url('textures/tools.png'); background-position: -${col * 100}% -${row * 100}%; background-size: 1600% 1600%; image-rendering: pixelated;`;
+        return `background-image: url('textures/tools.png?v=${ASSET_VERSION}'); background-position: -${col * 100}% -${row * 100}%; background-size: 1600% 1600%; image-rendering: pixelated;`;
     }
     
     const block = BLOCK_DATA[id];
     if (!block) return '';
-    if (block.atlasIdx === -1) return `background-image: url('textures/water.png'); background-size: 400% 100%; background-position: 0 0; image-rendering: pixelated;`;
-    if (block.atlasIdx === -2) return `background-image: url('textures/lava.png'); background-size: 400% 100%; background-position: 0 0; image-rendering: pixelated;`;
+    if (block.atlasIdx === -1) return `background-image: url('textures/water.png?v=${ASSET_VERSION}'); background-size: 400% 100%; background-position: 0 0; image-rendering: pixelated;`;
+    if (block.atlasIdx === -2) return `background-image: url('textures/lava.png?v=${ASSET_VERSION}'); background-size: 400% 100%; background-position: 0 0; image-rendering: pixelated;`;
     
     let texIndex = id === 1 ? 0 : (typeof block.atlasIdx === 'object' ? (block.atlasIdx.front !== undefined ? block.atlasIdx.front : block.atlasIdx.side) : block.atlasIdx);
     const col = texIndex % 16, row = Math.floor(texIndex / 16);
     let filterStr = [1, 14, 16, 22, 24, 66, 67].includes(id) ? 'filter: sepia(1) hue-rotate(55deg) saturate(3.5) brightness(0.9);' : '';
-    return `background-image: url('textures/terrain.png'); background-position: -${col * 100}% -${row * 100}%; background-size: 1600% 1600%; image-rendering: pixelated; ${filterStr}`;
+    return `background-image: url('textures/terrain.png?v=${ASSET_VERSION}'); background-position: -${col * 100}% -${row * 100}%; background-size: 1600% 1600%; image-rendering: pixelated; ${filterStr}`;
 }
 
 function createIconElement(id) {
@@ -285,23 +285,23 @@ function createIconElement(id) {
         if (data) {
             const atlasIdx = data.atlasIdx;
             const col = atlasIdx % 16, row = Math.floor(atlasIdx / 16);
-            icon.style = `background-image: url('textures/terrain.png'); background-position: -${col * 100}% -${row * 100}%; background-size: 1600% 1600%; image-rendering: pixelated;`;
+            icon.style = `background-image: url('textures/terrain.png?v=${ASSET_VERSION}'); background-position: -${col * 100}% -${row * 100}%; background-size: 1600% 1600%; image-rendering: pixelated;`;
         }
         return icon;
     }
     // Door block (149) uses the flat door item texture (atlas 135)
     if (parsedId === 149) {
         const col = 135 % 16, row = Math.floor(135 / 16);
-        icon.style = `background-image: url('textures/terrain.png'); background-position: -${col * 100}% -${row * 100}%; background-size: 1600% 1600%; image-rendering: pixelated;`;
+        icon.style = `background-image: url('textures/terrain.png?v=${ASSET_VERSION}'); background-position: -${col * 100}% -${row * 100}%; background-size: 1600% 1600%; image-rendering: pixelated;`;
         return icon;
     } 
-    // Tools (Iron/Wood/Stone 100-111, Diamond 124-127, Hoes 130-133)
-    else if ((parsedId >= 100 && parsedId <= 111) || (parsedId >= 124 && parsedId <= 127) || (parsedId >= 130 && parsedId <= 133) || parsedId === 136) {
+    // Tools — any item in TOOL_DATA with durability uses tools.png
+    else if (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[parsedId] && TOOL_DATA[parsedId].maxDurability) {
         const data = TOOL_DATA[parsedId];
         if (data) {
             const atlasIdx = data.atlasIdx;
             const col = atlasIdx % 16, row = Math.floor(atlasIdx / 16);
-            icon.style = `background-image: url('textures/tools.png'); background-position: -${col * 100}% -${row * 100}%; background-size: 1600% 1600%; image-rendering: pixelated;`;
+            icon.style = `background-image: url('textures/tools.png?v=${ASSET_VERSION}'); background-position: -${col * 100}% -${row * 100}%; background-size: 1600% 1600%; image-rendering: pixelated;`;
         }
         return icon;
     } 
@@ -310,7 +310,7 @@ function createIconElement(id) {
         const block = BLOCK_DATA[parsedId];
         if (!block) return icon;
         
-        const flatRenderIds = [4, 27, 16, 23, 24, 17, 40, 52, 53, 66, 67, 68, 116, 117, 118, 137, 150];
+        const flatRenderIds = [4, 27, 16, 23, 24, 17, 40, 52, 53, 66, 67, 68, 116, 117, 118, 137, 150, 158];
         if (flatRenderIds.includes(parsedId)) {
             icon.style = getIconStyle(parsedId); 
         } else if (typeof isFenceBlock === 'function' && isFenceBlock(parsedId)) {
@@ -321,7 +321,7 @@ function createIconElement(id) {
             const ctx2 = canvas.getContext('2d');
             
             const img = new Image();
-            img.src = 'textures/terrain.png';
+            img.src = 'textures/terrain.png?v=' + ASSET_VERSION;
             img.onload = () => {
                 const tIdx = typeof block.atlasIdx === 'object' ? block.atlasIdx.side : block.atlasIdx;
                 const tcol = tIdx % 16, trow = Math.floor(tIdx / 16);
@@ -474,7 +474,7 @@ function buildHandMesh() {
     const degToRad = (degrees) => degrees * (Math.PI / 180);
 
     if (!handMaterial) {
-        handTexture = new THREE.TextureLoader().load('textures/handtexture.png');
+        handTexture = new THREE.TextureLoader().load('textures/handtexture.png?v=' + ASSET_VERSION);
         handTexture.magFilter = THREE.NearestFilter;
         handTexture.minFilter = THREE.NearestFilter;
         handMaterial = new THREE.MeshBasicMaterial({ map: handTexture, vertexColors: true });
@@ -626,7 +626,7 @@ document.addEventListener('mousemove', (e) => {
     }
 });
 
-window.addToInventory = function(id, count) {
+window.addToInventory = function(id, count, durability) {
     if (typeof inventory === 'undefined') return count;
 
     const stackLimit = window.isStackable(id) ? 64 : 1;
@@ -654,10 +654,10 @@ window.addToInventory = function(id, count) {
             const toAdd = Math.min(stackLimit, count);
             inventory[i].count = toAdd;
             
-            // Initialize tool durability
+            // Initialize or restore tool durability
             const tool = TOOL_DATA[id];
             if (tool && tool.maxDurability) {
-                inventory[i].durability = tool.maxDurability;
+                inventory[i].durability = (durability !== undefined) ? durability : tool.maxDurability;
             }
 
             count -= toAdd;

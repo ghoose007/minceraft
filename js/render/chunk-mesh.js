@@ -67,7 +67,7 @@ function buildChunkMesh(cx, cz) {
                     // Use heights to squish the block to half height
                     const h = 0.5;
                     const slabHeights = { h00: h, h10: h, h01: h, h11: h };
-                    const slabOff = isTop ? { y: 0.5 } : null;
+                    const slabOff = isTop ? { y: 0.5, vShift: 0.5 } : null;
                     
                     for (let face of blockFaces) {
                         const nVal = getLocal(lx + face.dir[0], y + face.dir[1], lz + face.dir[2]);
@@ -366,8 +366,8 @@ function buildChunkMesh(cx, cz) {
                     continue;
                 }
 
-                // --- GLASS PANE RENDERING (ID 68) ---
-                if (id === 68) {
+                // --- GLASS PANE / IRON BARS RENDERING (ID 68, 158) ---
+                if (id === 68 || id === 158) {
                     const texIdx = typeof BLOCK_DATA[id].atlasIdx === 'object' ? BLOCK_DATA[id].atlasIdx.side : BLOCK_DATA[id].atlasIdx;
                     const TX = texIdx % 16, TY = Math.floor(texIdx / 16);
                     const U = (px) => (TX + px/16) / 16;
@@ -913,7 +913,7 @@ function buildChunkMesh(cx, cz) {
                         if (id === 20 && nId === 20 && face.dir[1] !== 0) {
                             draw = false;
                         }
-                        else if (nId === 0 || nId === 4 || nId === 27 || isCrossBlock(nId) || isSnowLayer(nId) || nId === 20 || nId === 17 || nId === 54 || nId === 64 || nId === 66 || nId === 67 || nId === 68 || nId === 90 || isSlabBlock(nId) || isStairBlock(nId) || isFenceBlock(nId) || nId === 149 || nId === 150) draw = true; 
+                        else if (nId === 0 || nId === 4 || nId === 27 || isCrossBlock(nId) || isSnowLayer(nId) || nId === 20 || nId === 17 || nId === 54 || nId === 64 || nId === 66 || nId === 67 || nId === 68 || nId === 158 || nId === 90 || isSlabBlock(nId) || isStairBlock(nId) || isFenceBlock(nId) || nId === 149 || nId === 150) draw = true; 
                         
                         else if (isLeafBlock(nId) && !isLeafBlock(id)) draw = settingGraphicsFancy; 
                         else if (isLeafBlock(id) && isLeafBlock(nId)) draw = settingGraphicsFancy; 

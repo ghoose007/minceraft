@@ -111,7 +111,9 @@ const BLOCK_DATA = {
     152: { name: 'Nether Brick Stairs', atlasIdx: 126, hardness: 2.0, type: 'stair', parentTex: 126 },
     154: { name: 'Quartz Block', atlasIdx: 140, hardness: 0.8 },
     155: { name: 'Quartz Pillar', atlasIdx: { top: 142, bottom: 142, side: 141 }, hardness: 0.8 },
-    156: { name: 'Smooth Stone', atlasIdx: 143, hardness: 1.5 }
+    156: { name: 'Smooth Stone', atlasIdx: 143, hardness: 1.5 },
+    157: { name: 'Smooth Stone Slab', atlasIdx: { top: 143, bottom: 143, side: 144 }, hardness: 1.5, type: 'slab', parentTex: 143 },
+    158: { name: 'Iron Bars', atlasIdx: 145, hardness: 5.0, dropId: 158 }
 };
 
 const blockRequirements = {
@@ -136,7 +138,9 @@ const blockRequirements = {
     152: { reqTool: 'pickaxe', reqTier: 0 },    // Nether Brick Stairs
     154: { reqTool: 'pickaxe', reqTier: 0 },    // Quartz Block
     155: { reqTool: 'pickaxe', reqTier: 0 },    // Quartz Pillar
-    156: { reqTool: 'pickaxe', reqTier: 0 }     // Smooth Stone
+    156: { reqTool: 'pickaxe', reqTier: 0 },     // Smooth Stone
+    157: { reqTool: 'pickaxe', reqTier: 0 },     // Smooth Stone Slab
+    158: { reqTool: 'pickaxe', reqTier: 0 }      // Iron Bars
 };
 for (let id in blockRequirements) {
     if (BLOCK_DATA[id]) Object.assign(BLOCK_DATA[id], blockRequirements[id]);

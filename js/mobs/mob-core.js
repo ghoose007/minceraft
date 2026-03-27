@@ -12,7 +12,7 @@ let mobMaterial = null;
 function initMobMaterial() {
     if (mobMaterial) return;
     const texLoader = new THREE.TextureLoader();
-    const tex = texLoader.load('textures/pig.png');
+    const tex = texLoader.load('textures/pig.png?v=' + ASSET_VERSION);
     tex.magFilter = THREE.NearestFilter;
     tex.minFilter = THREE.NearestFilter;
     

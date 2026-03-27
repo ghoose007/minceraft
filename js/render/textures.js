@@ -1,9 +1,10 @@
 const textureLoader = new THREE.TextureLoader();
 
 function loadTextureAsync(url, useMipmaps = true) {
+    const vUrl = typeof ASSET_VERSION !== 'undefined' ? url + '?v=' + ASSET_VERSION : url;
     return new Promise((resolve, reject) => {
         textureLoader.load(
-            url,
+            vUrl,
             (tex) => {
                 tex.magFilter = THREE.NearestFilter; // Crisp pixels up close
                 
@@ -169,7 +170,7 @@ window.fireMaterial = null;
 
 async function loadFireTexture() {
     return new Promise((resolve) => {
-        new THREE.TextureLoader().load('textures/fire_0.png', (tex) => {
+        new THREE.TextureLoader().load('textures/fire_0.png?v=' + ASSET_VERSION, (tex) => {
             tex.magFilter = THREE.NearestFilter;
             tex.minFilter = THREE.NearestFilter;
             tex.wrapS = THREE.RepeatWrapping;

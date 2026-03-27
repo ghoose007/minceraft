@@ -63,7 +63,7 @@ function initPlayerModel() {
     if (playerModel) return;
     const texW = 64, texH = 64;
 
-    const tex = new THREE.TextureLoader().load('textures/steve.png');
+    const tex = new THREE.TextureLoader().load('textures/steve.png?v=' + ASSET_VERSION);
     tex.magFilter = THREE.NearestFilter;
     tex.minFilter = THREE.NearestFilter;
     tex.generateMipmaps = false;
@@ -195,9 +195,7 @@ function updatePlayerModelHeldItem() {
     const mesh = buildItemMesh(heldId);
     if (!mesh) return;
 
-    const isTool = (heldId >= 100 && heldId <= 111) ||
-                   (heldId >= 124 && heldId <= 127) ||
-                   (heldId >= 130 && heldId <= 136);
+    const isTool = (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[heldId] && TOOL_DATA[heldId].maxDurability) ? true : false;
 
     if (isTool) {
         mesh.scale.set(0.4, 0.4, 0.4);

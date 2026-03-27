@@ -53,7 +53,7 @@ function _applyOpacity(hb, opacity) {
 function _getHerobrineMaterial() {
     if (_herobrineMaterial) return _herobrineMaterial;
     
-    const tex = new THREE.TextureLoader().load('textures/herobrine.png', () => {
+    const tex = new THREE.TextureLoader().load('textures/herobrine.png?v=' + ASSET_VERSION, () => {
         _herobrineTexLoaded = true;
     });
     tex.magFilter = THREE.NearestFilter;

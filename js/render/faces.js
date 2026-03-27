@@ -491,6 +491,8 @@ function pushFace(x, y, z, face, positions, normals, uvs, colors, biomeTints, bl
                 else if (c.pos[0] === 0 && c.pos[2] === 1) localV = heights.h01;
                 else if (c.pos[0] === 1 && c.pos[2] === 1) localV = heights.h11;
                 else localV = 1.0; 
+                // Shift side face UVs for top slabs so the texture shows the upper half
+                if (offset && offset.vShift) localV += offset.vShift;
             }
             
             if (!(isCactus && face.dir[1] !== 0) && !isTorch) {

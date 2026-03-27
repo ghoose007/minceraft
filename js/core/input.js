@@ -262,7 +262,7 @@
             // Block placement of tools/items — only allow actual placeable blocks and saplings
             if (currentBuildBlock >= 100) {
                 // These are placeable despite being >= 100
-                const placeableHighIds = [116, 117, 118, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151];
+                const placeableHighIds = [116, 117, 118, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158];
                 if (!placeableHighIds.includes(currentBuildBlock)) return;
             }
 
@@ -294,23 +294,20 @@
             }
             
             // --- SLAB DOUBLING: Clicking a slab with matching slab fills into full block ---
+            // Minecraft rules: clicking the open face of a slab (top face of bottom slab, 
+            // bottom face of top slab) OR a side face merges into a full block.
             if (typeof isSlabBlock === 'function' && isSlabBlock(currentBuildBlock) && currentBuildBlock === targetId) {
                 const existingIsTop = (targetVal >> 8) & 0x1;
-                // Map slab ID to its parent full block
-                const slabToFull = { 70: 29, 71: 44, 72: 30, 73: 3, 74: 33, 75: 32, 76: 31 };
+                const slabToFull = { 70: 29, 71: 44, 72: 30, 73: 3, 74: 33, 75: 32, 76: 31, 77: 98, 157: 156 };
                 const fullBlock = slabToFull[currentBuildBlock];
                 if (fullBlock) {
-                    // Determine if the click would place the opposite half
-                    let placeTop = 0;
-                    if (target.normal[1] === 1) placeTop = 0;      // Clicked top = would place bottom
-                    else if (target.normal[1] === -1) placeTop = 1; // Clicked bottom = would place top
-                    else {
-                        const clickY = target.hit[1] + 0.5;
-                        placeTop = (player.y + player.eyeLevel > clickY + 0.5) ? 1 : 0;
-                    }
+                    // Merge if clicking the open face of the slab, or any side face
+                    let shouldMerge = false;
+                    if (existingIsTop === 0 && target.normal[1] === 1) shouldMerge = true;   // Bottom slab, clicked top face (open)
+                    else if (existingIsTop === 1 && target.normal[1] === -1) shouldMerge = true; // Top slab, clicked bottom face (open)
+                    else if (target.normal[1] === 0) shouldMerge = true; // Side face always merges
                     
-                    // If existing is bottom and we'd place top, or vice versa, merge into full block
-                    if (existingIsTop !== placeTop) {
+                    if (shouldMerge) {
                         setVoxel(target.hit[0], target.hit[1], target.hit[2], fullBlock);
                         pendingBlockUpdates.push({x: target.hit[0], y: target.hit[1], z: target.hit[2]});
                         
@@ -324,6 +321,8 @@
                         }
                         return;
                     }
+                    // If clicking the solid face (bottom of bottom slab, top of top slab),
+                    // fall through to normal placement in the adjacent block
                 }
             }
             
@@ -417,20 +416,25 @@
                 else if (target.normal[2] === -1) placeLevel = 4;  // +Z wall
                 else placeLevel = 1; // default
             } else if (typeof isSlabBlock === 'function' && isSlabBlock(currentBuildBlock)) {
-                // Slab: 0=bottom, 1=top. Place top slab when clicking bottom of block above or upper half of side face
-                if (target.normal[1] === -1) {
-                    placeLevel = 1; // Clicked bottom face = top slab
-                } else if (target.normal[1] === 1) {
+                // Minecraft slab placement rules:
+                // - Clicking top face of a block → bottom slab (level 0)
+                // - Clicking bottom face of a block → top slab (level 1)
+                // - Clicking side face → depends on exact Y hit position within the placement cell:
+                //   if the ray hit the upper half (localY >= 0.5), top slab; otherwise bottom slab
+                if (target.normal[1] === 1) {
                     placeLevel = 0; // Clicked top face = bottom slab
+                } else if (target.normal[1] === -1) {
+                    placeLevel = 1; // Clicked bottom face = top slab
                 } else {
-                    // Side face: check if click was on upper or lower half
-                    // Use the raycast Y position within the block
-                    const dir = new THREE.Vector3();
-                    camera.getWorldDirection(dir);
-                    // Approximate: if placing above midpoint of neighbor, use top slab
-                    const clickY = target.hit[1] + 0.5; // Center of hit block
-                    if (player.y + player.eyeLevel > clickY + 0.5) placeLevel = 1;
-                    else placeLevel = 0;
+                    // Side face: use the exact Y coordinate where the ray hit
+                    // to determine upper vs lower half within the placement block
+                    if (target.exactHit) {
+                        const localY = target.exactHit[1] - Math.floor(target.exactHit[1]);
+                        placeLevel = (localY >= 0.5) ? 1 : 0;
+                    } else {
+                        // Fallback if exactHit not available
+                        placeLevel = 0;
+                    }
                 }
             } else if (typeof isStairBlock === 'function' && isStairBlock(currentBuildBlock)) {
                 // Stairs: low step faces toward player, tall back faces away
@@ -450,12 +454,14 @@
                 if (target.normal[1] === -1) {
                     upsideDown = 4;
                 } else if (target.normal[1] === 0) {
-                    const clickY = target.hit[1] + 0.5;
-                    if (player.y + player.eyeLevel > clickY + 0.5) upsideDown = 4;
+                    if (target.exactHit) {
+                        const localY = target.exactHit[1] - Math.floor(target.exactHit[1]);
+                        if (localY >= 0.5) upsideDown = 4;
+                    }
                 }
                 placeLevel = stairDir | upsideDown;
             }
-            else if (currentBuildBlock === 68) { 
+            else if (currentBuildBlock === 68 || currentBuildBlock === 158) { 
                 let yaw = player.yaw * (180 / Math.PI);
                 if (yaw < 0) yaw += 360;
                 

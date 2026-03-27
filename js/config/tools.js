@@ -27,11 +27,18 @@ const TOOL_DATA = {
     126: { name: 'Diamond Shovel', atlasIdx: 18, type: 'shovel', tier: 3, speed: 8.0, damage: 4, maxDurability: 1561 },
     127: { name: 'Diamond Sword', atlasIdx: 19, type: 'sword', tier: 3, speed: 4.0, damage: 7, maxDurability: 1561 },
 
+    // Gold Tools (tier 0 = same mining level as wood, but fastest speed)
+    159: { name: 'Gold Axe', atlasIdx: 21, type: 'axe', tier: 0, speed: 12.0, damage: 3, maxDurability: 32 },
+    160: { name: 'Gold Pickaxe', atlasIdx: 23, type: 'pickaxe', tier: 0, speed: 12.0, damage: 2, maxDurability: 32 },
+    161: { name: 'Gold Shovel', atlasIdx: 24, type: 'shovel', tier: 0, speed: 12.0, damage: 1, maxDurability: 32 },
+    162: { name: 'Gold Sword', atlasIdx: 25, type: 'sword', tier: 0, speed: 6.0, damage: 4, maxDurability: 32 },
+
     // Hoes (Tier 0 - 3)
     130: { name: 'Wooden Hoe', atlasIdx: 1, type: 'hoe', tier: 0, speed: 2.0, damage: 1, maxDurability: 59 },
     131: { name: 'Stone Hoe', atlasIdx: 6, type: 'hoe', tier: 1, speed: 4.0, damage: 1, maxDurability: 131 },
     132: { name: 'Iron Hoe', atlasIdx: 11, type: 'hoe', tier: 2, speed: 6.0, damage: 1, maxDurability: 250 },
     133: { name: 'Diamond Hoe', atlasIdx: 16, type: 'hoe', tier: 3, speed: 8.0, damage: 1, maxDurability: 1561 },
+    163: { name: 'Gold Hoe', atlasIdx: 22, type: 'hoe', tier: 0, speed: 12.0, damage: 1, maxDurability: 32 },
 
     // Items
     112: { name: 'Stick', atlasIdx: 72, type: 'material', tier: 0, speed: 1.0 },

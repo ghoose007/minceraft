@@ -663,7 +663,7 @@ function animate() {
                 
                 for (let j = i - 1; j >= 0; j--) {
                     let other = droppedItems[j];
-                    if (other.id === item.id && other.count < 64 && item.count > 0) {
+                    if (other.id === item.id && other.count < 64 && item.count > 0 && window.isStackable(item.id)) {
                         const dSq = (item.x - other.x)**2 + (item.y - other.y)**2 + (item.z - other.z)**2;
                         if (dSq < 1.5) { 
                             const space = 64 - other.count;
@@ -743,6 +743,16 @@ function animate() {
 
                 item.x = nextX; item.y = nextY; item.z = nextZ;
 
+                // Destroy items that touch lava
+                const itemBlockId = getVoxel(Math.floor(item.x), Math.floor(item.y), Math.floor(item.z)) & 0xFF;
+                if (itemBlockId === 27) { // Lava
+                    if (typeof window.playFizzSound === 'function') {
+                        window.playFizzSound(item.x, item.y, item.z);
+                    }
+                    itemsToRemove.push(i);
+                    continue;
+                }
+
                 // MC EntityItem: bob = sin(age/10 + uniqueOffset) * 0.1 + 0.1
                 // MC EntityItem: spin = ageInTicks / 20.0 radians (~0.314 rad/sec)
                 const hoverOffset = Math.sin(item.age * 0.628) * 0.1 + 0.1;
@@ -782,7 +792,7 @@ function animate() {
                     const distSq = (player.x - item.x)**2 + (player.y - item.y)**2 + (player.z - item.z)**2;
                     if (distSq < 2.5) { 
                         if (typeof window.addToInventory === 'function') {
-                            const leftover = window.addToInventory(item.id, item.count);
+                            const leftover = window.addToInventory(item.id, item.count, item.durability);
                             if (leftover === 0) {
                                 if (typeof window.playItemSound === 'function') window.playItemSound(0.3);
                                 itemsToRemove.push(i);

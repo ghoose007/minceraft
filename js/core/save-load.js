@@ -238,7 +238,7 @@ async function saveWorld(slot) {
             flying: player.flying,
             highestY: player.highestY
         },
-        inventory: inventory.map(s => s.id !== 0 ? { id: s.id, count: s.count } : null),
+        inventory: inventory.map(s => s.id !== 0 ? { id: s.id, count: s.count, durability: s.durability !== undefined ? s.durability : undefined } : null),
         generatedFlags: owGenFlags ? Array.from(owGenFlags) : Array.from(generatedChunksArr),
         netherGeneratedFlags: ntGenFlags ? Array.from(ntGenFlags) : null,
         // Chest inventories
@@ -260,6 +260,16 @@ async function saveWorld(slot) {
                     cookTime: f.cookTime, totalCookTime: f.totalCookTime });
             }
             return arr;
+        })(),
+        // Dropped items on the ground
+        droppedItems: (() => {
+            if (typeof droppedItems === 'undefined') return [];
+            return droppedItems.map(item => ({
+                id: item.id, count: item.count,
+                x: item.x, y: item.y, z: item.z,
+                vx: item.vx, vy: item.vy, vz: item.vz,
+                durability: item.durability !== undefined ? item.durability : undefined
+            }));
         })()
     };
     

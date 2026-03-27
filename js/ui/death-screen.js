@@ -200,6 +200,59 @@ window.respawnPlayer = function() {
     player.health = player.maxHealth;
     player.vy = 0; player.vx = 0; player.vz = 0;
 
+    // If in the nether, switch back to overworld first
+    if (typeof currentDimension !== 'undefined' && currentDimension === 'nether') {
+        if (overworldChunkStorage) {
+            netherChunkStorage = chunkStorageArr;
+            netherGeneratedChunks = generatedChunksArr;
+            chunkStorageArr = overworldChunkStorage;
+            generatedChunksArr = overworldGeneratedChunks;
+            if (overworldBiomeMap) biomeMap = overworldBiomeMap;
+            currentDimension = 'overworld';
+
+            // Clear nether mobs
+            if (typeof globalMobs !== 'undefined') {
+                for (let i = globalMobs.length - 1; i >= 0; i--) {
+                    const mob = globalMobs[i];
+                    scene.remove(mob.mesh);
+                    scene.remove(mob.shadow);
+                    mob.mesh.traverse(c => { if (c.isMesh && c.geometry) c.geometry.dispose(); });
+                    if (mob.material) mob.material.dispose();
+                }
+                globalMobs.length = 0;
+            }
+
+            // Clear dropped items
+            if (typeof droppedItems !== 'undefined') {
+                for (const item of droppedItems) {
+                    scene.remove(item.mesh);
+                    scene.remove(item.shadow);
+                    item.mesh.traverse(c => { if (c.isMesh && c.geometry) c.geometry.dispose(); });
+                }
+                droppedItems.length = 0;
+            }
+
+            // Restore overworld fog/sky
+            const rd = RENDER_DISTANCES[currentRenderDistIndex] * CHUNK_SIZE;
+            scene.fog = new THREE.Fog(0x87CEEB, rd * 0.4, rd);
+            scene.background = new THREE.Color(0x87CEEB);
+            if (typeof celestialGroup !== 'undefined' && celestialGroup) celestialGroup.visible = true;
+            if (window.cloudMesh) window.cloudMesh.visible = true;
+            if (window.cloudDepthMesh) window.cloudDepthMesh.visible = true;
+
+            // Rebuild lighting and chunks
+            if (typeof recalculateLighting === 'function') recalculateLighting();
+            if (typeof updateAllChunks === 'function') updateAllChunks();
+            for (const key of dirtyChunks) {
+                const sep = key.indexOf(',');
+                const cx = parseInt(key.substring(0, sep));
+                const cz = parseInt(key.substring(sep + 1));
+                if (typeof buildChunkMesh === 'function') buildChunkMesh(cx, cz);
+            }
+            dirtyChunks.clear();
+        }
+    }
+
     // Teleport to world spawn
     player.x = window.worldSpawnX;
     player.z = window.worldSpawnZ;

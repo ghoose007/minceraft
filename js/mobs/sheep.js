@@ -14,14 +14,14 @@ let sheepFurMaterial = null;
 
 function initSheepMaterial() {
     if (sheepMaterial) return;
-    const tex = new THREE.TextureLoader().load('textures/sheep.png');
+    const tex = new THREE.TextureLoader().load('textures/sheep.png?v=' + ASSET_VERSION);
     tex.magFilter = THREE.NearestFilter;
     tex.minFilter = THREE.NearestFilter;
     sheepMaterial = new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, transparent: false, alphaTest: 0.1 });
     if (typeof injectLightingShader === 'function') injectLightingShader(sheepMaterial);
     sheepMaterial.customProgramCacheKey = function() { return 'sheepMat'; };
 
-    const furTex = new THREE.TextureLoader().load('textures/sheep_fur.png');
+    const furTex = new THREE.TextureLoader().load('textures/sheep_fur.png?v=' + ASSET_VERSION);
     furTex.magFilter = THREE.NearestFilter;
     furTex.minFilter = THREE.NearestFilter;
     sheepFurMaterial = new THREE.MeshBasicMaterial({ map: furTex, vertexColors: true, transparent: true, alphaTest: 0.1 });

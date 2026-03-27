@@ -116,7 +116,7 @@ async function init(seed, loadedData) {
 
     // --- INITIALIZE CLOUDS (TEXTURE MAP) ---
     const cloudImg = new Image();
-    cloudImg.src = 'textures/clouds.png';
+    cloudImg.src = 'textures/clouds.png?v=' + ASSET_VERSION;
     cloudImg.onload = () => {
         // Draw the image to a hidden canvas to extract pixel data
         const canvas = document.createElement('canvas');
@@ -271,7 +271,13 @@ async function init(seed, loadedData) {
         // Restore inventory
         if (loadedData.inventory) {
             for (let i = 0; i < inventory.length; i++) {
-                if (loadedData.inventory[i]) { inventory[i].id = loadedData.inventory[i].id; inventory[i].count = loadedData.inventory[i].count; }
+                if (loadedData.inventory[i]) {
+                    inventory[i].id = loadedData.inventory[i].id;
+                    inventory[i].count = loadedData.inventory[i].count;
+                    if (loadedData.inventory[i].durability !== undefined) {
+                        inventory[i].durability = loadedData.inventory[i].durability;
+                    }
+                }
                 else { inventory[i].id = 0; inventory[i].count = 0; }
             }
         }
@@ -294,6 +300,11 @@ async function init(seed, loadedData) {
                     cookTime: f.cookTime, totalCookTime: f.totalCookTime
                 });
             }
+        }
+        
+        // Restore dropped items — defer until after scene and meshes are ready
+        if (loadedData.droppedItems && loadedData.droppedItems.length > 0) {
+            window._pendingDroppedItems = loadedData.droppedItems;
         }
         
         // --- Restore dimension state ---
@@ -474,6 +485,18 @@ async function init(seed, loadedData) {
     if (typeof updateHeldItem === 'function') updateHeldItem();
     if (typeof updateHealthUI === 'function') updateHealthUI();
 
+    // Restore dropped items from save data (deferred until scene + textures are ready)
+    if (window._pendingDroppedItems && typeof window.spawnDroppedItem === 'function') {
+        for (const item of window._pendingDroppedItems) {
+            window.spawnDroppedItem(item.x, item.y, item.z, item.id, item.count, 0, 0, 0);
+            // Restore durability on the newly spawned dropped item
+            if (item.durability !== undefined && droppedItems.length > 0) {
+                droppedItems[droppedItems.length - 1].durability = item.durability;
+            }
+        }
+        delete window._pendingDroppedItems;
+    }
+
     updateLoadingBar(100, 'Done!');
     await yieldToUI();
     
@@ -514,7 +537,7 @@ async function init(seed, loadedData) {
         }
 
         // F3 + P: toggle gamemode between creative and survival (dev shortcut)
-        if (e.code === 'KeyP' && window.showDebugScreen) {
+        if ((e.code === 'KeyP' || e.code === 'Equal') && window.showDebugScreen) {
             e.preventDefault();
             gameMode = (gameMode === 'creative') ? 'survival' : 'creative';
 
@@ -572,12 +595,13 @@ async function init(seed, loadedData) {
                 if (item && item.id !== 0 && item.count > 0) {
                     const dropCount = keys.ShiftLeft ? item.count : 1;
                     
-                    window.tossItem(item.id, dropCount);
+                    window.tossItem(item.id, dropCount, item.durability);
 
                     item.count -= dropCount;
                     if (item.count <= 0) {
                         item.id = 0;
                         item.count = 0;
+                        delete item.durability;
                     }
 
                     if (typeof buildUI === 'function') buildUI();
@@ -695,7 +719,7 @@ window.getTargetedMob = function() {
             if (e.target.closest('.item-slot')) clickedInside = true;
 
             if (!clickedInside) {
-                window.tossItem(cursorItem.id, cursorItem.count);
+                window.tossItem(cursorItem.id, cursorItem.count, cursorItem.durability);
                 cursorItem = null;
                 if (typeof updateCursorItemUI === 'function') updateCursorItemUI(e);
                 return;
@@ -718,6 +742,7 @@ window.getTargetedMob = function() {
             if (player.health < player.maxHealth) {
                 player.health = Math.min(player.maxHealth, player.health + healAmount); 
                 if (typeof updateHealthUI === 'function') updateHealthUI();
+                if (typeof window.playBurpSound === 'function') window.playBurpSound();
                 
                 if (typeof gameMode !== 'undefined' && gameMode === 'survival') {
                     inventory[activeSlot].count--;
@@ -790,7 +815,7 @@ window.getTargetedMob = function() {
             if (!target) return; 
 
             // ---> NEW: Tilling Dirt/Grass with a Hoe <---
-            if (currentBuildBlock >= 130 && currentBuildBlock <= 133) {
+            if (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[currentBuildBlock] && TOOL_DATA[currentBuildBlock].type === 'hoe') {
                 const targetId = getVoxel(target.hit[0], target.hit[1], target.hit[2]) & 0xFF;
                 
                 // If clicking the top face of Grass (1) or Dirt (2)
@@ -802,6 +827,7 @@ window.getTargetedMob = function() {
                         
                         if (typeof spawnParticles === 'function') spawnParticles(target.hit[0], target.hit[1], target.hit[2], 2);
                         if (typeof window.damageHeldTool === 'function') window.damageHeldTool(1);
+                        if (typeof window.playBlockSoundAt === 'function') window.playBlockSoundAt(2, 'dig', 0.6, target.hit[0], target.hit[1], target.hit[2]);
                         
                         swingAnimation = 1.0;
                         return; // Stop further placement logic
@@ -942,7 +968,7 @@ window.getTargetedMob = function() {
             // Block placement of tools/items — only allow actual placeable blocks and saplings
             if (currentBuildBlock >= 100) {
                 // These are placeable despite being >= 100
-                const placeableHighIds = [116, 117, 118, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156];
+                const placeableHighIds = [116, 117, 118, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158];
                 if (!placeableHighIds.includes(currentBuildBlock)) return;
             }
 
@@ -974,23 +1000,20 @@ window.getTargetedMob = function() {
             }
             
             // --- SLAB DOUBLING: Clicking a slab with matching slab fills into full block ---
+            // Minecraft rules: clicking the open face of a slab (top face of bottom slab, 
+            // bottom face of top slab) merges into a full block.
+            // Side faces place adjacent, NOT merge.
             if (typeof isSlabBlock === 'function' && isSlabBlock(currentBuildBlock) && currentBuildBlock === targetId) {
                 const existingIsTop = (targetVal >> 8) & 0x1;
-                // Map slab ID to its parent full block
-                const slabToFull = { 70: 29, 71: 44, 72: 30, 73: 3, 74: 33, 75: 32, 76: 31 };
+                const slabToFull = { 70: 29, 71: 44, 72: 30, 73: 3, 74: 33, 75: 32, 76: 31, 77: 98, 157: 156 };
                 const fullBlock = slabToFull[currentBuildBlock];
                 if (fullBlock) {
-                    // Determine if the click would place the opposite half
-                    let placeTop = 0;
-                    if (target.normal[1] === 1) placeTop = 0;      // Clicked top = would place bottom
-                    else if (target.normal[1] === -1) placeTop = 1; // Clicked bottom = would place top
-                    else {
-                        const clickY = target.hit[1] + 0.5;
-                        placeTop = (player.y + player.eyeLevel > clickY + 0.5) ? 1 : 0;
-                    }
+                    // Only merge when clicking the open (exposed) face of the slab
+                    let shouldMerge = false;
+                    if (existingIsTop === 0 && target.normal[1] === 1) shouldMerge = true;   // Bottom slab, clicked top face (open)
+                    else if (existingIsTop === 1 && target.normal[1] === -1) shouldMerge = true; // Top slab, clicked bottom face (open)
                     
-                    // If existing is bottom and we'd place top, or vice versa, merge into full block
-                    if (existingIsTop !== placeTop) {
+                    if (shouldMerge) {
                         setVoxel(target.hit[0], target.hit[1], target.hit[2], fullBlock);
                         pendingBlockUpdates.push({x: target.hit[0], y: target.hit[1], z: target.hit[2]});
                         
@@ -1004,6 +1027,45 @@ window.getTargetedMob = function() {
                         }
                         return;
                     }
+                    // Otherwise fall through to normal adjacent placement
+                }
+            }
+            
+            // --- SLAB MERGE AT PLACEMENT POSITION ---
+            // When placing a slab into a space that already has the opposite half of the same slab,
+            // merge them into a full block instead of overwriting.
+            if (typeof isSlabBlock === 'function' && isSlabBlock(currentBuildBlock)) {
+                const placeVal = getVoxel(px, py, pz);
+                const placeId = placeVal & 0xFF;
+                if (placeId === currentBuildBlock) {
+                    const existingIsTop = (placeVal >> 8) & 0x1;
+                    const slabToFull = { 70: 29, 71: 44, 72: 30, 73: 3, 74: 33, 75: 32, 76: 31, 77: 98, 157: 156 };
+                    const fullBlock = slabToFull[currentBuildBlock];
+                    // Determine what half we'd place
+                    let newIsTop = 0;
+                    if (target.normal[1] === 1) newIsTop = 0;
+                    else if (target.normal[1] === -1) newIsTop = 1;
+                    else if (target.exactHit) {
+                        const localY = target.exactHit[1] - Math.floor(target.exactHit[1]);
+                        newIsTop = (localY >= 0.5) ? 1 : 0;
+                    }
+                    // If opposite halves, merge into full block
+                    if (fullBlock && existingIsTop !== newIsTop) {
+                        setVoxel(px, py, pz, fullBlock);
+                        pendingBlockUpdates.push({x: px, y: py, z: pz});
+                        
+                        if (typeof gameMode !== 'undefined' && gameMode === 'survival' && inventory[activeSlot]) {
+                            inventory[activeSlot].count--;
+                            if (inventory[activeSlot].count <= 0) {
+                                inventory[activeSlot].id = 0; inventory[activeSlot].count = 0;
+                            }
+                            if (typeof buildUI === 'function') buildUI();
+                            if (typeof selectSlot === 'function') selectSlot(activeSlot);
+                        }
+                        return;
+                    }
+                    // Same half already exists — can't place here, block placement
+                    if (existingIsTop === newIsTop) return;
                 }
             }
             
@@ -1097,20 +1159,23 @@ window.getTargetedMob = function() {
                 else if (target.normal[2] === -1) placeLevel = 4;  // +Z wall
                 else placeLevel = 1; // default
             } else if (typeof isSlabBlock === 'function' && isSlabBlock(currentBuildBlock)) {
-                // Slab: 0=bottom, 1=top. Place top slab when clicking bottom of block above or upper half of side face
-                if (target.normal[1] === -1) {
-                    placeLevel = 1; // Clicked bottom face = top slab
-                } else if (target.normal[1] === 1) {
+                // Minecraft slab placement rules:
+                // - Clicking top face of a block → bottom slab (level 0)
+                // - Clicking bottom face of a block → top slab (level 1)
+                // - Clicking side face → depends on exact Y hit position within the placement cell:
+                //   if the ray hit the upper half (localY >= 0.5), top slab; otherwise bottom slab
+                if (target.normal[1] === 1) {
                     placeLevel = 0; // Clicked top face = bottom slab
+                } else if (target.normal[1] === -1) {
+                    placeLevel = 1; // Clicked bottom face = top slab
                 } else {
-                    // Side face: check if click was on upper or lower half
-                    // Use the raycast Y position within the block
-                    const dir = new THREE.Vector3();
-                    camera.getWorldDirection(dir);
-                    // Approximate: if placing above midpoint of neighbor, use top slab
-                    const clickY = target.hit[1] + 0.5; // Center of hit block
-                    if (player.y + player.eyeLevel > clickY + 0.5) placeLevel = 1;
-                    else placeLevel = 0;
+                    // Side face: use the exact Y coordinate where the ray hit
+                    if (target.exactHit) {
+                        const localY = target.exactHit[1] - Math.floor(target.exactHit[1]);
+                        placeLevel = (localY >= 0.5) ? 1 : 0;
+                    } else {
+                        placeLevel = 0;
+                    }
                 }
             } else if (typeof isStairBlock === 'function' && isStairBlock(currentBuildBlock)) {
                 // Stairs: low step faces toward player, tall back faces away
@@ -1130,8 +1195,10 @@ window.getTargetedMob = function() {
                 if (target.normal[1] === -1) {
                     upsideDown = 4;
                 } else if (target.normal[1] === 0) {
-                    const clickY = target.hit[1] + 0.5;
-                    if (player.y + player.eyeLevel > clickY + 0.5) upsideDown = 4;
+                    if (target.exactHit) {
+                        const localY = target.exactHit[1] - Math.floor(target.exactHit[1]);
+                        if (localY >= 0.5) upsideDown = 4;
+                    }
                 }
                 placeLevel = stairDir | upsideDown;
             }
@@ -1307,7 +1374,7 @@ window.getTargetedMob = function() {
             crosshair.style.display = 'block';
             
             if (typeof cursorItem !== 'undefined' && cursorItem) {
-                window.tossItem(cursorItem.id, cursorItem.count);
+                window.tossItem(cursorItem.id, cursorItem.count, cursorItem.durability);
                 cursorItem = null;
                 if (typeof updateCursorItemUI === 'function') updateCursorItemUI();
             }
@@ -1366,6 +1433,8 @@ window.damageHeldTool = function(amount) {
 
     if (item.durability <= 0) {
         inventory[activeSlot] = { id: 0, count: 0 }; // Tool breaks
+        if (typeof window.playToolBreakSound === 'function') window.playToolBreakSound();
+        currentBuildBlock = 0;
     }
     
     // Refresh the UI to update the colored bar

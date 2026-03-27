@@ -154,7 +154,7 @@ function _destroyAdjacentPortals(ox, oy, oz) {
 }
 
 // --- NEW GLOBAL TOSS FUNCTION ---
-window.tossItem = function(id, count) {
+window.tossItem = function(id, count, durability) {
     if (!id || count <= 0) return;
     
     const dir = new THREE.Vector3();
@@ -171,5 +171,10 @@ window.tossItem = function(id, count) {
 
     if (typeof window.spawnDroppedItem === 'function') {
         window.spawnDroppedItem(spawnX, spawnY, spawnZ, id, count, vx, vy, vz);
+        // Carry durability to the dropped item
+        if (durability !== undefined && droppedItems.length > 0) {
+            droppedItems[droppedItems.length - 1].durability = durability;
+        }
+        if (typeof window.playItemSound === 'function') window.playItemSound(0.3);
     }
 };

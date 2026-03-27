@@ -62,6 +62,16 @@ const RECIPES = [
     { pattern: [[114], [114], [112]], output: { id: 127, count: 1 } },                     // Sword
     { pattern: [[114], [112], [112]], output: { id: 126, count: 1 } },                     // Shovel
 
+    // --- Gold Tools ---
+    { pattern: [[143, 143, 143], [0, 112, 0], [0, 112, 0]], output: { id: 160, count: 1 } }, // Gold Pickaxe
+    { pattern: [[143, 143], [143, 112], [0, 112]], output: { id: 159, count: 1 } },          // Gold Axe (Left)
+    { pattern: [[143, 143], [112, 143], [112, 0]], output: { id: 159, count: 1 } },          // Gold Axe (Right)
+    { pattern: [[143], [143], [112]], output: { id: 162, count: 1 } },                       // Gold Sword
+    { pattern: [[143], [112], [112]], output: { id: 161, count: 1 } },                       // Gold Shovel
+    // --- Gold Hoe ---
+    { pattern: [[143, 143], [0, 112], [0, 112]], output: { id: 163, count: 1 } },            // Gold Hoe
+    { pattern: [[143, 143], [112, 0], [112, 0]], output: { id: 163, count: 1 } },            // Gold Hoe (mirrored)
+
     // --- Food ---
     { pattern: [[129, 129, 129]], output: { id: 134, count: 1 } },                         // Bread (3 wheat)
 
@@ -136,7 +146,13 @@ const RECIPES = [
     { pattern: [[153, 153], [153, 153]], output: { id: 154, count: 1 } },
 
     // --- Quartz Pillar (1x2 quartz blocks) ---
-    { pattern: [[154], [154]], output: { id: 155, count: 2 } }
+    { pattern: [[154], [154]], output: { id: 155, count: 2 } },
+
+    // --- Smooth Stone Slab (3 smooth stone in a row) ---
+    { pattern: [[156, 156, 156]], output: { id: 157, count: 6 } },
+
+    // --- Iron Bars (3x2 iron ingots) ---
+    { pattern: [[113, 113, 113], [113, 113, 113]], output: { id: 158, count: 16 } }
 
 ];
 

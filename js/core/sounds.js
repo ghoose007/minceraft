@@ -9,6 +9,12 @@
 (function() {
     'use strict';
 
+    // Versioned fetch for cache busting
+    function vFetch(url) {
+        const v = typeof ASSET_VERSION !== 'undefined' ? '?v=' + ASSET_VERSION : '';
+        return fetch(url + v);
+    }
+
     // --- AUDIO CONTEXT (shared, lazy-init) ---
     let _audioCtx = null;
     function getAudioCtx() {
@@ -76,7 +82,7 @@
                     const path = `sounds/${type}_${cat}_${v}.ogg`;
                     const key = `${type}_${cat}_${v}`;
                     try {
-                        const resp = await fetch(path);
+                        const resp = await vFetch(path);
                         if (!resp.ok) continue;
                         const arrayBuf = await resp.arrayBuffer();
                         _buffers[key] = await ctx.decodeAudioData(arrayBuf);
@@ -86,7 +92,7 @@
         }
         for (const name of ['chest_open', 'chest_close']) {
             try {
-                const resp = await fetch(`sounds/${name}.ogg`);
+                const resp = await vFetch(`sounds/${name}.ogg`);
                 if (!resp.ok) continue;
                 const arrayBuf = await resp.arrayBuffer();
                 _buffers[name] = await ctx.decodeAudioData(arrayBuf);
@@ -94,7 +100,7 @@
         }
         for (let v = 0; v < VARIANT_COUNT; v++) {
             try {
-                const resp = await fetch(`sounds/dig_glass_${v}.ogg`);
+                const resp = await vFetch(`sounds/dig_glass_${v}.ogg`);
                 if (!resp.ok) continue;
                 const arrayBuf = await resp.arrayBuffer();
                 _buffers[`dig_glass_${v}`] = await ctx.decodeAudioData(arrayBuf);
@@ -102,7 +108,7 @@
         }
         for (const name of ['door_open', 'door_close']) {
             try {
-                const resp = await fetch(`sounds/${name}.ogg`);
+                const resp = await vFetch(`sounds/${name}.ogg`);
                 if (!resp.ok) continue;
                 const arrayBuf = await resp.arrayBuffer();
                 _buffers[name] = await ctx.decodeAudioData(arrayBuf);
@@ -115,11 +121,18 @@
             { key: 'tool_break', file: 'tool_break.ogg' },
             { key: 'lava_pop', file: 'lavapop.ogg' },
             { key: 'fire_ambient', file: 'fire_burn.ogg' },
-            { key: 'flint_and_steel', file: 'fire_ignite.ogg' }
+            { key: 'flint_and_steel', file: 'fire_ignite.ogg' },
+            { key: 'fuse', file: 'fuse.ogg' },
+            { key: 'fizz', file: 'fizz.ogg' },
+            { key: 'explode_0', file: 'explode_0.mp3' },
+            { key: 'explode_1', file: 'explode_1.ogg' },
+            { key: 'explode_2', file: 'explode_2.ogg' },
+            { key: 'explode_3', file: 'explode_3.ogg' },
+            { key: 'explode_4', file: 'explode_4.ogg' }
         ];
         for (const s of extraSounds) {
             try {
-                const resp = await fetch(`sounds/${s.file}`);
+                const resp = await vFetch(`sounds/${s.file}`);
                 if (resp.ok) {
                     const arrayBuf = await resp.arrayBuffer();
                     _buffers[s.key] = await ctx.decodeAudioData(arrayBuf);
@@ -129,7 +142,7 @@
 
         // LOAD FIRE AMBIENCE
         try {
-            const resp = await fetch(`sounds/fire_burn.ogg`);
+            const resp = await vFetch(`sounds/fire_burn.ogg`);
             if (resp.ok) {
                 const arrayBuf = await resp.arrayBuffer();
                 _buffers['fire_ambient'] = await ctx.decodeAudioData(arrayBuf);
@@ -138,7 +151,7 @@
 
         // LOAD FLINT AND STEEL
         try {
-            const resp = await fetch(`sounds/fire_ignite.ogg`);
+            const resp = await vFetch(`sounds/fire_ignite.ogg`);
             if (resp.ok) {
                 const arrayBuf = await resp.arrayBuffer();
                 _buffers['flint_and_steel'] = await ctx.decodeAudioData(arrayBuf);
@@ -147,7 +160,7 @@
 
         // Load the plop sound for item interactions
         try {
-            const resp = await fetch(`sounds/plop.ogg`);
+            const resp = await vFetch(`sounds/plop.ogg`);
             if (resp.ok) {
                 const arrayBuf = await resp.arrayBuffer();
                 _buffers['plop'] = await ctx.decodeAudioData(arrayBuf);
@@ -168,11 +181,11 @@
     _setCategory([13, 21, 41, 96, 29, 30, 44, 98, 58, 69, 93, 51, 70, 71, 72, 77, 80, 81, 82, 94, 144, 145, 146, 147, 149, 150], 1);
     _setCategory([3, 33, 32, 10, 11, 12, 48, 6, 7, 8, 9, 49, 50, 88, 31, 28, 87, 59, 91,
                   73, 74, 75, 76, 83, 84, 85, 86, 54, 60, 38, 68, 95, 90,
-                  99, 138, 139, 140, 141, 148, 152, 154, 155, 156], 2);
+                  99, 138, 139, 140, 141, 148, 152, 154, 155, 156, 19, 157, 158], 2);
     _setCategory([2, 5, 92, 61, 62, 63], 3);
     _setCategory([39, 40], 4);
     _setCategory([34, 35, 36, 37, 20], 5);
-    _setCategory([15, 19], 6);
+    _setCategory([15], 6);
 
     function getBlockSoundCategory(blockId) {
         return CATEGORY_KEYS[_blockSoundLUT[blockId] || 0];
@@ -488,7 +501,7 @@
                 const path = `${info.prefix}${v}.ogg`;
                 const key = `${name}_${v}`;
                 try {
-                    const resp = await fetch(path);
+                    const resp = await vFetch(path);
                     if (!resp.ok) continue;
                     const arrayBuf = await resp.arrayBuffer();
                     _buffers[key] = await ctx.decodeAudioData(arrayBuf);
@@ -667,7 +680,8 @@
         pig: { say: 3, step: 4, death: 1 },
         zombie: { say: 3, step: 4, hurt: 2, death: 1 },
         skeleton: { say: 3, step: 3, hurt: 3, death: 1 },
-        sheep: { say: 3, step: 4, death: 0 } // Fallback to 'say'
+        sheep: { say: 3, step: 4, death: 0 }, // Fallback to 'say'
+        zpig: { idle: 4, angry: 4, hurt: 2, death: 1 }
     };
 
     async function loadMobCustomSounds() {
@@ -679,7 +693,7 @@
                     const filename = count === 1 ? `sounds/${mobName}_${action}.ogg` : `sounds/${mobName}_${action}_${v}.ogg`;
                     const key = count === 1 ? `${mobName}_${action}` : `${mobName}_${action}_${v}`;
                     try {
-                        const resp = await fetch(filename);
+                        const resp = await vFetch(filename);
                         if (!resp.ok) continue;
                         const arrayBuf = await resp.arrayBuffer();
                         _buffers[key] = await ctx.decodeAudioData(arrayBuf);
@@ -732,7 +746,7 @@
             const path = `sounds/cave${i}.ogg`;
             const key = `cave_${i}`;
             try {
-                const resp = await fetch(path);
+                const resp = await vFetch(path);
                 if (!resp.ok) continue;
                 const arrayBuf = await resp.arrayBuffer();
                 _buffers[key] = await ctx.decodeAudioData(arrayBuf);
@@ -763,5 +777,22 @@
     window.playToolBreakSound = () => { if (_buffers['tool_break']) playNamedSound('tool_break', 0.6, 0.9, 1.1); };
     window.playBurpSound = () => { if (_buffers['burp']) playNamedSound('burp', 0.5, 0.9, 1.1); };
     window.playFlintAndSteelSound = (wx, wy, wz) => playNamedSoundAt('flint_and_steel', 0.6, 0.9, 1.1, wx + 0.5, wy + 0.5, wz + 0.5);
+
+    window.playFuseSound = function(wx, wy, wz) {
+        if (!_buffers['fuse']) return;
+        playNamedSoundAt('fuse', 0.7, 0.9, 1.1, wx + 0.5, wy + 0.5, wz + 0.5);
+    };
+
+    window.playExplosionSound = function(wx, wy, wz) {
+        const idx = Math.floor(Math.random() * 5);
+        const key = 'explode_' + idx;
+        if (!_buffers[key]) return;
+        playNamedSoundAt(key, 0.8, 0.8, 1.0, wx, wy, wz);
+    };
+
+    window.playFizzSound = function(wx, wy, wz) {
+        if (!_buffers['fizz']) return;
+        playNamedSoundAt('fizz', 0.4, 0.8, 1.2, wx + 0.5, wy + 0.5, wz + 0.5);
+    };
 
 })();

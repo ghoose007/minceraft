@@ -6,7 +6,7 @@ let skeletonMaterial = null;
 
 function initSkeletonMaterial() {
     if (skeletonMaterial) return;
-    const tex = new THREE.TextureLoader().load('textures/skeleton.png');
+    const tex = new THREE.TextureLoader().load('textures/skeleton.png?v=' + ASSET_VERSION);
     tex.magFilter = THREE.NearestFilter;
     tex.minFilter = THREE.NearestFilter;
     skeletonMaterial = new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, transparent: true, alphaTest: 0.1 });

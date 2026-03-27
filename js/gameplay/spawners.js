@@ -114,7 +114,7 @@ function _burstSpawnerParticles(sx, sy, sz) {
 // Uses createMobBox (64×32 zombie texture) with player-proportioned pivot layout.
 function _buildSpawnerZombieModel() {
     const TEX_W = 64, TEX_H = 32;
-    const tex = new THREE.TextureLoader().load('textures/zombie.png');
+    const tex = new THREE.TextureLoader().load('textures/zombie.png?v=' + ASSET_VERSION);
     tex.magFilter = THREE.NearestFilter;
     tex.minFilter = THREE.NearestFilter;
     const M = new THREE.MeshBasicMaterial({

@@ -48,10 +48,12 @@ function raycastVoxel() {
             const localZ = z - vz;
             
             let hit = false;
+            let hitBounds = b;
             if (localX >= b.minX && localX <= b.maxX &&
                 localY >= b.minY && localY <= b.maxY &&
                 localZ >= b.minZ && localZ <= b.maxZ) {
                 hit = true;
+                hitBounds = b;
             }
             // Also check the upper step for stairs
             if (!hit && typeof isStairBlock === 'function' && isStairBlock(id)) {
@@ -60,20 +62,40 @@ function raycastVoxel() {
                     localY >= ub.minY && localY <= ub.maxY &&
                     localZ >= ub.minZ && localZ <= ub.maxZ) {
                     hit = true;
+                    hitBounds = ub;
                 }
             }
             
             if (hit) {
-                const dx = lastX - vx;
-                const dy = lastY - vy;
-                const dz = lastZ - vz;
+                // Compute normal by finding which AABB face the ray entered through.
+                // Back-trace from the hit point to find the entry face.
                 let normal = [0, 0, 0];
+                const hb = hitBounds;
                 
-                if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > Math.abs(dz)) normal[0] = Math.sign(dx);
-                else if (Math.abs(dy) > Math.abs(dz)) normal[1] = Math.sign(dy);
-                else normal[2] = Math.sign(dz);
+                // Compute distance from hit point to each face of the AABB (in local coords)
+                // The face we entered through is the one closest to the hit point
+                // that the ray direction is opposing (moving into)
+                const dists = [];
+                if (dir.x > 0) dists.push({ d: (localX - hb.minX) / dir.x, axis: 0, sign: -1 }); // entered through -X face
+                if (dir.x < 0) dists.push({ d: (localX - hb.maxX) / dir.x, axis: 0, sign: 1 });  // entered through +X face
+                if (dir.y > 0) dists.push({ d: (localY - hb.minY) / dir.y, axis: 1, sign: -1 }); // entered through -Y face (bottom)
+                if (dir.y < 0) dists.push({ d: (localY - hb.maxY) / dir.y, axis: 1, sign: 1 });  // entered through +Y face (top)
+                if (dir.z > 0) dists.push({ d: (localZ - hb.minZ) / dir.z, axis: 2, sign: -1 }); // entered through -Z face
+                if (dir.z < 0) dists.push({ d: (localZ - hb.maxZ) / dir.z, axis: 2, sign: 1 });  // entered through +Z face
                 
-                return { hit: [vx, vy, vz], normal: normal, id: id, val: val };
+                // The entry face is the one with the smallest positive back-trace distance
+                let bestDist = Infinity;
+                let bestAxis = 1, bestSign = 1;
+                for (const f of dists) {
+                    if (f.d >= -0.001 && f.d < bestDist) {
+                        bestDist = f.d;
+                        bestAxis = f.axis;
+                        bestSign = f.sign;
+                    }
+                }
+                normal[bestAxis] = bestSign;
+                
+                return { hit: [vx, vy, vz], normal: normal, id: id, val: val, exactHit: [x, y, z] };
             }
         }
         

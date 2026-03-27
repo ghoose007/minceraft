@@ -1,70 +1,111 @@
 // ==========================================
-// ZOMBIE MOB
+// ZOMBIE PIGMAN MOB
 // ==========================================
+// Neutral mob that spawns in the Nether.
+// Uses zombie model + overlay "hat" layer for the skin.
+// Holds a gold sword. Becomes hostile when attacked — all nearby pigmen aggro together.
 
-// ==========================================
+let zombiePigmanMaterial = null;
 
-let zombieMaterial = null;
-
-function initZombieMaterial() {
-    if (zombieMaterial) return;
-    const tex = new THREE.TextureLoader().load('textures/zombie.png?v=' + ASSET_VERSION);
+function initZombiePigmanMaterial() {
+    if (zombiePigmanMaterial) return;
+    const tex = new THREE.TextureLoader().load('textures/zombiepigman.png?v=' + ASSET_VERSION);
     tex.magFilter = THREE.NearestFilter;
     tex.minFilter = THREE.NearestFilter;
-    zombieMaterial = new THREE.MeshBasicMaterial({
+    zombiePigmanMaterial = new THREE.MeshBasicMaterial({
         map: tex,
         vertexColors: true,
         side: THREE.FrontSide,
         alphaTest: 0.1,
-        transparent: false
+        transparent: true
     });
-    if (typeof injectLightingShader === 'function') injectLightingShader(zombieMaterial);
-    zombieMaterial.customProgramCacheKey = function() { return 'zombieMat'; };
+    if (typeof injectLightingShader === 'function') injectLightingShader(zombiePigmanMaterial);
+    zombiePigmanMaterial.customProgramCacheKey = function() { return 'zpigmanMat'; };
 }
 
-class Zombie extends Mob {
+// Helper: create an inflated overlay box (same UVs, slightly larger for 3D skin layer)
+function createOverlayMobBox(w, h, d, u, v, texW, texH, inflate) {
+    const iw = w + inflate * 2, ih = h + inflate * 2, id = d + inflate * 2;
+    const geo = new THREE.BoxGeometry(iw / 16, ih / 16, id / 16);
+    const uvs = geo.attributes.uv.array;
+
+    const setUV = (face, x, y, fw, fh) => {
+        const u1 = x / texW;
+        const u2 = (x + fw) / texW;
+        const v1 = 1.0 - ((y + fh) / texH);
+        const v2 = 1.0 - (y / texH);
+        uvs[face*8 + 0] = u1; uvs[face*8 + 1] = v2;
+        uvs[face*8 + 2] = u2; uvs[face*8 + 3] = v2;
+        uvs[face*8 + 4] = u1; uvs[face*8 + 5] = v1;
+        uvs[face*8 + 6] = u2; uvs[face*8 + 7] = v1;
+    };
+
+    // Same face order as createMobBox
+    setUV(0, u + d + w, v + d, d, h);     // +X right
+    setUV(1, u, v + d, d, h);             // -X left
+    setUV(2, u + d, v, w, d);             // +Y top
+    setUV(3, u + d + w, v, w, d);         // -Y bottom
+    setUV(4, u + d, v + d, w, h);         // +Z front
+    setUV(5, u + d + w + d, v + d, w, h); // -Z back
+
+    // Set vertex colors to white for lighting
+    const count = geo.attributes.position.count;
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count * 3; i++) colors[i] = 1.0;
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    return geo;
+}
+
+class ZombiePigman extends Mob {
     constructor(x, y, z) {
         super(x, y, z);
 
-        this.width  = 0.6;   
-        this.height = 1.8;   
+        this.width  = 0.6;
+        this.height = 1.8;
         this.health = 20;
 
         this.aggroTarget  = null;
         this.attackTimer  = 0;
         this.isAggro      = false;
+        this.aggroTimer   = 0;       // How long aggro lasts after being hit
         this.burningTimer = 0;
 
-        initZombieMaterial();
-        if (this.material) this.material.dispose(); 
-        this.material = zombieMaterial.clone();
+        initZombiePigmanMaterial();
+        if (this.material) this.material.dispose();
+        this.material = zombiePigmanMaterial.clone();
         if (typeof injectLightingShader === 'function') injectLightingShader(this.material);
-        this.material.customProgramCacheKey = function() { return 'zombieMatInst'; };
+        this.material.customProgramCacheKey = function() { return 'zpigmanMatInst'; };
 
         const M = this.material;
-        const TEX_W = 64, TEX_H = 32;
+        const TEX_W = 64, TEX_H = 64; // 64x64 skin format
+        const INFLATE = 0.5; // overlay inflation in pixels
 
+        // --- BASE MODEL (same as zombie, UV in top half of 64x64) ---
+
+        // Right Leg
         this.rightLegPivot = new THREE.Group();
         const rLegGeo = createMobBox(4, 12, 4, 0, 16, TEX_W, TEX_H);
-        const rLegMesh = new THREE.Mesh(rLegGeo, M);
-        rLegMesh.position.set(0, -6/16, 0);
-        this.rightLegPivot.add(rLegMesh);
+        this.rightLegPivot.add(new THREE.Mesh(rLegGeo, M));
+        this.rightLegPivot.children[0].position.set(0, -6/16, 0);
         this.rightLegPivot.position.set(-2/16, 12/16, 0);
         this.mesh.add(this.rightLegPivot);
 
+        // Left Leg (mirrored right leg in classic format)
         this.leftLegPivot = new THREE.Group();
         const lLegGeo = createMobBox(4, 12, 4, 0, 16, TEX_W, TEX_H);
-        const lLegMesh = new THREE.Mesh(lLegGeo, M);
-        lLegMesh.position.set(0, -6/16, 0);
-        this.leftLegPivot.add(lLegMesh);
+        this.leftLegPivot.add(new THREE.Mesh(lLegGeo, M));
+        this.leftLegPivot.children[0].position.set(0, -6/16, 0);
         this.leftLegPivot.position.set(2/16, 12/16, 0);
         this.mesh.add(this.leftLegPivot);
 
+        // Body
         const bodyGeo = createMobBox(8, 12, 4, 16, 16, TEX_W, TEX_H);
         const bodyMesh = new THREE.Mesh(bodyGeo, M);
         bodyMesh.position.set(0, 18/16, 0);
         this.mesh.add(bodyMesh);
 
+        // Right Arm
         this.rightArmPivot = new THREE.Group();
         const rArmGeo = createMobBox(4, 12, 4, 40, 16, TEX_W, TEX_H);
         const rArmMesh = new THREE.Mesh(rArmGeo, M);
@@ -73,6 +114,7 @@ class Zombie extends Mob {
         this.rightArmPivot.position.set(-6/16, 23/16, 0);
         this.mesh.add(this.rightArmPivot);
 
+        // Left Arm (mirrored right arm in classic format)
         this.leftArmPivot = new THREE.Group();
         const lArmGeo = createMobBox(4, 12, 4, 40, 16, TEX_W, TEX_H);
         const lArmMesh = new THREE.Mesh(lArmGeo, M);
@@ -81,16 +123,54 @@ class Zombie extends Mob {
         this.leftArmPivot.position.set(6/16, 23/16, 0);
         this.mesh.add(this.leftArmPivot);
 
+        // Head
         this.headGroup = new THREE.Group();
         const headGeo = createMobBox(8, 8, 8, 0, 0, TEX_W, TEX_H);
         const headMesh = new THREE.Mesh(headGeo, M);
         headMesh.position.set(0, 4/16, 0);
         this.headGroup.add(headMesh);
+
+        // --- OVERLAY "HAT" LAYER (head, UV at 32,0, inflated) ---
+        const hatGeo = createOverlayMobBox(8, 8, 8, 32, 0, TEX_W, TEX_H, INFLATE);
+        const hatMesh = new THREE.Mesh(hatGeo, M);
+        hatMesh.position.set(0, 4/16, 0);
+        this.headGroup.add(hatMesh);
+
         this.headGroup.position.set(0, 24/16, 0);
         this.mesh.add(this.headGroup);
+
+        // --- BODY OVERLAY (UV at 16,32 in bottom half, inflated) ---
+        const bodyOvGeo = createOverlayMobBox(8, 12, 4, 16, 32, TEX_W, TEX_H, INFLATE);
+        const bodyOvMesh = new THREE.Mesh(bodyOvGeo, M);
+        bodyOvMesh.position.set(0, 18/16, 0);
+        this.mesh.add(bodyOvMesh);
+
+        // --- LEFT LEG OVERLAY (UV at 0,48 in bottom half) ---
+        const lLegOvGeo = createOverlayMobBox(4, 12, 4, 0, 48, TEX_W, TEX_H, INFLATE);
+        const lLegOvMesh = new THREE.Mesh(lLegOvGeo, M);
+        lLegOvMesh.position.set(0, -6/16, 0);
+        this.leftLegPivot.add(lLegOvMesh);
+
+        // --- LEFT ARM OVERLAY (UV at 48,48 in bottom half) ---
+        const lArmOvGeo = createOverlayMobBox(4, 12, 4, 48, 48, TEX_W, TEX_H, INFLATE);
+        const lArmOvMesh = new THREE.Mesh(lArmOvGeo, M);
+        lArmOvMesh.position.set(0, -6/16, 0);
+        this.leftArmPivot.add(lArmOvMesh);
+
+        // --- GOLD SWORD in right hand ---
+        if (typeof buildItemMesh === 'function') {
+            const swordMesh = buildItemMesh(162); // Gold Sword
+            if (swordMesh) {
+                swordMesh.scale.set(0.4, 0.4, 0.4);
+                swordMesh.rotation.set(1.75, 2.8, 0);
+                swordMesh.position.set(-0.02, -0.32, -0.25);
+                this.rightArmPivot.add(swordMesh);
+                this._swordMesh = swordMesh;
+            }
+        }
     }
 
-    // --- OVERRIDE GENERIC FOOTSTEPS WITH CUSTOM ZOMBIE STEPS ---
+    // Zombie pigman uses zombie step sounds (since there are no pigman-specific ones)
     _tickFootstep() {
         if (this._lastStepX === undefined) {
             this._lastStepX = this.x;
@@ -110,10 +190,8 @@ class Zombie extends Mob {
         const dist = Math.sqrt(dx * dx + dz * dz);
         if (dist > 2.0 || dist < 0.001) return;
         this._stepDistAccum += dist;
-        const STEP_DISTANCE = 1.8; // Zombies have a slightly wider stride than pigs
-        if (this._stepDistAccum >= STEP_DISTANCE) {
-            this._stepDistAccum -= STEP_DISTANCE;
-            if (this._stepDistAccum > STEP_DISTANCE) this._stepDistAccum = 0;
+        if (this._stepDistAccum >= 1.8) {
+            this._stepDistAccum -= 1.8;
             if (typeof window.playMobSound === 'function') {
                 window.playMobSound('zombie', 'step', this.x, this.y, this.z, 0.4);
             }
@@ -128,7 +206,10 @@ class Zombie extends Mob {
 
         this.vy -= 28.0 * dt;
         let nextY = this.y + this.vy * dt;
-        if (this.checkCollision(this.x, nextY, this.z)) { if (this.vy < 0) nextY = this.getFloorY(this.x, nextY, this.z); this.vy = 0; }
+        if (this.checkCollision(this.x, nextY, this.z)) {
+            if (this.vy < 0) nextY = this.getFloorY(this.x, nextY, this.z);
+            this.vy = 0;
+        }
         this.y = nextY;
         this.mesh.position.set(this.x, this.y, this.z);
 
@@ -143,8 +224,11 @@ class Zombie extends Mob {
                     );
                 }
             }
-            if (Math.random() < 0.10 && typeof window.spawnDroppedItem === 'function') {
-                window.spawnDroppedItem(this.x, this.y + 0.5, this.z, 113, 1);
+            // Drop gold nuggets (gold ingot) or gold sword rarely
+            if (typeof window.spawnDroppedItem === 'function') {
+                if (Math.random() < 0.5) {
+                    window.spawnDroppedItem(this.x, this.y + 0.5, this.z, 143, 1); // Gold Ingot
+                }
             }
         }
     }
@@ -175,86 +259,48 @@ class Zombie extends Mob {
             if (this.hurtTime <= 0) this.material.color.setHex(0xffffff);
         }
 
-        // ---- AMBIENT SOUNDS ----
-        if (this._ambientTimer === undefined) this._ambientTimer = 2.0 + Math.random() * 4.0;
+        // Ambient sounds — idle when passive, angry when aggroed
+        if (this._ambientTimer === undefined) this._ambientTimer = 3.0 + Math.random() * 5.0;
         this._ambientTimer -= dt;
         if (this._ambientTimer <= 0) {
-            this._ambientTimer = 4.0 + Math.random() * 6.0;
+            this._ambientTimer = 5.0 + Math.random() * 8.0;
             if (typeof window.playMobSound === 'function') {
-                window.playMobSound('zombie', 'say', this.x, this.y, this.z, 0.65);
+                const ambientAction = this.isAggro ? 'angry' : 'idle';
+                window.playMobSound('zpig', ambientAction, this.x, this.y, this.z, 0.55);
             }
         }
 
-        let isBurningFromSun = false;
-        
-        if (this.health > 0 && !this.inWater && !this.inLava) {
-            const timeOfDay = typeof globalTime !== 'undefined' ? globalTime : 0;
-            const DAY_LENGTH = typeof DAY_TIME !== 'undefined' ? DAY_TIME : 24000;
-            const isDaytime = (timeOfDay >= DAY_LENGTH * 0.05 && timeOfDay <= DAY_LENGTH * 0.45);
-            if (isDaytime) {
-                const headY = Math.floor(this.y + this.height);
-                if (typeof getSunLight === 'function' && getSunLight(Math.floor(this.x), headY, Math.floor(this.z)) === 15) {
-                    isBurningFromSun = true; 
-                    this.burningTimer += dt;
-                    if (this.burningTimer > 1.0) {
-                        this.burningTimer = 0;
-                        this.takeDamage(1, this.x, this.z, true); 
-                        if (typeof spawnParticles === 'function') spawnParticles(this.x, this.y + 1, this.z, 89);
-                    }
-                } else {
-                    this.burningTimer = 0;
-                }
-            } else {
-                this.burningTimer = 0;
+        // Zombie pigmen are immune to fire and lava
+        // (they live in the nether, so no sun burning either)
+
+        // Environment damage (only from falling, not fire/lava)
+        // Skip fire mesh ticking but still apply physics
+        _tickMobFireMeshes(this, false); // Never visibly on fire
+
+        // --- AGGRO DECAY ---
+        if (this.isAggro) {
+            this.aggroTimer -= dt;
+            if (this.aggroTimer <= 0) {
+                this.isAggro = false;
             }
         }
 
-        const isVisiblyOnFire = this.inLava || 
-            (getVoxel(Math.floor(this.x), Math.floor(this.y), Math.floor(this.z)) & 0xFF) === 89 || 
-            isBurningFromSun;
-        _tickMobFireMeshes(this, isVisiblyOnFire);
-        _tickMobEnvironmentDamage(this, dt);
-
-        const sunLevel = (typeof timeUniforms !== 'undefined') ? timeUniforms.uSunLevel.value : 0;
         const dx = player.x - this.x;
         const dy = (player.y + 0.9) - (this.y + this.height * 0.5);
         const dz = player.z - this.z;
         const distSq = dx*dx + dy*dy + dz*dz;
-        const distXZ  = Math.sqrt(dx*dx + dz*dz);
+        const distXZ = Math.sqrt(dx*dx + dz*dz);
 
-        const detectRange = (sunLevel > 0.5) ? 16 : 40;
-        const detectRangeSq = detectRange * detectRange;
         const canAggro = !player._dead && gameMode !== 'creative';
-
-        // --- AGGRO & LOS SYSTEM ---
-        const hasLOS = checkLineOfSight(this.x, this.y + 1.6, this.z, player.x, player.y + 1.6, player.z);
-
-        if (canAggro && distSq < detectRangeSq) {
-            if (hasLOS) {
-                // If they see you, chase and reset the memory timer
-                this.isAggro = true;
-                this._lostSightTimer = 5.0; 
-            } else if (this.isAggro) {
-                // If they lose sight, count down for 5 seconds before giving up
-                this._lostSightTimer -= dt;
-                if (this._lostSightTimer <= 0) {
-                    this.isAggro = false;
-                }
-            }
-        } else {
-            this.isAggro = false;
-        }
-
-        // Hard break if you get too far away (64 blocks)
-        if (distSq > 64 * 64) this.isAggro = false;
 
         if (this._stuckTimer === undefined) this._initPathState();
 
-        const ZOMBIE_SPEED = 2.0;
-        const ATTACK_RANGE    = 1.75;
+        const PIGMAN_SPEED = 2.3;
+        const ATTACK_RANGE = 1.75;
         const STOP_CHASE_DIST = ATTACK_RANGE - 0.2;
 
-        if (this.isAggro && !player._dead) {
+        // --- NEUTRAL AI: only chase if aggroed ---
+        if (this.isAggro && canAggro && !player._dead) {
             this.state = 'wander';
 
             if (distXZ > STOP_CHASE_DIST) {
@@ -263,8 +309,8 @@ class Zombie extends Mob {
 
                 const needsRepath = !this._path
                     || this._pathIndex >= this._path.length
-                    || this._pathTimer > 1.0    
-                    || this._checkStuck(dt, 0.8); 
+                    || this._pathTimer > 1.0
+                    || this._checkStuck(dt, 0.8);
 
                 if (needsRepath && this._pathCooldown <= 0) {
                     this._path = findPath(
@@ -274,16 +320,15 @@ class Zombie extends Mob {
                     );
                     this._pathIndex = 0;
                     this._pathTimer = 0;
-                    this._pathCooldown = 0.3; 
+                    this._pathCooldown = 0.3;
                     this._stuckTimer = 0;
                 }
 
-                const pathDone = this._followPath(ZOMBIE_SPEED, dt);
-
+                const pathDone = this._followPath(PIGMAN_SPEED, dt);
                 if (pathDone) {
                     const angle = Math.atan2(dx, dz);
-                    this.vx = Math.sin(angle) * ZOMBIE_SPEED;
-                    this.vz = Math.cos(angle) * ZOMBIE_SPEED;
+                    this.vx = Math.sin(angle) * PIGMAN_SPEED;
+                    this.vz = Math.cos(angle) * PIGMAN_SPEED;
                     this.targetYaw = angle;
                 }
             } else {
@@ -294,58 +339,60 @@ class Zombie extends Mob {
 
             const angle = Math.atan2(dx, dz);
             this.targetYaw = this._path && this._pathIndex < this._path.length ? this.targetYaw : angle;
-            
+
             let headYaw = angle - this.yaw;
-            while (headYaw >  Math.PI) headYaw -= Math.PI * 2;
+            while (headYaw > Math.PI) headYaw -= Math.PI * 2;
             while (headYaw < -Math.PI) headYaw += Math.PI * 2;
             headYaw = Math.max(-0.8, Math.min(0.8, headYaw));
             let headPitch = Math.atan2(-dy, Math.max(0.1, distXZ));
             headPitch = Math.max(-0.8, Math.min(0.8, headPitch));
-            this.headGroup.rotation.y += (headYaw  - this.headGroup.rotation.y)  * dt * 8.0;
+            this.headGroup.rotation.y += (headYaw - this.headGroup.rotation.y) * dt * 8.0;
             this.headGroup.rotation.x += (headPitch - this.headGroup.rotation.x) * dt * 8.0;
 
+            // Attack
             this.attackTimer -= dt;
             if (distXZ <= ATTACK_RANGE && Math.abs(dy) < 2.0 && this.attackTimer <= 0 && !player._dead) {
                 this.attackTimer = 1.0;
                 this._swingAnim = 1.0;
                 if (gameMode === 'survival') {
-                    player.health = Math.max(0, player.health - 2);
+                    player.health = Math.max(0, player.health - 4); // Gold sword = 4 damage
                     if (typeof triggerDamageShake === 'function') triggerDamageShake();
                     if (typeof updateHealthUI === 'function') updateHealthUI();
                     if (player.health <= 0 && !player._dead) {
                         if (typeof window.killPlayer === 'function') window.killPlayer();
                     }
                     const kbDist = distXZ || 1;
-                    player.vx += (dx / kbDist) * 5.0;
-                    player.vz += (dz / kbDist) * 5.0;
-                    player.vy  = Math.max(player.vy, 3.5);
+                    player.vx += (dx / kbDist) * 6.0;
+                    player.vz += (dz / kbDist) * 6.0;
+                    player.vy = Math.max(player.vy, 4.0);
                 }
             }
         } else {
-            this._path = null; 
+            // Passive wandering (same as zombie idle behavior)
+            this._path = null;
             this.timer -= dt;
             if (this.timer <= 0) {
-                if (Math.random() < 0.4) {
+                if (Math.random() < 0.5) {
                     this.state = 'idle';
-                    this.timer = 2.0 + Math.random() * 3.0;
+                    this.timer = 3.0 + Math.random() * 4.0;
                 } else {
                     this.state = 'wander';
-                    this.timer = 3.0 + Math.random() * 4.0;
+                    this.timer = 3.0 + Math.random() * 5.0;
                     this.targetYaw = this.yaw + (Math.random() - 0.5) * Math.PI * 2;
                 }
             }
 
             if (this.state === 'wander') {
-                const vxCandidate = Math.sin(this.yaw) * ZOMBIE_SPEED * 0.5;
-                const vzCandidate = Math.cos(this.yaw) * ZOMBIE_SPEED * 0.5;
-                if (this.onGround && _mobStepIsDangerous(this, vxCandidate, vzCandidate)) {
+                const vxC = Math.sin(this.yaw) * PIGMAN_SPEED * 0.35;
+                const vzC = Math.cos(this.yaw) * PIGMAN_SPEED * 0.35;
+                if (this.onGround && _mobStepIsDangerous(this, vxC, vzC)) {
                     this.state = 'idle';
                     this.timer = 1.0 + Math.random() * 1.5;
                     this.targetYaw = this.yaw + Math.PI + (Math.random() - 0.5) * Math.PI;
                     this.vx *= 0.1; this.vz *= 0.1;
                 } else {
-                    this.vx = vxCandidate;
-                    this.vz = vzCandidate;
+                    this.vx = vxC;
+                    this.vz = vzC;
                 }
                 if (this._checkStuck(dt, 1.5)) {
                     this._stuckTimer = 0;
@@ -357,18 +404,19 @@ class Zombie extends Mob {
                 this.vz *= Math.exp(-8 * dt);
             }
 
-            const idleYaw   = Math.sin(globalTime * 1.2) * 0.25;
-            const idlePitch = Math.sin(globalTime * 0.8) * 0.15;
-            this.headGroup.rotation.y += (idleYaw   - this.headGroup.rotation.y)  * dt * 4.0;
+            const idleYaw = Math.sin(globalTime * 1.0) * 0.2;
+            const idlePitch = Math.sin(globalTime * 0.7) * 0.12;
+            this.headGroup.rotation.y += (idleYaw - this.headGroup.rotation.y) * dt * 4.0;
             this.headGroup.rotation.x += (idlePitch - this.headGroup.rotation.x) * dt * 4.0;
         }
 
+        // Yaw interpolation
         let diff = this.targetYaw - this.yaw;
-        while (diff >  Math.PI) diff -= Math.PI * 2;
+        while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
         this.yaw += diff * dt * 3.5;
 
-        if (this.inWater && Math.random() < 0.1) window.spawnWaterSplash(this.x, this.y, this.z);
+        // Physics
         if (this._pendingJump) {
             this.vy = 8.2;
             this.onGround = false;
@@ -383,22 +431,22 @@ class Zombie extends Mob {
 
         this.mesh.position.set(this.x, this.y, this.z);
         this.mesh.rotation.y = this.yaw;
-        
-        // Use custom zombie footstep logic
+
         this._tickFootstep();
 
+        // Animation (zombie arms-out pose + sword swing)
         const horizSpeed = Math.sqrt(this.vx * this.vx + this.vz * this.vz);
         const isMoving = horizSpeed > 0.15;
         this.walkCycle += dt * (isMoving ? 5.0 : 0.0);
 
         const legSwing = isMoving ? Math.sin(this.walkCycle) * 0.7 : 0;
-        this.rightLegPivot.rotation.x += (legSwing  - this.rightLegPivot.rotation.x) * dt * 12;
-        this.leftLegPivot.rotation.x  += (-legSwing - this.leftLegPivot.rotation.x)  * dt * 12;
+        this.rightLegPivot.rotation.x += (legSwing - this.rightLegPivot.rotation.x) * dt * 12;
+        this.leftLegPivot.rotation.x += (-legSwing - this.leftLegPivot.rotation.x) * dt * 12;
 
         if (!this._idleTime) this._idleTime = 0;
         this._idleTime += dt;
-        const idleAmp   = isMoving ? 0.0 : 1.0; 
-        const idleSway  = Math.sin(this._idleTime * 1.5) * 0.06 * idleAmp;
+        const idleAmp = isMoving ? 0.0 : 1.0;
+        const idleSway = Math.sin(this._idleTime * 1.5) * 0.06 * idleAmp;
         const idleSwayZ = Math.sin(this._idleTime * 1.2 + 0.5) * 0.03 * idleAmp;
 
         if (!this._swingAnim) this._swingAnim = 0;
@@ -406,23 +454,25 @@ class Zombie extends Mob {
         let attackSwing = 0;
         if (this._swingAnim > 0) {
             const progress = 1.0 - this._swingAnim;
-            const swingArc = Math.sin(Math.sqrt(progress) * Math.PI);
-            attackSwing = -swingArc * 1.2; 
+            attackSwing = -Math.sin(Math.sqrt(progress) * Math.PI) * 1.2;
         }
 
+        // Zombie arms-out pose
         const targetRightArm = -Math.PI / 2 + idleSway + attackSwing;
-        const targetLeftArm  = -Math.PI / 2 + idleSway + attackSwing;
+        const targetLeftArm = -Math.PI / 2 + idleSway + attackSwing;
         this.rightArmPivot.rotation.x += (targetRightArm - this.rightArmPivot.rotation.x) * dt * 6;
-        this.leftArmPivot.rotation.x  += (targetLeftArm  - this.leftArmPivot.rotation.x)  * dt * 6;
-        this.rightArmPivot.rotation.z += ( idleSwayZ - this.rightArmPivot.rotation.z) * dt * 6;
-        this.leftArmPivot.rotation.z  += (-idleSwayZ - this.leftArmPivot.rotation.z)  * dt * 6;
+        this.leftArmPivot.rotation.x += (targetLeftArm - this.leftArmPivot.rotation.x) * dt * 6;
+        this.rightArmPivot.rotation.z += (idleSwayZ - this.rightArmPivot.rotation.z) * dt * 6;
+        this.leftArmPivot.rotation.z += (-idleSwayZ - this.leftArmPivot.rotation.z) * dt * 6;
 
+        // Render order
         const targetOrder = this.inWater ? 6 : 0;
         if (this.mesh.renderOrder !== targetOrder) {
             this.mesh.renderOrder = targetOrder;
             this.mesh.traverse(c => { if (c.isMesh) c.renderOrder = targetOrder; });
         }
 
+        // Separation from other mobs
         let sepX = 0, sepZ = 0;
         const SEP_RADIUS = 0.65;
         for (let j = 0; j < globalMobs.length; j++) {
@@ -439,37 +489,28 @@ class Zombie extends Mob {
                 sepZ += (rdz / d) * pushAmt;
             }
         }
-        if (Math.abs(sepX) > 0.0001) {
-            if (!this._testCollisionPure(this.x + sepX, this.y, this.z)) {
-                this.x += sepX;
-            }
-        }
-        if (Math.abs(sepZ) > 0.0001) {
-            if (!this._testCollisionPure(this.x, this.y, this.z + sepZ)) {
-                this.z += sepZ;
-            }
-        }
+        if (Math.abs(sepX) > 0.0001 && !this._testCollisionPure(this.x + sepX, this.y, this.z)) this.x += sepX;
+        if (Math.abs(sepZ) > 0.0001 && !this._testCollisionPure(this.x, this.y, this.z + sepZ)) this.z += sepZ;
 
         this.updateLighting();
     }
 }
 
-// Override takeDamage to support optional fire-damage flag, and trigger custom hurt/death sounds!
-Zombie.prototype.takeDamage = function(amount, sourceX, sourceZ, isFireDamage) {
+// --- TAKE DAMAGE: aggro self + all nearby pigmen ---
+ZombiePigman.prototype.takeDamage = function(amount, sourceX, sourceZ, isFireDamage) {
     if (this.hurtTime > 0 || this.dying || this.dead) return;
     this.health -= amount;
     this.hurtTime = 0.5;
 
-    // Trigger proper custom sound depending on whether the hit was fatal
     if (this.health <= 0) {
         this.dying = true;
         this.deathTimer = 1.0;
         if (typeof window.playMobSound === 'function') {
-            window.playMobSound('zombie', 'death', this.x, this.y, this.z, 0.75);
+            window.playMobSound('zpig', 'death', this.x, this.y, this.z, 0.75);
         }
     } else {
         if (typeof window.playMobSound === 'function') {
-            window.playMobSound('zombie', 'hurt', this.x, this.y, this.z, 0.75);
+            window.playMobSound('zpig', 'hurt', this.x, this.y, this.z, 0.75);
         }
     }
 
@@ -481,7 +522,31 @@ Zombie.prototype.takeDamage = function(amount, sourceX, sourceZ, isFireDamage) {
         this.vz = (dz / dist) * 6.0;
         this.vy = 6.0;
         this.onGround = false;
+
+        // Play angry sound on initial aggro
+        if (!this.isAggro && typeof window.playMobSound === 'function') {
+            window.playMobSound('zpig', 'angry', this.x, this.y, this.z, 0.7);
+        }
+
+        // Aggro this pigman
         this.isAggro = true;
+        this.aggroTimer = 20.0 + Math.random() * 20.0; // 20-40 seconds
+
+        // Aggro ALL nearby zombie pigmen within 32 blocks
+        const AGGRO_RANGE_SQ = 32 * 32;
+        for (const mob of globalMobs) {
+            if (mob === this || !(mob instanceof ZombiePigman) || mob.dead || mob.dying) continue;
+            const adx = mob.x - this.x;
+            const adz = mob.z - this.z;
+            if (adx * adx + adz * adz < AGGRO_RANGE_SQ) {
+                // Play angry sound for each newly aggroed pigman
+                if (!mob.isAggro && typeof window.playMobSound === 'function') {
+                    window.playMobSound('zpig', 'angry', mob.x, mob.y, mob.z, 0.6);
+                }
+                mob.isAggro = true;
+                mob.aggroTimer = 20.0 + Math.random() * 20.0;
+            }
+        }
     } else {
         this.material.color.setHex(0xff8844);
     }

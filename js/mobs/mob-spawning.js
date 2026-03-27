@@ -7,6 +7,7 @@ window.spawnMob = function(type, x, y, z) {
     if (type === 'zombie') new Zombie(x, y, z);
     if (type === 'sheep') new Sheep(x, y, z);
     if (type === 'skeleton') new Skeleton(x, y, z);
+    if (type === 'zombie_pigman') new ZombiePigman(x, y, z);
 };
 
 window.updateMobs = function(dt) {
@@ -139,4 +140,60 @@ window.tickMobSpawning = function(dt) {
         }
     }
     } // end if (!inNether) for zombie spawning
+
+    // ---- NETHER: ZOMBIE PIGMAN SPAWNING ----
+    if (inNether && typeof ZombiePigman !== 'undefined') {
+        if (!window._pigmanSpawnTimer) window._pigmanSpawnTimer = 0;
+        window._pigmanSpawnTimer += dt;
+        if (window._pigmanSpawnTimer >= 3.0) {
+            window._pigmanSpawnTimer = 0;
+            const pigmanCount = globalMobs.filter(m => m instanceof ZombiePigman).length;
+            if (pigmanCount < 15) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 16 + Math.random() * 40;
+                const sx = Math.floor(player.x + Math.cos(angle) * dist);
+                const sz = Math.floor(player.z + Math.sin(angle) * dist);
+
+                // Scan downward from player's Y to find a solid floor with 2 air blocks above
+                // The nether is a cave system so getHighestBlock returns the ceiling
+                const startY = Math.min(120, Math.floor(player.y) + 10);
+                let spawned = false;
+                let inAir = false;
+                for (let sy = startY; sy >= 2 && !spawned; sy--) {
+                    const id = getVoxel(sx, sy, sz) & 0xFF;
+                    const isEmpty = (id === 0);
+                    if (isEmpty) {
+                        inAir = true;
+                    } else if (inAir && !isFluidBlock(id)) {
+                        // Found solid block with air above — this is a floor
+                        const air1 = getVoxel(sx, sy + 1, sz) & 0xFF;
+                        const air2 = getVoxel(sx, sy + 2, sz) & 0xFF;
+                        if (air1 === 0 && air2 === 0) {
+                            const packSize = 1 + Math.floor(Math.random() * 3);
+                            for (let i = 0; i < packSize && pigmanCount + i < 15; i++) {
+                                const px = sx + Math.floor(Math.random() * 5) - 2;
+                                const pz = sz + Math.floor(Math.random() * 5) - 2;
+                                // Find floor at this offset too
+                                let pInAir = false;
+                                for (let py = startY; py >= 2; py--) {
+                                    const pid = getVoxel(px, py, pz) & 0xFF;
+                                    if (pid === 0) { pInAir = true; }
+                                    else if (pInAir && !isFluidBlock(pid)) {
+                                        const pa1 = getVoxel(px, py + 1, pz) & 0xFF;
+                                        const pa2 = getVoxel(px, py + 2, pz) & 0xFF;
+                                        if (pa1 === 0 && pa2 === 0) {
+                                            spawnMob('zombie_pigman', px + 0.5, py + 1.0, pz + 0.5);
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                            spawned = true;
+                        }
+                        inAir = false;
+                    }
+                }
+            }
+        }
+    }
 };
