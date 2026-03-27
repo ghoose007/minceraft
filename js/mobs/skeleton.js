@@ -66,15 +66,29 @@ class Skeleton extends Mob {
         this.mesh.add(this.rightArmPivot);
 
         if (typeof buildItemMesh === 'function') {
-            const axeMesh = buildItemMesh(111); 
-            if (axeMesh) {
-                axeMesh.scale.set(0.4, 0.4, 0.4);
-                axeMesh.rotation.set(1.75, 2.8, 0);
-                axeMesh.position.set(-0.02, 0.18, 0.0);
+            const bowMesh = buildItemMesh(164); // Bow
+            if (bowMesh) {
+                bowMesh.scale.set(0.4, 0.4, 0.4);
+                bowMesh.rotation.set(1.75, 2.8 - 15 * Math.PI / 180, 0);
+                bowMesh.position.set(-0.02, 0.18, -4/16);
                 const heldAnchor = new THREE.Group();
                 heldAnchor.position.set(0, -12.5/16, 0);
-                heldAnchor.add(axeMesh);
+                heldAnchor.add(bowMesh);
                 this.rightArmPivot.add(heldAnchor);
+
+                // DEBUG: purple cube + XYZ lines at bow origin (F3 only)
+                const dbgGeo = new THREE.BoxGeometry(2/16, 2/16, 2/16);
+                const dbgMat = new THREE.MeshBasicMaterial({ color: 0x9900ff });
+                const dbgCube = new THREE.Mesh(dbgGeo, dbgMat);
+                dbgCube.visible = false;
+                heldAnchor.add(dbgCube);
+                const al = 0.4;
+                const xL = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(al,0,0)]), new THREE.LineBasicMaterial({color:0xff0000}));
+                const yL = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,al,0)]), new THREE.LineBasicMaterial({color:0x00ff00}));
+                const zL = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,al)]), new THREE.LineBasicMaterial({color:0x0000ff}));
+                xL.visible = false; yL.visible = false; zL.visible = false;
+                heldAnchor.add(xL); heldAnchor.add(yL); heldAnchor.add(zL);
+                this._bowDebug = [dbgCube, xL, yL, zL];
             }
         }
 
@@ -228,12 +242,16 @@ class Skeleton extends Mob {
         if (distSq > 64 * 64) this.isAggro = false;
 
         const SKEL_SPEED = 2.0;
-        const ATTACK_RANGE = 1.75;
-        const STOP_CHASE_DIST = ATTACK_RANGE - 0.2;
+        const SHOOT_RANGE = 15;       // Skeletons shoot from up to 15 blocks
+        const PREFERRED_RANGE = 10;   // They try to maintain ~10 block distance
+        const MIN_RANGE = 4;          // They back away if closer than this
 
         if (this.isAggro && !player._dead) {
             this.state = 'wander';
-            if (distXZ > STOP_CHASE_DIST) {
+
+            // Movement: try to stay at preferred range
+            if (distXZ > SHOOT_RANGE) {
+                // Too far — chase closer
                 this._pathTimer = (this._pathTimer || 0) + dt;
                 if (this._pathCooldown > 0) this._pathCooldown -= dt;
                 const needsRepath = !this._path || this._pathIndex >= this._path.length || this._pathTimer > 1.0 || this._checkStuck(dt, 0.8);
@@ -242,11 +260,27 @@ class Skeleton extends Mob {
                     this._pathIndex = 0; this._pathTimer = 0; this._pathCooldown = 0.3; this._stuckTimer = 0;
                 }
                 this._followPath(SKEL_SPEED, dt);
+            } else if (distXZ < MIN_RANGE) {
+                // Too close — back away
+                this._path = null;
+                const fleeAngle = Math.atan2(-dx, -dz);
+                this.vx = Math.sin(fleeAngle) * SKEL_SPEED * 0.7;
+                this.vz = Math.cos(fleeAngle) * SKEL_SPEED * 0.7;
+                this.targetYaw = Math.atan2(dx, dz); // Still face player
             } else {
-                this.vx *= Math.exp(-8 * dt); this.vz *= Math.exp(-8 * dt);
-                this.targetYaw = Math.atan2(dx, dz);
+                // In shooting range — strafe slowly
+                this._path = null;
+                if (!this._strafeDir) this._strafeDir = Math.random() < 0.5 ? 1 : -1;
+                if (!this._strafeTimer) this._strafeTimer = 0;
+                this._strafeTimer += dt;
+                if (this._strafeTimer > 3.0) { this._strafeDir *= -1; this._strafeTimer = 0; }
+                const strafeAngle = Math.atan2(dx, dz) + (Math.PI / 2) * this._strafeDir;
+                this.vx = Math.sin(strafeAngle) * SKEL_SPEED * 0.4;
+                this.vz = Math.cos(strafeAngle) * SKEL_SPEED * 0.4;
+                this.targetYaw = Math.atan2(dx, dz); // Face player
             }
 
+            // Head tracking — look at player
             const playerAngle = Math.atan2(dx, dz);
             let headYaw = playerAngle - this.yaw;
             while (headYaw > Math.PI) headYaw -= Math.PI * 2;
@@ -257,30 +291,49 @@ class Skeleton extends Mob {
             this.headGroup.rotation.y += (headYaw - this.headGroup.rotation.y) * dt * 10.0;
             this.headGroup.rotation.x += (headPitch - this.headGroup.rotation.x) * dt * 10.0;
 
-            // FIXED: Melee attack logic (Matches working zombie direct-modification style)
+            // --- BOW SHOOTING ---
             this.attackTimer -= dt;
-            if (distXZ <= ATTACK_RANGE && Math.abs(dy) < 2.0 && this.attackTimer <= 0 && !player._dead) {
-                this.attackTimer = 1.0;
+            if (distXZ <= SHOOT_RANGE && hasLOS && this.attackTimer <= 0 && !player._dead) {
+                this.attackTimer = 2.5; // 2.5 second cooldown between shots
                 this._swingAnim = 1.0;
 
-                if (gameMode === 'survival') {
-                    // Reduce health directly (5 damage = 2.5 hearts)
-                    player.health = Math.max(0, player.health - 5);
-                    
-                    // Manually trigger the damage effects and UI updates
-                    if (typeof triggerDamageShake === 'function') triggerDamageShake();
-                    if (typeof updateHealthUI === 'function') updateHealthUI();
-                    
-                    if (player.health <= 0 && !player._dead) {
-                        if (typeof window.killPlayer === 'function') window.killPlayer();
-                    }
-                    
-                    // Apply knockback
-                    const kbDist = distXZ || 1;
-                    player.vx += (dx / kbDist) * 5.0;
-                    player.vz += (dz / kbDist) * 5.0;
-                    player.vy = Math.max(player.vy, 3.5);
+                // Calculate aim direction toward player with inaccuracy
+                const aimDx = player.x - this.x;
+                const aimDy = (player.y + player.eyeLevel * 0.5) - (this.y + 1.5);
+                const aimDz = player.z - this.z;
+                const aimDist = Math.sqrt(aimDx*aimDx + aimDy*aimDy + aimDz*aimDz) || 1;
+
+                // Normalize aim direction
+                let dirX = aimDx / aimDist;
+                let dirY = aimDy / aimDist;
+                let dirZ = aimDz / aimDist;
+
+                // Add inaccuracy — random spread that increases with distance
+                // MC skeletons have ~10 degree spread on Normal difficulty
+                const spread = 0.12; // radians of random deviation
+                dirX += (Math.random() - 0.5) * spread;
+                dirY += (Math.random() - 0.5) * spread;
+                dirZ += (Math.random() - 0.5) * spread;
+
+                // Re-normalize after adding spread
+                const newLen = Math.sqrt(dirX*dirX + dirY*dirY + dirZ*dirZ) || 1;
+                dirX /= newLen; dirY /= newLen; dirZ /= newLen;
+
+                // Add arc compensation — aim slightly upward to account for gravity
+                const flightTime = aimDist / 30; // approximate time to reach player
+                dirY += flightTime * 0.3; // compensate for gravity drop
+
+                const arrowSpeed = 30.0;
+                const spawnX = this.x + dirX * 0.5;
+                const spawnY = this.y + 1.5 + dirY * 0.5;
+                const spawnZ = this.z + dirZ * 0.5;
+
+                if (typeof Arrow !== 'undefined') {
+                    new Arrow(spawnX, spawnY, spawnZ, dirX * arrowSpeed, dirY * arrowSpeed, dirZ * arrowSpeed, false);
                 }
+
+                // Play bow sound
+                if (typeof window.playBowSound === 'function') window.playBowSound();
             }
         } else {
             this._path = null;
@@ -344,8 +397,24 @@ class Skeleton extends Mob {
             attackSwingR = -swingArc * 1.5;
         }
 
-        this.rightArmPivot.rotation.x += (-armSwing + armIdleSway + attackSwingR - this.rightArmPivot.rotation.x) * dt * 8;
-        this.leftArmPivot.rotation.x += (armSwing + armIdleSway - this.leftArmPivot.rotation.x) * dt * 8;
+        if (this.isAggro) {
+            const aimPitch = this.headGroup.rotation.x;
+            // Right arm: straight forward
+            this.rightArmPivot.rotation.x += (-Math.PI / 2 + aimPitch + attackSwingR - this.rightArmPivot.rotation.x) * dt * 8;
+            this.rightArmPivot.rotation.z += (0 - this.rightArmPivot.rotation.z) * dt * 8;
+            this.rightArmPivot.rotation.y += (0 - this.rightArmPivot.rotation.y) * dt * 8;
+            // Left arm: straight forward, rotated -45 degrees on Z toward right arm
+            this.leftArmPivot.rotation.x += (-Math.PI / 2 + aimPitch - this.leftArmPivot.rotation.x) * dt * 8;
+            this.leftArmPivot.rotation.z += (-Math.PI / 4 - this.leftArmPivot.rotation.z) * dt * 8;
+            this.leftArmPivot.rotation.y += (0 - this.leftArmPivot.rotation.y) * dt * 8;
+        } else {
+            this.rightArmPivot.rotation.x += (-armSwing + armIdleSway + attackSwingR - this.rightArmPivot.rotation.x) * dt * 8;
+            this.leftArmPivot.rotation.x += (armSwing + armIdleSway - this.leftArmPivot.rotation.x) * dt * 8;
+            this.rightArmPivot.rotation.z += (0 - this.rightArmPivot.rotation.z) * dt * 8;
+            this.leftArmPivot.rotation.z += (0 - this.leftArmPivot.rotation.z) * dt * 8;
+            this.rightArmPivot.rotation.y += (0 - this.rightArmPivot.rotation.y) * dt * 8;
+            this.leftArmPivot.rotation.y += (0 - this.leftArmPivot.rotation.y) * dt * 8;
+        }
 
         _tickMobEnvironmentDamage(this, dt);
         const isOnFire = this.inLava || (getVoxel(Math.floor(this.x), Math.floor(this.y), Math.floor(this.z)) & 0xFF) === 89 || isBurningFromSun;
@@ -375,6 +444,12 @@ class Skeleton extends Mob {
             this.mesh.renderOrder = targetOrder;
             // Apply to all sub-meshes (head, limbs, etc.)
             this.mesh.traverse(c => { if (c.isMesh) c.renderOrder = targetOrder; });
+        }
+
+        // Toggle bow debug visuals with F3
+        if (this._bowDebug) {
+            const show = !!window.showDebugScreen;
+            for (const d of this._bowDebug) d.visible = show;
         }
 
         this.updateLighting();
