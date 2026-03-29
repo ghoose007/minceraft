@@ -59,8 +59,35 @@ const TOOL_DATA = {
     143: { name: 'Gold Ingot', atlasIdx: 132, type: 'material', tier: 0, speed: 1.0 },
     151: { name: 'Oak Door Item', atlasIdx: 135, type: 'material', tier: 0, speed: 1.0 },
     153: { name: 'Quartz', atlasIdx: 139, type: 'material', tier: 0, speed: 1.0 },
+    186: { name: 'Leather', atlasIdx: 147, type: 'material', tier: 0, speed: 1.0, isTerrainAtlas: true },
+    187: { name: 'Raw Beef', atlasIdx: 148, type: 'food', tier: 0, speed: 1.0, isTerrainAtlas: true },
+    188: { name: 'Cooked Beef', atlasIdx: 149, type: 'food', tier: 0, speed: 1.0, isTerrainAtlas: true },
 
     // Bow & Arrow
     164: { name: 'Bow', atlasIdx: 26, type: 'bow', tier: 0, speed: 1.0, damage: 0, maxDurability: 384 },
-    165: { name: 'Arrow', atlasIdx: 146, type: 'ammo', tier: 0, speed: 1.0, isTerrainAtlas: true }
+    165: { name: 'Arrow', atlasIdx: 146, type: 'ammo', tier: 0, speed: 1.0, isTerrainAtlas: true },
+
+    // Iron Armor (MC values: helmet=165dur/2def, chest=240dur/6def, legs=225dur/5def, boots=195dur/2def)
+    170: { name: 'Iron Helmet', atlasIdx: 30, type: 'armor', armorSlot: 'helmet', defense: 2, maxDurability: 165 },
+    171: { name: 'Iron Chestplate', atlasIdx: 29, type: 'armor', armorSlot: 'chestplate', defense: 6, maxDurability: 240 },
+    172: { name: 'Iron Leggings', atlasIdx: 28, type: 'armor', armorSlot: 'leggings', defense: 5, maxDurability: 225 },
+    173: { name: 'Iron Boots', atlasIdx: 27, type: 'armor', armorSlot: 'boots', defense: 2, maxDurability: 195 },
+
+    // Leather Armor (helmet=55dur/1def, chest=80dur/3def, legs=75dur/2def, boots=65dur/1def)
+    174: { name: 'Leather Helmet', atlasIdx: 34, type: 'armor', armorSlot: 'helmet', defense: 1, maxDurability: 55 },
+    175: { name: 'Leather Chestplate', atlasIdx: 33, type: 'armor', armorSlot: 'chestplate', defense: 3, maxDurability: 80 },
+    176: { name: 'Leather Leggings', atlasIdx: 32, type: 'armor', armorSlot: 'leggings', defense: 2, maxDurability: 75 },
+    177: { name: 'Leather Boots', atlasIdx: 31, type: 'armor', armorSlot: 'boots', defense: 1, maxDurability: 65 },
+
+    // Diamond Armor (helmet=363dur/3def, chest=528dur/8def, legs=495dur/6def, boots=429dur/3def)
+    178: { name: 'Diamond Helmet', atlasIdx: 38, type: 'armor', armorSlot: 'helmet', defense: 3, maxDurability: 363 },
+    179: { name: 'Diamond Chestplate', atlasIdx: 37, type: 'armor', armorSlot: 'chestplate', defense: 8, maxDurability: 528 },
+    180: { name: 'Diamond Leggings', atlasIdx: 36, type: 'armor', armorSlot: 'leggings', defense: 6, maxDurability: 495 },
+    181: { name: 'Diamond Boots', atlasIdx: 35, type: 'armor', armorSlot: 'boots', defense: 3, maxDurability: 429 },
+
+    // Gold Armor (helmet=77dur/2def, chest=112dur/5def, legs=105dur/3def, boots=91dur/1def)
+    182: { name: 'Gold Helmet', atlasIdx: 42, type: 'armor', armorSlot: 'helmet', defense: 2, maxDurability: 77 },
+    183: { name: 'Gold Chestplate', atlasIdx: 41, type: 'armor', armorSlot: 'chestplate', defense: 5, maxDurability: 112 },
+    184: { name: 'Gold Leggings', atlasIdx: 40, type: 'armor', armorSlot: 'leggings', defense: 3, maxDurability: 105 },
+    185: { name: 'Gold Boots', atlasIdx: 39, type: 'armor', armorSlot: 'boots', defense: 1, maxDurability: 91 }
 };

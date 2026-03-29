@@ -393,7 +393,161 @@ function animatePlayerModel(dt) {
     if (rightArm) rightArm.rotation.set(-legSwing + sneakArmTilt + attackSwingX + idleSway, attackSwingY, idleSwayZ + attackSwingZ);
     if (leftArm)  leftArm.rotation.set(legSwing + sneakArmTilt + idleSway, 0, -idleSwayZ);
 
-    // --- HELD ITEM + LIGHTING ---
+    // --- HELD ITEM + LIGHTING + ARMOR ---
     updatePlayerModelHeldItem();
     updatePlayerModelLighting();
+    updatePlayerArmorMeshes();
+}
+
+// ==========================================
+// PLAYER ARMOR 3D OVERLAY
+// ==========================================
+let _armorMaterialCache = {}; // cache keyed by texture filename
+let _armorMeshes = { helmet: null, chest: null, armR: null, armL: null, legR: null, legL: null, bootR: null, bootL: null };
+let _armorEquipped = [0, 0, 0, 0]; // track what's equipped to avoid rebuilding
+
+// Map armor item IDs to texture prefixes
+function _getArmorTierPrefix(itemId) {
+    if (itemId >= 170 && itemId <= 173) return 'iron';
+    if (itemId >= 174 && itemId <= 177) return 'leather';
+    if (itemId >= 178 && itemId <= 181) return 'diamond';
+    if (itemId >= 182 && itemId <= 185) return 'gold';
+    return 'iron'; // fallback
+}
+
+function _getArmorMat(texFile) {
+    if (_armorMaterialCache[texFile]) return _armorMaterialCache[texFile];
+    const tex = new THREE.TextureLoader().load('textures/' + texFile + '?v=' + ASSET_VERSION);
+    tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide });
+    _armorMaterialCache[texFile] = mat;
+    return mat;
+}
+
+function _createArmorBox(w, h, d, u, v, texW, texH, inflate) {
+    const s = inflate / 16;
+    const geo = new THREE.BoxGeometry(w/16 + s*2, h/16 + s*2, d/16 + s*2);
+    // Same UV mapping as createPlayerBox
+    const uvs = geo.attributes.uv.array;
+    const setUV = (face, x, y, fw, fh) => {
+        const u1 = x / texW, u2 = (x + fw) / texW;
+        const v1 = 1.0 - ((y + fh) / texH), v2 = 1.0 - (y / texH);
+        uvs[face*8+0]=u1; uvs[face*8+1]=v2; uvs[face*8+2]=u2; uvs[face*8+3]=v2;
+        uvs[face*8+4]=u1; uvs[face*8+5]=v1; uvs[face*8+6]=u2; uvs[face*8+7]=v1;
+    };
+    setUV(0, u+d+w, v+d, d, h); setUV(1, u, v+d, d, h);
+    setUV(2, u+d, v, w, d); setUV(3, u+d+w, v, w, d);
+    setUV(4, u+d, v+d, w, h); setUV(5, u+2*d+w, v+d, w, h);
+    return geo;
+}
+
+function _removeArmorMeshes() {
+    if (!playerModel) return;
+    for (const key of Object.keys(_armorMeshes)) {
+        if (_armorMeshes[key]) {
+            _armorMeshes[key].parent.remove(_armorMeshes[key]);
+            _armorMeshes[key].geometry.dispose();
+            _armorMeshes[key] = null;
+        }
+    }
+}
+
+function updatePlayerArmorMeshes() {
+    if (!playerModel) return;
+    
+    // Check if armor changed
+    const current = [armorSlots[0].id, armorSlots[1].id, armorSlots[2].id, armorSlots[3].id];
+    if (current[0] === _armorEquipped[0] && current[1] === _armorEquipped[1] &&
+        current[2] === _armorEquipped[2] && current[3] === _armorEquipped[3]) return;
+    
+    _removeArmorMeshes();
+    _armorEquipped = [...current];
+    
+    const TW = 64, TH = 32;
+    const INF = 1.0;
+    
+    const headPivot = playerModel.getObjectByName('headPivot');
+    const rightArm = playerModel.getObjectByName('rightArm');
+    const leftArm = playerModel.getObjectByName('leftArm');
+    const rightLeg = playerModel.getObjectByName('rightLeg');
+    const leftLeg = playerModel.getObjectByName('leftLeg');
+    
+    // Helmet (layer 0)
+    if (current[0] !== 0 && headPivot) {
+        const prefix = _getArmorTierPrefix(current[0]);
+        const mat = _getArmorMat(prefix + '_0.png');
+        const geo = _createArmorBox(8, 8, 8, 0, 0, TW, TH, INF);
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(0, 4/16, 0);
+        headPivot.add(mesh);
+        _armorMeshes.helmet = mesh;
+    }
+    
+    // Chestplate (layer 0)
+    if (current[1] !== 0) {
+        const prefix = _getArmorTierPrefix(current[1]);
+        const mat = _getArmorMat(prefix + '_0.png');
+        const bodyMesh = playerModel.getObjectByName('bodyMesh');
+        if (bodyMesh) {
+            const geoBody = _createArmorBox(8, 12, 4, 16, 16, TW, TH, INF);
+            const meshBody = new THREE.Mesh(geoBody, mat);
+            meshBody.position.set(0, 0, 0);
+            bodyMesh.add(meshBody);
+            _armorMeshes.chest = meshBody;
+        }
+        if (rightArm) {
+            const geo = _createArmorBox(4, 12, 4, 40, 16, TW, TH, INF);
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(0, -6/16, 0);
+            rightArm.add(mesh);
+            _armorMeshes.armR = mesh;
+        }
+        if (leftArm) {
+            const geo = _createArmorBox(4, 12, 4, 40, 16, TW, TH, INF);
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(0, -6/16, 0);
+            leftArm.add(mesh);
+            _armorMeshes.armL = mesh;
+        }
+    }
+    
+    // Leggings (layer 1)
+    if (current[2] !== 0) {
+        const prefix = _getArmorTierPrefix(current[2]);
+        const mat = _getArmorMat(prefix + '_1.png');
+        if (rightLeg) {
+            const geo = _createArmorBox(4, 12, 4, 0, 16, TW, TH, 0.5);
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(0, -6/16, 0);
+            rightLeg.add(mesh);
+            _armorMeshes.legR = mesh;
+        }
+        if (leftLeg) {
+            const geo = _createArmorBox(4, 12, 4, 0, 16, TW, TH, 0.5);
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(0, -6/16, 0);
+            leftLeg.add(mesh);
+            _armorMeshes.legL = mesh;
+        }
+    }
+    
+    // Boots (layer 0)
+    if (current[3] !== 0) {
+        const prefix = _getArmorTierPrefix(current[3]);
+        const mat = _getArmorMat(prefix + '_0.png');
+        if (rightLeg) {
+            const geo = _createArmorBox(4, 12, 4, 0, 16, TW, TH, INF);
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(0, -6/16, 0);
+            rightLeg.add(mesh);
+            _armorMeshes.bootR = mesh;
+        }
+        if (leftLeg) {
+            const geo = _createArmorBox(4, 12, 4, 0, 16, TW, TH, INF);
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(0, -6/16, 0);
+            leftLeg.add(mesh);
+            _armorMeshes.bootL = mesh;
+        }
+    }
 }

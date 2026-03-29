@@ -119,12 +119,14 @@ window.onChestBroken = function(x, y, z) {
     const chest = activeChests.get(key);
     if (!chest) return;
     
-    // Drop all items from this chest's slots
+    // Drop only THIS chest's 27 slots
     for (const slot of chest.slots) {
         if (slot.id !== 0 && slot.count > 0) {
-            if (typeof spawnBlockDrops === 'function' || typeof window.spawnDroppedItem === 'function') {
+            if (typeof window.spawnDroppedItem === 'function') {
                 window.spawnDroppedItem(x+0.5, y+0.5, z+0.5, slot.id, slot.count);
             }
+            slot.id = 0;
+            slot.count = 0;
         }
     }
     
@@ -134,13 +136,15 @@ window.onChestBroken = function(x, y, z) {
         if (partner) partner.doublePartner = null;
     }
     
-    activeChests.delete(key);
-    
-    // Close UI if this chest was open
-    if (currentChestPos === key && uiState === 'CHEST') {
-        closeChest();
-        document.body.requestPointerLock();
+    // Close UI if this chest OR its partner was open (the large chest view would be stale)
+    if (uiState === 'CHEST' && currentChestPos) {
+        if (currentChestPos === key || currentChestPos === chest.doublePartner) {
+            closeChest();
+            document.body.requestPointerLock();
+        }
     }
+    
+    activeChests.delete(key);
 };
 
 // Get combined slots for a double chest (this chest's 27 + partner's 27)
@@ -200,17 +204,22 @@ window.renderChest = function() {
     const slots = getChestSlots(currentChestPos);
     const totalSlots = isDouble ? 54 : 27;
     
-    // Update title
-    const title = document.getElementById('chest-title');
-    if (title) title.textContent = isDouble ? 'Large Chest' : 'Chest';
+    // Switch background texture for single vs large chest
+    const bg = document.getElementById('chest-bg');
+    if (bg) {
+        if (isDouble) {
+            bg.classList.add('large-chest');
+        } else {
+            bg.classList.remove('large-chest');
+        }
+    }
     
-    // Update chest grid size for double chest
+    // Update chest grid
     const chestGrid = document.getElementById('chest-slots');
     if (!chestGrid) return;
     chestGrid.innerHTML = '';
-    // Set grid to 9 columns, rows depend on single(3) or double(6)
-    chestGrid.style.gridTemplateColumns = 'repeat(9, 40px)';
-    chestGrid.style.gridTemplateRows = `repeat(${isDouble ? 6 : 3}, 40px)`;
+    chestGrid.style.gridTemplateColumns = 'repeat(9, 36px)';
+    chestGrid.style.gridTemplateRows = `repeat(${isDouble ? 6 : 3}, 36px)`;
     
     for (let i = 0; i < totalSlots; i++) {
         const slot = document.createElement('div');
@@ -255,6 +264,8 @@ window.renderChest = function() {
             e.stopPropagation();
             interactWithSlot(inventory[i], e);
             renderChest();
+            if (typeof buildUI === 'function') buildUI();
+            if (typeof selectSlot === 'function') selectSlot(activeSlot);
             window.updateCursorItemUI(e);
         });
         return slot;

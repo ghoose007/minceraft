@@ -163,6 +163,26 @@ window.killPlayer = function() {
         }
     }
 
+    // Drop all armor items
+    for (let i = 0; i < armorSlots.length; i++) {
+        const item = armorSlots[i];
+        if (item && item.id !== 0) {
+            if (typeof window.spawnDroppedItem === 'function') {
+                window.spawnDroppedItem(
+                    player.x + (Math.random() - 0.5) * 0.8,
+                    player.y + 0.5,
+                    player.z + (Math.random() - 0.5) * 0.8,
+                    item.id, 1,
+                    (Math.random() - 0.5) * 4,
+                    2 + Math.random() * 3,
+                    (Math.random() - 0.5) * 4
+                );
+            }
+            armorSlots[i] = { id: 0, count: 0 };
+        }
+    }
+    if (typeof updateArmorBar === 'function') updateArmorBar();
+
     // Clear fire state
     player.onFire = false;
     player._fireTimer = 0;

@@ -355,12 +355,7 @@ class ZombiePigman extends Mob {
                 this.attackTimer = 1.0;
                 this._swingAnim = 1.0;
                 if (gameMode === 'survival') {
-                    player.health = Math.max(0, player.health - 4); // Gold sword = 4 damage
-                    if (typeof triggerDamageShake === 'function') triggerDamageShake();
-                    if (typeof updateHealthUI === 'function') updateHealthUI();
-                    if (player.health <= 0 && !player._dead) {
-                        if (typeof window.killPlayer === 'function') window.killPlayer();
-                    }
+                    window.applyPlayerDamage(4); // Gold sword = 4 damage
                     const kbDist = distXZ || 1;
                     player.vx += (dx / kbDist) * 6.0;
                     player.vz += (dz / kbDist) * 6.0;

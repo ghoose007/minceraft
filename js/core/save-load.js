@@ -239,6 +239,7 @@ async function saveWorld(slot) {
             highestY: player.highestY
         },
         inventory: inventory.map(s => s.id !== 0 ? { id: s.id, count: s.count, durability: s.durability !== undefined ? s.durability : undefined } : null),
+        armor: armorSlots.map(s => s.id !== 0 ? { id: s.id, count: s.count, durability: s.durability !== undefined ? s.durability : undefined } : null),
         generatedFlags: owGenFlags ? Array.from(owGenFlags) : Array.from(generatedChunksArr),
         netherGeneratedFlags: ntGenFlags ? Array.from(ntGenFlags) : null,
         // Chest inventories

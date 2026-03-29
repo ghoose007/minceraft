@@ -144,6 +144,50 @@
             cursor: not-allowed;
         }
 
+        /* MC-style slider button (looks like a button with a draggable thumb) */
+        .mc-slider-btn {
+            position: relative;
+            width: 100%;
+            height: 40px;
+            background-color: #333;
+            border: 2px solid #000;
+            box-shadow: inset 2px 2px 0px 0px #555, inset -2px -2px 0px 0px #222;
+            cursor: pointer;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        .mc-slider-track {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+        }
+        .mc-slider-thumb {
+            position: absolute;
+            top: 0;
+            width: 16px;
+            height: 100%;
+            background-color: #7A7A7A;
+            border: 2px solid #000;
+            box-shadow: inset 2px 2px 0px 0px #9E9E9E, inset -2px -2px 0px 0px #5A5A5A;
+            box-sizing: border-box;
+            pointer-events: none;
+        }
+        .mc-slider-btn:hover .mc-slider-thumb {
+            background-color: #6C81B5;
+            box-shadow: inset 2px 2px 0px 0px #8CA1D5, inset -2px -2px 0px 0px #4C6195;
+        }
+        .mc-slider-label {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Silkscreen', monospace;
+            font-size: 14px;
+            color: #E0E0E0;
+            text-shadow: 2px 2px 0px #3f3f3f;
+            pointer-events: none;
+        }
+
         .btn-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -450,16 +494,30 @@
         }
 
         #hud-bars {
-            width: 384px; /* Exact width of the hotbar */
-            display: flex;
-            justify-content: flex-start;
-            margin-bottom: 2px;
+            width: 364px;
         }
 
         #health-bar {
             display: flex;
             gap: 0px;
         }
+
+        #armor-bar {
+            display: flex;
+            gap: 0px;
+        }
+
+        .armor-pip {
+            width: 18px;
+            height: 18px;
+            background-image: url('textures/armor_ui.png');
+            background-size: 54px 18px;
+            image-rendering: pixelated;
+        }
+
+        .armor-pip.empty { background-position: 0px 0px; }
+        .armor-pip.full  { background-position: -18px 0px; }
+        .armor-pip.half  { background-position: -36px 0px; }
 
         .heart {
             width: 18px;
@@ -468,9 +526,9 @@
             image-rendering: pixelated;
         }
 
-        .heart.empty { background-image: url('textures/ui.png?v=57'); background-position: 0px 0px; }
-        .heart.full { background-image: url('textures/ui.png?v=57'), url('textures/ui.png?v=57'); background-size: 162px 162px, 162px 162px; background-position: -18px 0px, 0px 0px; }
-        .heart.half { background-image: url('textures/ui.png?v=57'), url('textures/ui.png?v=57'); background-size: 162px 162px, 162px 162px; background-position: -36px 0px, 0px 0px; }
+        .heart.empty { background-image: url('textures/ui.png?v=85'); background-position: 0px 0px; }
+        .heart.full { background-image: url('textures/ui.png?v=85'), url('textures/ui.png?v=85'); background-size: 162px 162px, 162px 162px; background-position: -18px 0px, 0px 0px; }
+        .heart.half { background-image: url('textures/ui.png?v=85'), url('textures/ui.png?v=85'); background-size: 162px 162px, 162px 162px; background-position: -36px 0px, 0px 0px; }
 
         .hotbar-container {
             display: flex;
@@ -489,7 +547,7 @@
             gap: 0;
             width: 364px;
             height: 44px;
-            background-image: url('textures/gui.png?v=57');
+            background-image: url('textures/gui.png?v=85');
             background-size: 512px 512px;
             background-position: 0px 0px;
             background-repeat: no-repeat;
@@ -522,7 +580,7 @@
             left: -4px;
             width: 48px;
             height: 48px;
-            background-image: url('textures/gui.png?v=57');
+            background-image: url('textures/gui.png?v=85');
             background-size: 512px 512px;
             background-position: 0px -44px;
             background-repeat: no-repeat;
@@ -627,14 +685,334 @@
             position: absolute;
             top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            width: 432px; 
-            background-color: #C6C6C6;
-            border: 2px solid #000;
-            box-shadow: inset 3px 3px 0px 0px #FFF, inset -3px -3px 0px 0px #555;
             z-index: 15;
-            padding: 20px 20px;
             display: flex;
             flex-direction: column;
+        }
+
+        /* Crafting table, furnace use texture backgrounds */
+        #crafting-table-modal, #furnace-modal {
+            width: auto;
+            padding: 0;
+            background: none;
+            border: none;
+            box-shadow: none;
+        }
+
+        /* Chest uses texture background */
+        #chest-modal {
+            width: auto;
+            padding: 0;
+            background: none;
+            border: none;
+            box-shadow: none;
+        }
+
+        .chest-bg {
+            width: 352px;
+            height: 334px;
+            background-image: url('textures/chest_gui.png');
+            background-size: 352px 334px;
+            background-repeat: no-repeat;
+            image-rendering: pixelated;
+            position: relative;
+        }
+
+        .chest-bg.large-chest {
+            height: 442px;
+            background-image: url('textures/large_chest_gui.png');
+            background-size: 352px 442px;
+        }
+
+        #chest-modal .item-slot {
+            width: 36px;
+            height: 36px;
+            background-color: transparent;
+            border: none;
+            box-shadow: none;
+            position: relative;
+            cursor: pointer;
+            box-sizing: border-box;
+        }
+
+        #chest-modal #chest-slots {
+            position: absolute;
+            display: grid;
+            grid-template-columns: repeat(9, 36px);
+            gap: 0px;
+            left: 14px;
+            top: 34px;
+        }
+
+        #chest-modal #chest-main-inv {
+            position: absolute;
+            display: grid;
+            grid-template-columns: repeat(9, 36px);
+            grid-template-rows: repeat(3, 36px);
+            gap: 0px;
+            left: 14px;
+            top: 168px;
+        }
+
+        #chest-modal #chest-hotbar {
+            position: absolute;
+            display: grid;
+            grid-template-columns: repeat(9, 36px);
+            gap: 0px;
+            left: 14px;
+            top: 284px;
+        }
+
+        /* Large chest offsets — need #chest-modal to match base specificity */
+        #chest-modal .large-chest #chest-main-inv {
+            top: 276px;
+        }
+
+        #chest-modal .large-chest #chest-hotbar {
+            top: 392px;
+        }
+
+        /* Survival inventory uses texture background */
+        #survival-inventory-modal {
+            width: auto;
+            padding: 0;
+            background: none;
+            border: none;
+            box-shadow: none;
+        }
+
+        /* Armor slots in survival inventory */
+        #survival-inventory-modal .surv-armor-slots {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            gap: 0px;
+            left: 14px;
+            top: 14px;
+        }
+
+        #survival-inventory-modal .surv-armor-slots .item-slot {
+            width: 36px;
+            height: 36px;
+        }
+
+        .surv-inv-bg {
+            width: 352px;
+            height: 332px;
+            background-image: url('textures/inventory.png');
+            background-size: 352px 332px;
+            background-repeat: no-repeat;
+            image-rendering: pixelated;
+            position: relative;
+        }
+
+        /* Survival crafting 2x2 grid - absolutely positioned */
+        #survival-inventory-modal .surv-crafting-grid {
+            position: absolute;
+            display: grid;
+            grid-template-columns: 36px 36px;
+            grid-template-rows: 36px 36px;
+            gap: 0px;
+            left: 194px;
+            top: 34px;
+        }
+
+        /* Survival crafting output - absolutely positioned */
+        #survival-inventory-modal .surv-craft-out {
+            position: absolute;
+            left: 306px;
+            top: 54px;
+            width: 36px;
+            height: 36px;
+        }
+
+        /* Survival main inventory 9x3 - absolutely positioned */
+        #survival-inventory-modal .surv-inv-grid {
+            position: absolute;
+            display: grid;
+            grid-template-columns: repeat(9, 36px);
+            grid-template-rows: repeat(3, 36px);
+            gap: 0px;
+            left: 14px;
+            top: 166px;
+        }
+
+        /* Survival hotbar 9x1 - absolutely positioned */
+        #survival-inventory-modal .surv-hotbar-grid {
+            position: absolute;
+            display: grid;
+            grid-template-columns: repeat(9, 36px);
+            gap: 0px;
+            left: 14px;
+            top: 282px;
+        }
+
+        /* Item icons in texture-based UIs use default centering - no override needed */
+        /* The base .item-icon CSS already handles positioning correctly */
+
+        /* Transparent slots for texture-based UIs */
+        #survival-inventory-modal .item-slot,
+        #crafting-table-modal .item-slot,
+        #furnace-modal .item-slot {
+            width: 36px;
+            height: 36px;
+            background-color: transparent;
+            border: none;
+            box-shadow: none;
+            position: relative;
+            cursor: pointer;
+            box-sizing: border-box;
+        }
+
+        /* ===== CRAFTING TABLE TEXTURE UI ===== */
+        .craft-table-bg {
+            width: 352px;
+            height: 332px;
+            background-image: url('textures/crafting_table.png');
+            background-size: 352px 332px;
+            background-repeat: no-repeat;
+            image-rendering: pixelated;
+            position: relative;
+        }
+
+        #crafting-table-modal .surv-crafting-grid {
+            position: absolute;
+            display: grid;
+            grid-template-columns: repeat(3, 36px);
+            grid-template-rows: repeat(3, 36px);
+            gap: 0px;
+            left: 58px;
+            top: 32px;
+        }
+
+        .craft-table-out {
+            position: absolute;
+            left: 238px;
+            top: 60px;
+            width: 36px !important;
+            height: 36px !important;
+        }
+
+        #crafting-table-modal .surv-inv-grid {
+            position: absolute;
+            display: grid;
+            grid-template-columns: repeat(9, 36px);
+            grid-template-rows: repeat(3, 36px);
+            gap: 0px;
+            left: 14px;
+            top: 166px;
+        }
+
+        #crafting-table-modal .surv-hotbar-grid {
+            position: absolute;
+            display: grid;
+            grid-template-columns: repeat(9, 36px);
+            gap: 0px;
+            left: 14px;
+            top: 282px;
+        }
+
+        /* ===== FURNACE TEXTURE UI ===== */
+        .furnace-bg {
+            width: 352px;
+            height: 332px;
+            background-image: url('textures/furnace_gui.png');
+            background-size: 352px 332px;
+            background-repeat: no-repeat;
+            image-rendering: pixelated;
+            position: relative;
+        }
+
+        #furnace-modal .furnace-input-slot {
+            position: absolute;
+            left: 110px;
+            top: 32px;
+            width: 36px;
+            height: 36px;
+        }
+
+        #furnace-modal .furnace-fuel-slot {
+            position: absolute;
+            left: 112px;
+            top: 106px;
+            width: 32px;
+            height: 32px;
+        }
+
+        #furnace-modal .furnace-output-slot {
+            position: absolute;
+            left: 224px;
+            top: 62px;
+            width: 48px;
+            height: 48px;
+        }
+
+        #furnace-modal .furnace-output-slot .item-icon {
+            width: 32px;
+            height: 32px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        #furnace-modal .surv-inv-grid {
+            position: absolute;
+            display: grid;
+            grid-template-columns: repeat(9, 36px);
+            grid-template-rows: repeat(3, 36px);
+            gap: 0px;
+            left: 14px;
+            top: 166px;
+        }
+
+        #furnace-modal .surv-hotbar-grid {
+            position: absolute;
+            display: grid;
+            grid-template-columns: repeat(9, 36px);
+            gap: 0px;
+            left: 14px;
+            top: 282px;
+        }
+
+        /* Furnace flame indicator (between input and fuel slots) */
+        /* Flame area: x=114 to 139, y=72 to 100 = 26x28 at 2x */
+        .furnace-flame-overlay {
+            position: absolute;
+            left: 114px;
+            top: 72px;
+            width: 26px;
+            height: 28px;
+            overflow: hidden;
+            pointer-events: none;
+        }
+        .furnace-flame-fill-new {
+            position: absolute;
+            bottom: 0; left: 0;
+            width: 100%;
+            height: 0%;
+            background: #D97F12;
+            opacity: 0.8;
+            transition: height 0.1s linear;
+        }
+
+        /* Furnace arrow indicator (between flame and output) */
+        /* Arrow area: x=160 to 216, y=72 to 96 = 56x24 at 2x */
+        .furnace-arrow-overlay {
+            position: absolute;
+            left: 160px;
+            top: 74px;
+            width: 48px;
+            height: 20px;
+            overflow: hidden;
+            pointer-events: none;
+        }
+        .furnace-arrow-fill-new {
+            position: absolute;
+            top: 0; left: 0;
+            height: 100%;
+            width: 0%;
+            background: rgba(255, 255, 255, 0.85);
+            transition: width 0.1s linear;
         }
 
         .surv-top-half {
@@ -1143,13 +1521,23 @@
         <div id="options-menu" class="menu-screen hidden">
             <h2>Options</h2>
             <div class="btn-grid">
-                <button class="mc-button disabled">Music: 100%</button>
-                <button class="mc-button disabled">Sound: 100%</button>
+                <button class="mc-button disabled">Music: OFF</button>
+                <div class="mc-slider-btn" id="sound-slider-btn">
+                    <div class="mc-slider-track">
+                        <div class="mc-slider-thumb" id="sound-thumb"></div>
+                    </div>
+                    <span class="mc-slider-label" id="sound-label">Sound: 100%</span>
+                </div>
                 <button class="mc-button disabled">Invert Mouse: OFF</button>
-                <button class="mc-button disabled">Sensitivity: 100%</button>
+                <div class="mc-slider-btn" id="sensitivity-slider-btn">
+                    <div class="mc-slider-track">
+                        <div class="mc-slider-thumb" id="sensitivity-thumb"></div>
+                    </div>
+                    <span class="mc-slider-label" id="sensitivity-label">Sensitivity: 100%</span>
+                </div>
                 <button class="mc-button" onclick="showPauseScreen('video-settings-menu')">Video Settings...</button>
                 <button class="mc-button" onclick="showPauseScreen('controls-menu')">Controls...</button>
-                <button class="mc-button disabled">Difficulty: Normal</button>
+                <button class="mc-button" id="btn-difficulty" onclick="toggleDifficulty()">Difficulty: Normal</button>
             </div>
             <button class="mc-button" style="width: 408px;" onclick="showPauseScreen('pause-main'); checkRemesh();">Done</button>
         </div>
@@ -1211,6 +1599,7 @@
     <div id="hud-layer" style="display:none;">
         <div id="action-text">Grass Block</div>
         <div id="hud-bars">
+            <div id="armor-bar" style="display:none;"></div>
             <div id="health-bar"></div>
         </div>
         <div id="main-hotbar" class="hotbar-container"></div>
@@ -1223,70 +1612,47 @@
     </div>
 
     <div id="survival-inventory-modal" class="hidden">
-        <div class="surv-top-half">
-            <div class="surv-armor-col" id="surv-armor"></div>
-            <div class="surv-player-box"></div>
-            <div class="surv-crafting-sect">
-                <h3>Crafting</h3>
-                <div class="surv-crafting-row">
-                    <div class="surv-crafting-grid" id="surv-crafting-input"></div>
-                    <div class="surv-craft-arrow-container">
-                        <div class="surv-arrow-shaft"></div>
-                        <div class="surv-arrow-head"></div>
-                    </div>
-                    <div class="item-slot" id="surv-crafting-output"></div>
-                </div>
-            </div>
+        <div class="surv-inv-bg">
+            <canvas id="inv-player-doll" width="98" height="140" style="position:absolute; left:52px; top:16px; image-rendering:pixelated; pointer-events:none;"></canvas>
+            <div class="surv-armor-slots" id="surv-armor-slots"></div>
+            <div class="surv-crafting-grid" id="surv-crafting-input"></div>
+            <div class="item-slot surv-craft-out" id="surv-crafting-output"></div>
+            <div class="surv-inv-grid" id="surv-main-inv"></div>
+            <div class="surv-hotbar-grid" id="surv-hotbar"></div>
         </div>
-        <div class="surv-inv-grid" id="surv-main-inv"></div>
-        <div class="surv-hotbar-grid" id="surv-hotbar"></div>
     </div>
 
     <div id="crafting-table-modal" class="hidden">
-        <div style="display: flex; flex-direction: column; margin-bottom: 12px;">
-            <h3 style="margin: 0 0 8px 0; font-size: 14px; color: #333; font-weight: normal;">Crafting</h3>
-            <div class="surv-crafting-row" style="padding-left: 20px;">
-                <div class="surv-crafting-grid" id="table-crafting-input" style="grid-template-columns: repeat(3, 40px); gap: 4px;"></div>
-                <div class="surv-craft-arrow-container" style="margin: 0 24px;">
-                    <div class="surv-arrow-shaft"></div>
-                    <div class="surv-arrow-head"></div>
-                </div>
-                <div class="item-slot" id="table-crafting-output"></div>
-            </div>
+        <div class="craft-table-bg">
+            <div class="surv-crafting-grid" id="table-crafting-input"></div>
+            <div class="item-slot craft-table-out" id="table-crafting-output"></div>
+            <div class="surv-inv-grid" id="table-main-inv"></div>
+            <div class="surv-hotbar-grid" id="table-hotbar"></div>
         </div>
-        <h3 style="margin: 0 0 8px 0; font-size: 14px; color: #333; font-weight: normal;">Inventory</h3>
-        <div class="surv-inv-grid" id="table-main-inv"></div>
-        <div class="surv-hotbar-grid" id="table-hotbar" style="margin-top: 8px;"></div>
     </div>
 
     <div id="furnace-modal" class="hidden">
-        <div style="display: flex; flex-direction: column; margin-bottom: 12px; align-items: center;">
-            <h3 style="margin: 0 0 8px 0; font-size: 14px; color: #333; font-weight: normal;">Furnace</h3>
-            <div class="surv-crafting-row" style="justify-content: center;">
-                <div style="display: flex; flex-direction: column; align-items: center;">
-                    <div id="furnace-input" class="item-slot"></div>
-                    <div class="furnace-flame-container">
-                        <div id="furnace-flame-fill" class="furnace-flame-fill"></div>
-                    </div>
-                    <div id="furnace-fuel" class="item-slot"></div>
-                </div>
-                <div class="furnace-arrow-container">
-                    <div id="furnace-arrow-fill" class="furnace-arrow-fill"></div>
-                </div>
-                <div id="furnace-output" class="item-slot" style="width: 50px; height: 50px;"></div>
+        <div class="furnace-bg">
+            <div id="furnace-input" class="item-slot furnace-input-slot"></div>
+            <div id="furnace-fuel" class="item-slot furnace-fuel-slot"></div>
+            <div id="furnace-output" class="item-slot furnace-output-slot"></div>
+            <div class="furnace-flame-overlay">
+                <div id="furnace-flame-fill" class="furnace-flame-fill-new"></div>
             </div>
+            <div class="furnace-arrow-overlay">
+                <div id="furnace-arrow-fill" class="furnace-arrow-fill-new"></div>
+            </div>
+            <div class="surv-inv-grid" id="furnace-main-inv"></div>
+            <div class="surv-hotbar-grid" id="furnace-hotbar"></div>
         </div>
-        <h3 style="margin: 0 0 8px 0; font-size: 14px; color: #333; font-weight: normal;">Inventory</h3>
-        <div class="surv-inv-grid" id="furnace-main-inv"></div>
-        <div class="surv-hotbar-grid" id="furnace-hotbar" style="margin-top: 8px;"></div>
     </div>
 
     <div id="chest-modal" class="hidden">
-        <h3 id="chest-title" style="margin: 0 0 8px 0; font-size: 14px; color: #333; font-weight: normal;">Chest</h3>
-        <div class="surv-inv-grid" id="chest-slots" style="margin-bottom: 12px;"></div>
-        <h3 style="margin: 0 0 8px 0; font-size: 14px; color: #333; font-weight: normal;">Inventory</h3>
-        <div class="surv-inv-grid" id="chest-main-inv"></div>
-        <div class="surv-hotbar-grid" id="chest-hotbar" style="margin-top: 8px;"></div>
+        <div class="chest-bg" id="chest-bg">
+            <div class="surv-inv-grid" id="chest-slots"></div>
+            <div class="surv-inv-grid" id="chest-main-inv"></div>
+            <div class="surv-hotbar-grid" id="chest-hotbar"></div>
+        </div>
     </div>
 
     <div id="structure-modal" class="hidden">
@@ -1348,81 +1714,82 @@
 
     <div id="item-tooltip" class="hidden">Tooltip</div>
 
-    <script src="js/config/constants.js?v=57"></script>
-    <script src="js/config/state.js?v=57"></script>
-    <script src="js/config/blocks.js?v=57"></script>
-    <script src="js/config/tools.js?v=57"></script>
-    <script src="js/config/recipes.js?v=57"></script>
+    <script src="js/config/constants.js?v=85"></script>
+    <script src="js/config/state.js?v=85"></script>
+    <script src="js/config/blocks.js?v=85"></script>
+    <script src="js/config/tools.js?v=85"></script>
+    <script src="js/config/recipes.js?v=85"></script>
 
-    <script src="js/ui/menu.js?v=57"></script>
-    <script src="js/render/lighting-shader.js?v=57"></script>
-    <script src="js/ui/pause-menu.js?v=57"></script>
+    <script src="js/ui/menu.js?v=85"></script>
+    <script src="js/render/lighting-shader.js?v=85"></script>
+    <script src="js/ui/pause-menu.js?v=85"></script>
 
-    <script src="js/world/voxel.js?v=57"></script>
-    <script src="js/world/block-helpers.js?v=57"></script>
-    <script src="js/world/block-updates.js?v=57"></script>
-    <script src="js/world/fluid-interaction.js?v=57"></script>
-    <script src="js/world/lighting.js?v=57"></script>
-    <script src="js/world/trees.js?v=57"></script>
-    <script src="js/world/random-ticks.js?v=57"></script>
-    <script src="js/world/fire.js?v=57"></script>
+    <script src="js/world/voxel.js?v=85"></script>
+    <script src="js/world/block-helpers.js?v=85"></script>
+    <script src="js/world/block-updates.js?v=85"></script>
+    <script src="js/world/fluid-interaction.js?v=85"></script>
+    <script src="js/world/lighting.js?v=85"></script>
+    <script src="js/world/trees.js?v=85"></script>
+    <script src="js/world/random-ticks.js?v=85"></script>
+    <script src="js/world/fire.js?v=85"></script>
 
-    <script src="js/render/textures.js?v=57"></script>
-    <script src="js/render/faces.js?v=57"></script>
-    <script src="js/render/particles.js?v=57"></script>
-    <script src="js/render/chunk-mesh.js?v=57"></script>
-    <script src="js/render/item-mesh.js?v=57"></script>
+    <script src="js/render/textures.js?v=85"></script>
+    <script src="js/render/faces.js?v=85"></script>
+    <script src="js/render/particles.js?v=85"></script>
+    <script src="js/render/chunk-mesh.js?v=85"></script>
+    <script src="js/render/item-mesh.js?v=85"></script>
 
-    <script src="js/world/fluids.js?v=57"></script>
-    <script src="js/world/noise.js?v=57"></script>
+    <script src="js/world/fluids.js?v=85"></script>
+    <script src="js/world/noise.js?v=85"></script>
 
-    <script src="js/worldgen/noise-init.js?v=57"></script>
-    <script src="js/worldgen/biomes.js?v=57"></script>
-    <script src="js/worldgen/overworld.js?v=57"></script>
-    <script src="js/worldgen/nether.js?v=57"></script>
+    <script src="js/worldgen/noise-init.js?v=85"></script>
+    <script src="js/worldgen/biomes.js?v=85"></script>
+    <script src="js/worldgen/overworld.js?v=85"></script>
+    <script src="js/worldgen/nether.js?v=85"></script>
 
-    <script src="js/ui/hud.js?v=57"></script>
-    <script src="js/ui/crafting.js?v=57"></script>
-    <script src="js/ui/furnace.js?v=57"></script>
-    <script src="js/ui/inventory.js?v=57"></script>
-    <script src="js/ui/chest.js?v=57"></script>
-    <script src="js/ui/death-screen.js?v=57"></script>
+    <script src="js/ui/hud.js?v=85"></script>
+    <script src="js/ui/crafting.js?v=85"></script>
+    <script src="js/ui/furnace.js?v=85"></script>
+    <script src="js/ui/inventory.js?v=85"></script>
+    <script src="js/ui/inventory-doll.js?v=85"></script>
+    <script src="js/ui/chest.js?v=85"></script>
+    <script src="js/ui/death-screen.js?v=85"></script>
 
-    <script src="js/core/physics.js?v=57"></script>
+    <script src="js/core/physics.js?v=85"></script>
 
-    <script src="js/gameplay/block-breaking.js?v=57"></script>
-    <script src="js/gameplay/portals-detect.js?v=57"></script>
-    <script src="js/gameplay/dropped-items.js?v=57"></script>
-    <script src="js/gameplay/tnt.js?v=57"></script>
-    <script src="js/gameplay/dimension-switch.js?v=57"></script>
-    <script src="js/gameplay/spawners.js?v=57"></script>
-    <script src="js/gameplay/structures.js?v=57"></script>
+    <script src="js/gameplay/block-breaking.js?v=85"></script>
+    <script src="js/gameplay/portals-detect.js?v=85"></script>
+    <script src="js/gameplay/dropped-items.js?v=85"></script>
+    <script src="js/gameplay/tnt.js?v=85"></script>
+    <script src="js/gameplay/dimension-switch.js?v=85"></script>
+    <script src="js/gameplay/spawners.js?v=85"></script>
+    <script src="js/gameplay/structures.js?v=85"></script>
 
-    <script src="js/core/init.js?v=57"></script>
-    <script src="js/core/game-loop.js?v=57"></script>
+    <script src="js/core/init.js?v=85"></script>
+    <script src="js/core/game-loop.js?v=85"></script>
 
-    <script src="js/mobs/mob-core.js?v=57"></script>
-    <script src="js/mobs/pathfinding.js?v=57"></script>
-    <script src="js/mobs/pig.js?v=57"></script>
-    <script src="js/mobs/zombie.js?v=57"></script>
-    <script src="js/mobs/zombie-pigman.js?v=57"></script>
-    <script src="js/mobs/cow.js?v=57"></script>
-    <script src="js/mobs/creeper.js?v=57"></script>
-    <script src="js/mobs/sheep.js?v=57"></script>
-    <script src="js/mobs/skeleton.js?v=57"></script>
-    <script src="js/mobs/mob-spawning.js?v=57"></script>
-    <script src="js/mobs/mob-particles.js?v=57"></script>
+    <script src="js/mobs/mob-core.js?v=85"></script>
+    <script src="js/mobs/pathfinding.js?v=85"></script>
+    <script src="js/mobs/pig.js?v=85"></script>
+    <script src="js/mobs/zombie.js?v=85"></script>
+    <script src="js/mobs/zombie-pigman.js?v=85"></script>
+    <script src="js/mobs/cow.js?v=85"></script>
+    <script src="js/mobs/creeper.js?v=85"></script>
+    <script src="js/mobs/sheep.js?v=85"></script>
+    <script src="js/mobs/skeleton.js?v=85"></script>
+    <script src="js/mobs/mob-spawning.js?v=85"></script>
+    <script src="js/mobs/mob-particles.js?v=85"></script>
 
-    <script src="js/core/save-load.js?v=57"></script>
+    <script src="js/core/save-load.js?v=85"></script>
 
-    <script src="js/player/model.js?v=57"></script>
-    <script src="js/player/camera.js?v=57"></script>
-    <script src="js/player/death-anim.js?v=57"></script>
-    <script src="js/player/fire-effects.js?v=57"></script>
+    <script src="js/player/model.js?v=85"></script>
+    <script src="js/player/camera.js?v=85"></script>
+    <script src="js/player/death-anim.js?v=85"></script>
+    <script src="js/player/fire-effects.js?v=85"></script>
 
-    <script src="js/entities/herobrine.js?v=57"></script>
-    <script src="js/entities/arrow.js?v=57"></script>
+    <script src="js/entities/herobrine.js?v=85"></script>
+    <script src="js/entities/arrow.js?v=85"></script>
 
-    <script src="js/core/sounds.js?v=57"></script>
+    <script src="js/core/sounds.js?v=85"></script>
 </body>
 </html>

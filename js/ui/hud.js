@@ -69,6 +69,16 @@ if (!document.getElementById('mc-3d-styles')) {
             z-index: 101;
         }
 
+        /* Armor Bar: Same position as health but 20px higher */
+        #armor-bar {
+            position: fixed;
+            bottom: 64px;
+            left: calc(50% - 178px);
+            display: flex;
+            flex-direction: row;
+            z-index: 101;
+        }
+
         .mc-screen {
             position: fixed;
             top: 0; left: 0;
@@ -246,7 +256,7 @@ function getIconStyle(blockId) {
     const id = parseInt(blockId);
     
     // Terrain Items (Sticks, Saplings, Food, Seeds 128, Wheat 129, Quartz 153)
-    if ((id >= 112 && id <= 123) || id === 128 || id === 129 || id === 134 || id === 153 || id === 165) {
+    if ((id >= 112 && id <= 123) || id === 128 || id === 129 || id === 134 || id === 153 || id === 165 || id === 186 || id === 187 || id === 188) {
         const data = BLOCK_DATA[id] || TOOL_DATA[id];
         if (!data) return '';
         const atlasIdx = data.atlasIdx;
@@ -280,7 +290,7 @@ function createIconElement(id) {
     const parsedId = parseInt(id);
     
     // Terrain Items (Sticks, Saplings, Food, Seeds 128, Wheat 129, Nether Brick 142, Gold Ingot 143, Quartz 153)
-    if ((parsedId >= 112 && parsedId <= 123) || parsedId === 128 || parsedId === 129 || parsedId === 134 || parsedId === 135 || parsedId === 137 || parsedId === 142 || parsedId === 143 || parsedId === 151 || parsedId === 153 || parsedId === 165) {
+    if ((parsedId >= 112 && parsedId <= 123) || parsedId === 128 || parsedId === 129 || parsedId === 134 || parsedId === 135 || parsedId === 137 || parsedId === 142 || parsedId === 143 || parsedId === 151 || parsedId === 153 || parsedId === 165 || parsedId === 186 || parsedId === 187 || parsedId === 188) {
         const data = BLOCK_DATA[parsedId] || TOOL_DATA[parsedId];
         if (data) {
             const atlasIdx = data.atlasIdx;

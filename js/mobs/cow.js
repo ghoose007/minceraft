@@ -134,8 +134,10 @@ class Cow extends Mob {
                 if (typeof window.spawnSmoke === 'function') {
                     for (let i = 0; i < 8; i++) window.spawnSmoke(this.x + (Math.random()-0.5)*0.8, this.y + 0.5 + Math.random()*0.5, this.z + (Math.random()-0.5)*0.8);
                 }
-                const dropCount = 1 + Math.floor(Math.random() * 3);
-                if (typeof spawnDroppedItem === 'function') spawnDroppedItem(this.x, this.y + 0.5, this.z, 122, dropCount); // Raw Porkchop
+                const beefCount = 1 + Math.floor(Math.random() * 3); // 1-3 raw beef
+                if (typeof spawnDroppedItem === 'function') spawnDroppedItem(this.x, this.y + 0.5, this.z, 187, beefCount);
+                const leatherCount = Math.floor(Math.random() * 3); // 0-2 leather
+                if (leatherCount > 0 && typeof spawnDroppedItem === 'function') spawnDroppedItem(this.x, this.y + 0.5, this.z, 186, leatherCount);
                 return;
             }
             this.vy -= 28.0 * dt;

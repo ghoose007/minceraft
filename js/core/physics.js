@@ -425,16 +425,7 @@ function movePlayer(dt) {
                 const fallDist = player.highestY - player.y;
                 if (gameMode === 'survival' && fallDist > 3.0 && !fluid.inWater && !fluid.inLava) {
                     const damage = Math.ceil(fallDist - 3.0);
-                    player.health -= damage;
-                    if (player.health < 0) player.health = 0;
-                    
-                    if (typeof triggerDamageShake === 'function') triggerDamageShake();
-                    if (typeof updateHealthUI === 'function') updateHealthUI();
-
-                    // Death check
-                    if (player.health <= 0 && !player._dead) {
-                        if (typeof window.killPlayer === 'function') window.killPlayer();
-                    }
+                    window.applyPlayerDamage(damage);
                 }
                 player.highestY = player.y;
 

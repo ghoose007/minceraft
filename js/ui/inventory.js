@@ -161,7 +161,103 @@ function renderInventory() {
     };
 
     fillHotbarRows('surv-hotbar'); fillHotbarRows('table-hotbar');
+
+    // --- ARMOR SLOTS ---
+    const armorContainer = document.getElementById('surv-armor-slots');
+    if (armorContainer) {
+        armorContainer.innerHTML = '';
+        const slotNames = ['helmet', 'chestplate', 'leggings', 'boots'];
+        for (let i = 0; i < 4; i++) {
+            const slot = document.createElement('div');
+            slot.className = 'item-slot';
+            const item = armorSlots[i];
+            if (item && item.id !== 0 && item.count > 0) {
+                slot.appendChild(createIconElement(item.id));
+                updateDurabilityBar(slot, item);
+                bindHoverEvents(slot, item.id);
+            }
+            slot.addEventListener('mousedown', ((idx) => (e) => {
+                e.stopPropagation();
+                handleArmorSlotClick(idx, e);
+            })(i));
+            armorContainer.appendChild(slot);
+        }
+    }
+
+    // Update armor bar HUD
+    if (typeof updateArmorBar === 'function') updateArmorBar();
 }
+
+// --- ARMOR SLOT CLICK HANDLER ---
+function handleArmorSlotClick(slotIdx, e) {
+    const armorItem = armorSlots[slotIdx];
+    const slotNames = ['helmet', 'chestplate', 'leggings', 'boots'];
+    const expectedSlot = slotNames[slotIdx];
+
+    if (window.cursorItem && window.cursorItem.id !== 0) {
+        // Placing item into armor slot — check if it's the right armor type
+        const toolData = TOOL_DATA[window.cursorItem.id];
+        if (!toolData || toolData.type !== 'armor' || toolData.armorSlot !== expectedSlot) return;
+
+        if (armorItem.id === 0) {
+            // Empty slot — place cursor item
+            armorSlots[slotIdx] = { id: window.cursorItem.id, count: 1, durability: window.cursorItem.durability };
+            window.cursorItem = null;
+        } else {
+            // Swap
+            const temp = { id: armorItem.id, count: armorItem.count, durability: armorItem.durability };
+            armorSlots[slotIdx] = { id: window.cursorItem.id, count: 1, durability: window.cursorItem.durability };
+            window.cursorItem = temp;
+        }
+    } else {
+        // Picking up armor
+        if (armorItem.id !== 0) {
+            window.cursorItem = { id: armorItem.id, count: armorItem.count, durability: armorItem.durability };
+            armorSlots[slotIdx] = { id: 0, count: 0 };
+        }
+    }
+
+    if (typeof renderInventory === 'function') renderInventory();
+    if (typeof updateCursorItemUI === 'function') updateCursorItemUI(e);
+}
+
+// --- ARMOR BAR UI ---
+window.updateArmorBar = function() {
+    const bar = document.getElementById('armor-bar');
+    if (!bar) return;
+
+    // Calculate total armor defense points
+    let totalDefense = 0;
+    for (const slot of armorSlots) {
+        if (slot.id !== 0) {
+            const data = TOOL_DATA[slot.id];
+            if (data && data.defense) totalDefense += data.defense;
+        }
+    }
+
+    // MC: 20 max armor points = 10 pips, each pip = 2 points
+    if (totalDefense <= 0) {
+        bar.style.display = 'none';
+        bar.innerHTML = '';
+        return;
+    }
+
+    bar.style.display = 'flex';
+    bar.innerHTML = '';
+    for (let i = 0; i < 10; i++) {
+        const pip = document.createElement('div');
+        pip.className = 'armor-pip';
+        const pointsForPip = totalDefense - i * 2;
+        if (pointsForPip >= 2) {
+            pip.classList.add('full');
+        } else if (pointsForPip >= 1) {
+            pip.classList.add('half');
+        } else {
+            pip.classList.add('empty');
+        }
+        bar.appendChild(pip);
+    }
+};
 
 function applyDirtBackground() {
     const img = new Image();

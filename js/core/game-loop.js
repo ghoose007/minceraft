@@ -252,12 +252,7 @@ function animate() {
                     player._fireDamageTimer += dt;
                     if (player._fireDamageTimer >= 0.5) {
                         player._fireDamageTimer -= 0.5;
-                        player.health = Math.max(0, player.health - 4);
-                        if (typeof triggerDamageShake === 'function') triggerDamageShake();
-                        if (typeof updateHealthUI === 'function') updateHealthUI();
-                        if (player.health <= 0 && !player._dead) {
-                            if (typeof window.killPlayer === 'function') window.killPlayer();
-                        }
+                        window.applyPlayerDamage(4);
                     }
                 } else if (onFireNow) {
                     // Fire block: set on fire for 8s, damage 1hp every 0.5s
@@ -265,12 +260,7 @@ function animate() {
                     player._fireDamageTimer += dt;
                     if (player._fireDamageTimer >= 0.5) {
                         player._fireDamageTimer -= 0.5;
-                        player.health = Math.max(0, player.health - 1);
-                        if (typeof triggerDamageShake === 'function') triggerDamageShake();
-                        if (typeof updateHealthUI === 'function') updateHealthUI();
-                        if (player.health <= 0 && !player._dead) {
-                            if (typeof window.killPlayer === 'function') window.killPlayer();
-                        }
+                        window.applyPlayerDamage(1);
                     }
                 } else {
                     // Not in lava/fire — count down burn timer, reset damage timer when done
@@ -284,12 +274,7 @@ function animate() {
                             player._fireDamageTimer += dt;
                             if (player._fireDamageTimer >= 0.5) {
                                 player._fireDamageTimer -= 0.5;
-                                player.health = Math.max(0, player.health - 1);
-                                if (typeof triggerDamageShake === 'function') triggerDamageShake();
-                                if (typeof updateHealthUI === 'function') updateHealthUI();
-                                if (player.health <= 0 && !player._dead) {
-                                    if (typeof window.killPlayer === 'function') window.killPlayer();
-                                }
+                                window.applyPlayerDamage(1);
                             }
                         }
                     } else {
@@ -490,8 +475,10 @@ function animate() {
                 }
 
                 if (uiState === 'FURNACE' && currentFurnacePos === posKey) {
-                    if (dirty && typeof updateFurnaceUI === 'function') updateFurnaceUI(f);
-                    if (typeof renderFurnace === 'function' && f.input.count === 0 && f.fuel.count === 0) renderFurnace(); 
+                    // Always update progress bars while furnace UI is open
+                    if (typeof updateFurnaceUI === 'function') updateFurnaceUI(f);
+                    // Re-render slot contents when items change
+                    if (dirty && typeof renderFurnace === 'function') renderFurnace();
                 }
             }
 
@@ -797,8 +784,20 @@ function animate() {
                             if (leftover === 0) {
                                 if (typeof window.playItemSound === 'function') window.playItemSound(0.3);
                                 itemsToRemove.push(i);
+                                // Re-render any open survival UI
+                                if (uiState === 'INVENTORY' && typeof renderInventory === 'function') renderInventory();
+                                else if (uiState === 'CRAFTING' && typeof renderInventory === 'function') renderInventory();
+                                else if (uiState === 'FURNACE' && typeof renderFurnace === 'function') renderFurnace();
+                                else if (uiState === 'CHEST' && typeof renderChest === 'function') renderChest();
                                 continue;
-                            } else item.count = leftover;
+                            } else {
+                                item.count = leftover;
+                                // Re-render any open survival UI
+                                if (uiState === 'INVENTORY' && typeof renderInventory === 'function') renderInventory();
+                                else if (uiState === 'CRAFTING' && typeof renderInventory === 'function') renderInventory();
+                                else if (uiState === 'FURNACE' && typeof renderFurnace === 'function') renderFurnace();
+                                else if (uiState === 'CHEST' && typeof renderChest === 'function') renderChest();
+                            }
                         }
                     }
                 }

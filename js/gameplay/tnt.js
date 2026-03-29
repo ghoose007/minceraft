@@ -176,13 +176,7 @@ window.explodeTNT = function(x, y, z, radius) {
         if (gameMode === 'survival') {
             const damage = Math.floor(Math.max(0, (1.0 - pDist / (radius * 1.5)) * 14));
             if (damage > 0) {
-                player.health -= damage;
-                if (player.health < 0) player.health = 0;
-                if (typeof triggerDamageShake === 'function') triggerDamageShake();
-                if (typeof updateHealthUI === 'function') updateHealthUI();
-                if (player.health <= 0 && !player._dead) {
-                    if (typeof window.killPlayer === 'function') window.killPlayer();
-                }
+                window.applyPlayerDamage(damage);
             }
         }
     }

@@ -168,10 +168,7 @@ class Arrow {
             const dz = player.z - this.z;
             if (dx*dx + dy*dy + dz*dz < 0.6 * 0.6) {
                 this.hasHit = true;
-                player.health = Math.max(0, player.health - this.damage);
-                if (typeof triggerDamageShake === 'function') triggerDamageShake();
-                if (typeof updateHealthUI === 'function') updateHealthUI();
-                if (player.health <= 0 && typeof window.killPlayer === 'function') window.killPlayer();
+                window.applyPlayerDamage(this.damage);
                 this._remove();
                 return true;
             }

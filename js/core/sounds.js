@@ -222,7 +222,7 @@
         src.playbackRate.value = pitchMin + Math.random() * (pitchMax - pitchMin);
 
         const gain = ctx.createGain();
-        gain.gain.value = volume;
+        gain.gain.value = volume * (typeof settingSoundVolume !== 'undefined' ? settingSoundVolume : 1.0);
         src.connect(gain);
         gain.connect(ctx.destination);
         src.start(0);
@@ -237,7 +237,7 @@
         src.buffer = buf;
         src.playbackRate.value = pitchMin + Math.random() * (pitchMax - pitchMin);
         const gain = ctx.createGain();
-        gain.gain.value = volume;
+        gain.gain.value = volume * (typeof settingSoundVolume !== 'undefined' ? settingSoundVolume : 1.0);
         src.connect(gain);
         gain.connect(ctx.destination);
         src.start(0);
@@ -259,7 +259,7 @@
         src.playbackRate.value = pitchMin + Math.random() * (pitchMax - pitchMin);
 
         const gain = ctx.createGain();
-        gain.gain.value = volume;
+        gain.gain.value = volume * (typeof settingSoundVolume !== 'undefined' ? settingSoundVolume : 1.0);
 
         const panner = ctx.createPanner();
         panner.panningModel = 'equalpower'; 

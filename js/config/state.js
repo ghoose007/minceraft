@@ -20,6 +20,21 @@ let overworldPlayerPos = null;
 let netherPlayerPos = null;
 let portalCooldown = 0;
 
+// --- SETTINGS ---
+let settingSoundVolume = 1.0;       // 0.0 to 1.0
+let settingSensitivity = 1.0;       // 0.25 to 2.0 (maps to 25%-200%)
+let settingDifficulty = 'normal';   // 'easy', 'normal', 'hard'
+let settingDamageMultiplier = 1.0;  // derived from difficulty
+
+// --- ARMOR ---
+// armorSlots[0]=helmet, [1]=chestplate, [2]=leggings, [3]=boots
+let armorSlots = [
+    { id: 0, count: 0 },
+    { id: 0, count: 0 },
+    { id: 0, count: 0 },
+    { id: 0, count: 0 }
+];
+
 // --- CHUNK MANAGEMENT ---
 function _chunkIdx(cx, cz) { return cx * CHUNKS_Z + cz; }
 function _getChunkFast(cx, cz) {

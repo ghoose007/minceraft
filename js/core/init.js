@@ -281,6 +281,21 @@ async function init(seed, loadedData) {
                 else { inventory[i].id = 0; inventory[i].count = 0; }
             }
         }
+
+        // Restore armor
+        if (loadedData.armor) {
+            for (let i = 0; i < 4; i++) {
+                if (loadedData.armor[i]) {
+                    armorSlots[i].id = loadedData.armor[i].id;
+                    armorSlots[i].count = loadedData.armor[i].count;
+                    if (loadedData.armor[i].durability !== undefined) {
+                        armorSlots[i].durability = loadedData.armor[i].durability;
+                    }
+                } else {
+                    armorSlots[i] = { id: 0, count: 0 };
+                }
+            }
+        }
         
         // Restore chests
         if (loadedData.chests && typeof activeChests !== 'undefined') {
@@ -606,6 +621,11 @@ async function init(seed, loadedData) {
 
                     if (typeof buildUI === 'function') buildUI();
                     if (typeof selectSlot === 'function') selectSlot(activeSlot);
+                    // Re-render open inventory UIs after dropping
+                    if (uiState === 'INVENTORY' && typeof renderInventory === 'function') renderInventory();
+                    else if (uiState === 'CRAFTING' && typeof renderInventory === 'function') renderInventory();
+                    else if (uiState === 'FURNACE' && typeof renderFurnace === 'function') renderFurnace();
+                    else if (uiState === 'CHEST' && typeof renderChest === 'function') renderChest();
                 }
             }
         }
@@ -619,6 +639,7 @@ async function init(seed, loadedData) {
                     document.getElementById('inventory-modal').classList.remove('hidden');
                 } else {
                     document.getElementById('survival-inventory-modal').classList.remove('hidden');
+                    if (typeof window._startInventoryDoll === 'function') window._startInventoryDoll();
                 }
                 
                 if (typeof renderInventory === 'function') renderInventory();
@@ -628,6 +649,7 @@ async function init(seed, loadedData) {
                 if (typeof closeCraftingTable === 'function') closeCraftingTable();
                 if (typeof closeFurnace === 'function') closeFurnace();
                 if (typeof closeChest === 'function') closeChest();
+                if (typeof window._stopInventoryDoll === 'function') window._stopInventoryDoll();
                 document.body.requestPointerLock(); 
             }
         }
@@ -745,13 +767,15 @@ window.getTargetedMob = function() {
 
         // --- EAT FOOD INTERACTION (Independent of block targeting) ---
 
-        if (e.button === 2 && (currentBuildBlock === 115 || currentBuildBlock === 122 || currentBuildBlock === 123 || currentBuildBlock === 134) && uiState === 'PLAYING') {
+        if (e.button === 2 && (currentBuildBlock === 115 || currentBuildBlock === 122 || currentBuildBlock === 123 || currentBuildBlock === 134 || currentBuildBlock === 187 || currentBuildBlock === 188) && uiState === 'PLAYING') {
             
             let healAmount = 0;
             if (currentBuildBlock === 115) healAmount = 4; // Apple (2 hearts)
             if (currentBuildBlock === 122) healAmount = 3; // Raw Pork (1.5 hearts)
             if (currentBuildBlock === 123) healAmount = 8; // Cooked Pork (4 hearts)
             if (currentBuildBlock === 134) healAmount = 5; // Bread (2.5 hearts)
+            if (currentBuildBlock === 187) healAmount = 3; // Raw Beef (1.5 hearts)
+            if (currentBuildBlock === 188) healAmount = 8; // Cooked Beef (4 hearts)
 
             if (player.health < player.maxHealth) {
                 player.health = Math.min(player.maxHealth, player.health + healAmount); 
@@ -1424,7 +1448,7 @@ window.getTargetedMob = function() {
             tooltip.style.top  = (e.clientY + 14) + 'px';
         }
         if (!isPointerLocked || uiState !== 'PLAYING') return;
-        const sensitivity = 0.002;
+        const sensitivity = 0.002 * (typeof settingSensitivity !== 'undefined' ? settingSensitivity : 1.0);
         player.yaw -= e.movementX * sensitivity;
         player.pitch -= e.movementY * sensitivity;
         player.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, player.pitch));
@@ -1454,4 +1478,5 @@ window.damageHeldTool = function(amount) {
     // Refresh the UI to update the colored bar
     if (typeof buildUI === 'function') buildUI();
     if (typeof updateHeldItem === 'function') updateHeldItem();
+    if (typeof updateArmorBar === 'function') updateArmorBar();
 };

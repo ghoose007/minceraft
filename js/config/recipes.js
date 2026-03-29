@@ -152,7 +152,31 @@ const RECIPES = [
     { pattern: [[156, 156, 156]], output: { id: 157, count: 6 } },
 
     // --- Iron Bars (3x2 iron ingots) ---
-    { pattern: [[113, 113, 113], [113, 113, 113]], output: { id: 158, count: 16 } }
+    { pattern: [[113, 113, 113], [113, 113, 113]], output: { id: 158, count: 16 } },
+
+    // --- Iron Armor ---
+    { pattern: [[113, 113, 113], [113, 0, 113]], output: { id: 170, count: 1 } }, // Iron Helmet
+    { pattern: [[113, 0, 113], [113, 113, 113], [113, 113, 113]], output: { id: 171, count: 1 } }, // Iron Chestplate
+    { pattern: [[113, 113, 113], [113, 0, 113], [113, 0, 113]], output: { id: 172, count: 1 } }, // Iron Leggings
+    { pattern: [[113, 0, 113], [113, 0, 113]], output: { id: 173, count: 1 } }, // Iron Boots
+
+    // --- Leather Armor (186 = leather) ---
+    { pattern: [[186, 186, 186], [186, 0, 186]], output: { id: 174, count: 1 } }, // Leather Helmet
+    { pattern: [[186, 0, 186], [186, 186, 186], [186, 186, 186]], output: { id: 175, count: 1 } }, // Leather Chestplate
+    { pattern: [[186, 186, 186], [186, 0, 186], [186, 0, 186]], output: { id: 176, count: 1 } }, // Leather Leggings
+    { pattern: [[186, 0, 186], [186, 0, 186]], output: { id: 177, count: 1 } }, // Leather Boots
+
+    // --- Diamond Armor (114 = diamond) ---
+    { pattern: [[114, 114, 114], [114, 0, 114]], output: { id: 178, count: 1 } }, // Diamond Helmet
+    { pattern: [[114, 0, 114], [114, 114, 114], [114, 114, 114]], output: { id: 179, count: 1 } }, // Diamond Chestplate
+    { pattern: [[114, 114, 114], [114, 0, 114], [114, 0, 114]], output: { id: 180, count: 1 } }, // Diamond Leggings
+    { pattern: [[114, 0, 114], [114, 0, 114]], output: { id: 181, count: 1 } }, // Diamond Boots
+
+    // --- Gold Armor (143 = gold ingot) ---
+    { pattern: [[143, 143, 143], [143, 0, 143]], output: { id: 182, count: 1 } }, // Gold Helmet
+    { pattern: [[143, 0, 143], [143, 143, 143], [143, 143, 143]], output: { id: 183, count: 1 } }, // Gold Chestplate
+    { pattern: [[143, 143, 143], [143, 0, 143], [143, 0, 143]], output: { id: 184, count: 1 } }, // Gold Leggings
+    { pattern: [[143, 0, 143], [143, 0, 143]], output: { id: 185, count: 1 } } // Gold Boots
 
 ];
 
@@ -161,6 +185,7 @@ const SMELTING_RECIPES = {
     6: { id: 113, count: 1 }, // Iron Ore -> Iron Ingot
     120: { id: 121, count: 1 }, // Clay Ball -> Brick Item
     122: { id: 123, count: 1 }, // Raw Porkchop -> Cooked Porkchop
+    187: { id: 188, count: 1 }, // Raw Beef -> Cooked Beef
     33: { id: 3, count: 1 },   // Cobblestone -> Stone
     87: { id: 142, count: 1 },  // Netherrack -> Nether Brick
     8: { id: 143, count: 1 },    // Gold Ore -> Gold Ingot

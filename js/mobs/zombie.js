@@ -309,12 +309,7 @@ class Zombie extends Mob {
                 this.attackTimer = 1.0;
                 this._swingAnim = 1.0;
                 if (gameMode === 'survival') {
-                    player.health = Math.max(0, player.health - 2);
-                    if (typeof triggerDamageShake === 'function') triggerDamageShake();
-                    if (typeof updateHealthUI === 'function') updateHealthUI();
-                    if (player.health <= 0 && !player._dead) {
-                        if (typeof window.killPlayer === 'function') window.killPlayer();
-                    }
+                    window.applyPlayerDamage(2);
                     const kbDist = distXZ || 1;
                     player.vx += (dx / kbDist) * 5.0;
                     player.vz += (dz / kbDist) * 5.0;

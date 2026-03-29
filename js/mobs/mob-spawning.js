@@ -45,7 +45,7 @@ function _isInSpawnChunks(wx, wz) {
 
 // ---- MOB CAPS ----
 const MOB_CAP_PASSIVE = 10;
-const MOB_CAP_HOSTILE = 70;
+let MOB_CAP_HOSTILE = 32;
 const MOB_CAP_NETHER  = 15;
 
 function _isPassiveMob(m) { return m instanceof Pig || m instanceof Sheep || (typeof Cow !== 'undefined' && m instanceof Cow); }
