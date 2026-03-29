@@ -1165,17 +1165,20 @@
         /* Tooltip */
         #item-tooltip {
             position: absolute;
-            background-color: rgba(16, 0, 16, 0.95);
+            background-color: rgba(16, 0, 16, 0.94);
             color: #FFF;
-            border: 2px solid #280228;
-            border-radius: 2px;
+            border: 2px solid #25005A;
+            border-radius: 0px;
             padding: 4px 6px;
-            font-size: 12px;
+            font-family: 'Silkscreen', monospace;
+            font-size: 13px;
             pointer-events: none;
             z-index: 20;
             white-space: nowrap;
-            text-shadow: 2px 2px 0px #000;
-            box-shadow: 2px 2px 0px rgba(0,0,0,0.5);
+            text-shadow: 2px 2px 0px #3F003F;
+            outline: 2px solid #100010;
+            box-shadow: inset 0 1px 0 0 #5000AA, inset 1px 0 0 0 #5000AA, inset 0 -1px 0 0 #28007F, inset -1px 0 0 0 #28007F;
+            image-rendering: pixelated;
         }
 
         #clock-container {
@@ -1314,6 +1317,16 @@
             <div class="mc-setting-group">
                 <div class="mc-setting-label">World Size</div>
                 <button class="mc-button" style="width: 100%; height: 32px;" id="opt-worldsize" onclick="toggleOption('worldsize')">1024 × 1024</button>
+            </div>
+
+            <div class="mc-setting-group">
+                <div class="mc-setting-label">World Type</div>
+                <button class="mc-button" style="width: 100%; height: 32px;" id="opt-worldtype" onclick="toggleOption('worldtype')">Default</button>
+            </div>
+
+            <div class="mc-setting-group" id="single-biome-group" style="display: none;">
+                <div class="mc-setting-label">Biome</div>
+                <button class="mc-button" style="width: 100%; height: 32px;" id="opt-singlebiome" onclick="toggleOption('singlebiome')">Plains</button>
             </div>
 
             <div class="mc-setting-group">

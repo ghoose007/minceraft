@@ -90,14 +90,19 @@ function drawDirtBg(canvasId) {
 
 // Toggle options state
 const worldOptions = {
-    worldsize: 0, // 0=1024, 1=512, 2=256, 3=2048, 4=4096, 5=8192
+    worldsize: 0,
+    worldtype: 0, // 0=Default, 1=Superflat, 2=Amplified, 3=Single Biome
+    singleBiome: 0, // index into singleBiomeList
     structures: true,
     caves: true,
     lava: true,
-    gamemode: 'survival' // <-- Tracks the menu selection
+    gamemode: 'survival'
 };
 const worldSizeLabels = ['1024 × 1024', '512 × 512', '256 × 256', '2048 × 2048', '4096 × 4096', '8192 × 8192'];
 const worldSizeChunks = [64, 32, 16, 128, 256, 512];
+const worldTypeLabels = ['Default', 'Superflat', 'Amplified', 'Single Biome'];
+const singleBiomeList = ['plains', 'forest', 'desert', 'tundra', 'taiga', 'rainforest', 'swamp', 'jungle', 'extreme_hills'];
+const singleBiomeLabels = ['Plains', 'Forest', 'Desert', 'Tundra', 'Taiga', 'Rainforest', 'Swamp', 'Jungle', 'Extreme Hills'];
 
 function toggleOption(key) {
     if (key === 'worldsize') {
@@ -106,6 +111,15 @@ function toggleOption(key) {
     } else if (key === 'gamemode') {
         worldOptions.gamemode = worldOptions.gamemode === 'survival' ? 'creative' : 'survival';
         document.getElementById('opt-gamemode').textContent = worldOptions.gamemode === 'survival' ? 'Survival' : 'Creative';
+    } else if (key === 'worldtype') {
+        worldOptions.worldtype = (worldOptions.worldtype + 1) % 4;
+        document.getElementById('opt-worldtype').textContent = worldTypeLabels[worldOptions.worldtype];
+        // Show/hide single biome selector
+        const biomeGroup = document.getElementById('single-biome-group');
+        if (biomeGroup) biomeGroup.style.display = worldOptions.worldtype === 3 ? 'block' : 'none';
+    } else if (key === 'singlebiome') {
+        worldOptions.singleBiome = (worldOptions.singleBiome + 1) % singleBiomeList.length;
+        document.getElementById('opt-singlebiome').textContent = singleBiomeLabels[worldOptions.singleBiome];
     } else {
         worldOptions[key] = !worldOptions[key];
         document.getElementById('opt-' + key).textContent = worldOptions[key] ? 'ON' : 'OFF';
@@ -157,6 +171,8 @@ function seededRandom() {
 }
 
 // World gen parameters (set from UI before generation)
+let GEN_WORLD_TYPE = 0; // 0=Default, 1=Superflat, 2=Amplified, 3=Single Biome
+let GEN_SINGLE_BIOME = ''; // empty = normal, otherwise biome name to lock to
 let GEN_SEA_LEVEL = 62;
 let GEN_TERRAIN_HEIGHT = 80;
 let GEN_CAVE_DENSITY = 50;
@@ -201,6 +217,8 @@ async function startWorldCreation() {
     seedRng(seed);
 
     // Read slider values
+    GEN_WORLD_TYPE = worldOptions.worldtype;
+    GEN_SINGLE_BIOME = worldOptions.worldtype === 3 ? singleBiomeList[worldOptions.singleBiome] : '';
     GEN_SEA_LEVEL = parseInt(document.getElementById('sl-sealevel').value);
     GEN_TERRAIN_HEIGHT = parseInt(document.getElementById('sl-terrainheight').value);
     GEN_CAVE_DENSITY = parseInt(document.getElementById('sl-cavedensity').value);
@@ -220,6 +238,12 @@ async function startWorldCreation() {
     
     // Read nether settings
     GEN_NETHER_LAVA_LEVEL = parseInt(document.getElementById('sl-nether-lava').value);
+
+    // Apply world type overrides
+    if (GEN_WORLD_TYPE === 2) { // Amplified
+        GEN_TERRAIN_HEIGHT = Math.min(240, GEN_TERRAIN_HEIGHT * 2);
+        GEN_VOLATILITY_MULT = Math.max(GEN_VOLATILITY_MULT, 200);
+    }
     GEN_NETHER_OPENNESS = parseInt(document.getElementById('sl-nether-openness').value);
     GEN_NETHER_GLOW = parseInt(document.getElementById('sl-nether-glow').value);
     GEN_NETHER_FIRE = parseInt(document.getElementById('sl-nether-fire').value);

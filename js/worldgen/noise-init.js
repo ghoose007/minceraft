@@ -52,8 +52,8 @@ function _pastePrefabWorldGen(prefab, blockX, blockY, blockZ) {
 }
 // ------------------------------------
 
-const BIOME_IDS = { 'desert': 0, 'rainforest': 1, 'tundra': 2, 'taiga': 3, 'plains': 4, 'forest': 5, 'ocean': 6, 'swamp': 7, 'jungle': 8 };
-const BIOME_NAMES = ['desert', 'rainforest', 'tundra', 'taiga', 'plains', 'forest', 'ocean', 'swamp', 'jungle'];
+const BIOME_IDS = { 'desert': 0, 'rainforest': 1, 'tundra': 2, 'taiga': 3, 'plains': 4, 'forest': 5, 'ocean': 6, 'swamp': 7, 'jungle': 8, 'extreme_hills': 9 };
+const BIOME_NAMES = ['desert', 'rainforest', 'tundra', 'taiga', 'plains', 'forest', 'ocean', 'swamp', 'jungle', 'extreme_hills'];
 
 function _initWorldGenNoise() {
     const s1 = (_worldSeed * 0.00000001) % 1;

@@ -44,16 +44,6 @@ window.spawnDroppedItem = function(x, y, z, id, count = 1, customVx = null, cust
         }
     });
     
-    // Reuse pre-allocated Box3/Vector3 instead of creating new ones each call
-    _itemBox.setFromObject(mesh);
-    _itemBox.getCenter(_itemCenter);
-    
-    mesh.position.x = -_itemCenter.x;
-    mesh.position.y = -_itemCenter.y;
-    mesh.position.z = -_itemCenter.z;
-    
-    wrapper.add(mesh);
-    
     // MC dropped item scaling: 3D blocks = 0.25, 2D flat items = 0.5
     // Reset the inner mesh's first-person display transforms so ground items look correct
     const isMaterial = (id >= 112 && id <= 123) || id === 128 || id === 129 || id === 134 || id === 135 || id === 137 || id === 142 || id === 143 || id === 151
@@ -62,13 +52,22 @@ window.spawnDroppedItem = function(x, y, z, id, count = 1, customVx = null, cust
     const isToolItem = (id >= 100 && typeof TOOL_DATA !== 'undefined' && TOOL_DATA[id]);
     const is2D = isMaterial || isFlatBlock || isToolItem;
     
-    // Strip the first-person display transforms from the inner mesh
-    // (the auto-centering above already handled position via bounding box)
+    // Strip the first-person display transforms from the inner mesh FIRST
     const inner = mesh.children[0];
     if (inner) {
         inner.rotation.set(0, 0, 0);
         inner.scale.set(1, 1, 1);
+        inner.position.set(0, 0, 0);
     }
+
+    // NOW recenter based on the clean geometry so the item spins around its own center
+    _itemBox.setFromObject(mesh);
+    _itemBox.getCenter(_itemCenter);
+    mesh.position.x = -_itemCenter.x;
+    mesh.position.y = -_itemCenter.y;
+    mesh.position.z = -_itemCenter.z;
+    
+    wrapper.add(mesh);
     
     if (is2D) {
         wrapper.scale.set(0.5, 0.5, 0.5);

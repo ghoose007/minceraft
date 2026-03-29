@@ -130,10 +130,10 @@
             { key: 'explode_3', file: 'explode_3.ogg' },
             { key: 'explode_4', file: 'explode_4.ogg' },
             { key: 'bow', file: 'bow.ogg' },
-            { key: 'arrow_hit_0', file: 'arrow_hit_0.ogg' },
-            { key: 'arrow_hit_1', file: 'arrow_hit_1.ogg' },
-            { key: 'arrow_hit_2', file: 'arrow_hit_2.ogg' },
-            { key: 'arrow_hit_3', file: 'arrow_hit_3.ogg' }
+            { key: 'arrow_0', file: 'arrow_0.ogg' },
+            { key: 'arrow_1', file: 'arrow_1.ogg' },
+            { key: 'arrow_2', file: 'arrow_2.ogg' },
+            { key: 'arrow_3', file: 'arrow_3.ogg' }
         ];
         for (const s of extraSounds) {
             try {
@@ -809,7 +809,7 @@
 
     window.playArrowHitSound = function(wx, wy, wz) {
         const idx = Math.floor(Math.random() * 4);
-        const key = 'arrow_hit_' + idx;
+        const key = 'arrow_' + idx;
         if (!_buffers[key]) return;
         playNamedSoundAt(key, 0.5, 0.9, 1.1, wx, wy, wz);
     };

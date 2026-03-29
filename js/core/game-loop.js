@@ -758,9 +758,9 @@ function animate() {
 
                 // MC EntityItem: bob = sin(age/10 + uniqueOffset) * 0.1 + 0.1
                 // MC EntityItem: spin = ageInTicks / 20.0 radians (~0.314 rad/sec)
-                const hoverOffset = Math.sin(item.age * 0.628) * 0.1 + 0.1;
+                const hoverOffset = Math.sin(item.age * 1.2) * 0.08 + 0.15;
                 item.mesh.position.set(item.x, item.y + hoverOffset, item.z);
-                item.mesh.rotation.y += dt * 0.314;
+                item.mesh.rotation.y += dt * 2.4;
 
                 if (onGround) {
                     // Use actual block top for shadow (respects snow layers, slabs)

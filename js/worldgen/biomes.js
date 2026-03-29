@@ -91,12 +91,28 @@ function _getRawBiome(x, z) {
 function _classifyBiome(temp, humid) {
     let biome = 'plains', bH = GEN_SEA_LEVEL + 3, bV = 10;
     
+    // Single biome mode — override everything
+    if (typeof GEN_SINGLE_BIOME !== 'undefined' && GEN_SINGLE_BIOME) {
+        biome = GEN_SINGLE_BIOME;
+        if (biome === 'desert')        { bH = GEN_SEA_LEVEL + 2;  bV = 8;  }
+        else if (biome === 'jungle')   { bH = GEN_SEA_LEVEL + 6;  bV = 18; }
+        else if (biome === 'rainforest') { bH = GEN_SEA_LEVEL + 10; bV = 35; }
+        else if (biome === 'swamp')    { bH = GEN_SEA_LEVEL + 1;  bV = 3;  }
+        else if (biome === 'tundra')   { bH = GEN_SEA_LEVEL + 18; bV = 24; }
+        else if (biome === 'taiga')    { bH = GEN_SEA_LEVEL + 14; bV = 30; }
+        else if (biome === 'extreme_hills') { bH = GEN_SEA_LEVEL + 20; bV = 22; }
+        else if (biome === 'forest')   { bH = GEN_SEA_LEVEL + 6;  bV = 18; }
+        else                           { bH = GEN_SEA_LEVEL + 3;  bV = 10; }
+        return { biome, bH, bV };
+    }
+    
     if (temp > 0.2 && humid < -0.1)        { biome = 'desert';     bH = GEN_SEA_LEVEL + 2;  bV = 8;  }
     else if (temp > 0.15 && humid >= 0.25)  { biome = 'jungle';     bH = GEN_SEA_LEVEL + 6;  bV = 18; }
     else if (temp > 0.1 && humid >= 0.1)    { biome = 'rainforest'; bH = GEN_SEA_LEVEL + 10; bV = 35; }
     else if (temp > -0.05 && temp <= 0.1 && humid >= 0.05) { biome = 'swamp'; bH = GEN_SEA_LEVEL + 1; bV = 3; }
     else if (temp < -0.25 && humid < 0)     { biome = 'tundra';     bH = GEN_SEA_LEVEL + 18; bV = 24; }
     else if (temp < -0.15 && humid >= 0)    { biome = 'taiga';      bH = GEN_SEA_LEVEL + 14; bV = 30; }
+    else if (temp > -0.15 && temp <= 0.05 && humid < -0.15) { biome = 'extreme_hills'; bH = GEN_SEA_LEVEL + 20; bV = 22; }
     else if (temp > -0.05 && temp <= 0.2 && humid >= -0.1 && humid < 0.1) { biome = 'forest'; bH = GEN_SEA_LEVEL + 6; bV = 18; }
     else                                    { biome = 'plains';     bH = GEN_SEA_LEVEL + 3;  bV = 10; }
     

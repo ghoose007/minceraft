@@ -4,8 +4,53 @@
 
 function generateChunkColumn(cx, cz) {
     if (_isChunkGenerated(cx, cz)) return;
-    _markChunkGenerated(cx, cz);
     
+    // Superflat world type
+    if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 1) {
+        _generateSuperflatChunk(cx, cz);
+        return;
+    }
+    
+    _generateNormalChunk(cx, cz);
+}
+
+function _generateSuperflatChunk(cx, cz) {
+    _markChunkGenerated(cx, cz);
+    _getOrCreateChunkFast(cx, cz);
+    
+    const halfW = WORLD_WIDTH / 2;
+    const halfD = WORLD_DEPTH / 2;
+    const startX = cx * CHUNK_SIZE - halfW;
+    const startZ = cz * CHUNK_SIZE - halfD;
+    
+    // Store biome as plains for all superflat
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+            const wx = startX + lx;
+            const wz = startZ + lz;
+            const gIdx = (wx + halfW) + (wz + halfD) * WORLD_WIDTH;
+            if (gIdx >= 0 && gIdx < WORLD_WIDTH * WORLD_DEPTH) {
+                biomeMap[gIdx] = 'plains';
+            }
+        }
+    }
+    
+    // Superflat layers: bedrock at y=0, dirt at y=1-3, grass at y=4
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+            const wx = startX + lx;
+            const wz = startZ + lz;
+            setVoxel(wx, 0, wz, 18); // Bedrock
+            setVoxel(wx, 1, wz, 2);  // Dirt
+            setVoxel(wx, 2, wz, 2);  // Dirt
+            setVoxel(wx, 3, wz, 2);  // Dirt
+            setVoxel(wx, 4, wz, 1);  // Grass
+        }
+    }
+}
+
+function _generateNormalChunk(cx, cz) {
+    _markChunkGenerated(cx, cz);
     _getOrCreateChunkFast(cx, cz);
     
     const halfW = WORLD_WIDTH / 2;
@@ -134,6 +179,16 @@ function generateChunkColumn(cx, cz) {
                             if (biome === 'swamp' && y <= GEN_SEA_LEVEL) {
                                 const aboveId = getVoxel(x, y + 1, z) & 0xFF;
                                 if (aboveId === 4) surfId = 2; // Dirt under water
+                            }
+                            
+                            // Extreme Hills: exposed stone and gravel at high elevations
+                            if (biome === 'extreme_hills') {
+                                const stoneNoise = _wgPerlinVolatility.noise2D(x * 0.08, z * 0.08);
+                                if (y > GEN_SEA_LEVEL + 35 && stoneNoise > 0.1) {
+                                    surfId = 3; // Exposed stone
+                                } else if (y > GEN_SEA_LEVEL + 25 && stoneNoise > 0.4) {
+                                    surfId = 5; // Gravel patches
+                                }
                             }
                             
                             setVoxel(x, y, z, surfId);
@@ -354,6 +409,7 @@ function generateChunkColumn(cx, cz) {
                 else if (biome === 'desert') treeChance = 0.002;
                 else if (biome === 'swamp') treeChance = 0.008;
                 else if (biome === 'jungle') treeChance = 0.035;
+                else if (biome === 'extreme_hills') treeChance = 0.003;
                 
                 treeChance *= treeScale;
                 
@@ -570,7 +626,7 @@ function generateChunkColumn(cx, cz) {
                                 }
                             }
                         }
-                    } else if ((biome === 'forest' || biome === 'rainforest' || biome === 'plains') && surfId === 1) {
+                    } else if ((biome === 'forest' || biome === 'rainforest' || biome === 'plains' || biome === 'extreme_hills') && surfId === 1) {
                         let logId = 13, leafId = 14, isBirch = false;
                         
                         if (biome === 'forest' && seededRandom() < 0.3) {
@@ -684,6 +740,8 @@ function generateChunkColumn(cx, cz) {
                         if (r < 0.45 * folMult) setVoxel(x, y+1, z, 16); // Tall grass (very dense)
                         else if (r < 0.52 * folMult) setVoxel(x, y+1, z, 24); // Bush
                         else if (r < 0.54 * folMult) setVoxel(x, y+1, z, 23); // Rose
+                    } else if (biome === 'extreme_hills' && surfId === 1) {
+                        if (r < 0.08 * folMult) setVoxel(x, y+1, z, 16); // Sparse tall grass
                     }
                 }
                 
@@ -767,6 +825,20 @@ function generateChunkColumn(cx, cz) {
                         if ((getVoxel(x, sy+1, z) & 0xFF) === 0 && seededRandom() < 0.75) {
                             setVoxel(x, sy+1, z, 40, 1);
                         }
+                    }
+                    break;
+                }
+            }
+            // Extreme Hills: snow on peaks above y=95
+            if (biome === 'extreme_hills') {
+                for (let sy = WORLD_HEIGHT - 1; sy >= GEN_SEA_LEVEL + 33; sy--) {
+                    const sid = getVoxel(x, sy, z) & 0xFF;
+                    if (sid === 0) continue;
+                    if (sid !== 4 && sid !== 27 && !isFluidBlock(sid)) {
+                        if ((getVoxel(x, sy+1, z) & 0xFF) === 0) {
+                            setVoxel(x, sy+1, z, 40, 1);
+                        }
+                        break;
                     }
                     break;
                 }

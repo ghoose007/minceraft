@@ -469,7 +469,7 @@ async function init(seed, loadedData) {
 
     let spawnX = 0, spawnZ = 0;
     let spawnY = getHighestBlock(0, 0);
-    let foundLand = spawnY >= GEN_SEA_LEVEL;
+    let foundLand = spawnY >= GEN_SEA_LEVEL || (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 1);
     if (!foundLand) {
         for (let r = 1; r < 200 && !foundLand; r += 2) {
             for (let dx = -r; dx <= r && !foundLand; dx += 4) {

@@ -5,6 +5,7 @@
 function buildChunkMesh(cx, cz) {
     // Clear per-chunk biome tint cache for fresh data
     _biomeTintCache.clear();
+    _biomeFoliageTintCache.clear();
 
     const firePositions = [], fireNormals = [], fireUvs = [], fireColors = [], fireBiomeTints = [];
     const portalPositions = [], portalNormals = [], portalUvs = [], portalColors = [], portalBiomeTints = [];

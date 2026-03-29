@@ -72,9 +72,9 @@ const lilypadFaces = [
 // Per-chunk biome tint cache — uses the global chunkBiomeCache from 09-worldgen.js
 // Keyed by numeric hash for fast lookup during mesh building
 const _biomeTintCache = new Map();
+const _biomeFoliageTintCache = new Map();
 
 function getSmoothedBiomeTint(bx, bz) {
-    // Use numeric key for cache (faster than string)
     const cacheKey = ((bx + 32768) << 16) | (bz + 32768);
     const cached = _biomeTintCache.get(cacheKey);
     if (cached) return cached;
@@ -96,6 +96,31 @@ function getSmoothedBiomeTint(bx, bz) {
     }
     const result = count > 0 ? [r/count, g/count, b/count] : [1,1,1];
     _biomeTintCache.set(cacheKey, result);
+    return result;
+}
+
+function getSmoothedFoliageTint(bx, bz) {
+    const cacheKey = ((bx + 32768) << 16) | (bz + 32768);
+    const cached = _biomeFoliageTintCache.get(cacheKey);
+    if (cached) return cached;
+    
+    let r = 0, g = 0, b = 0, count = 0;
+    const halfW = WORLD_WIDTH / 2;
+    const halfD = WORLD_DEPTH / 2;
+    for (let dx = -2; dx <= 2; dx++) {
+        for (let dz = -2; dz <= 2; dz++) {
+            const ix = bx + dx + halfW;
+            const iz = bz + dz + halfD;
+            if (ix >= 0 && ix < WORLD_WIDTH && iz >= 0 && iz < WORLD_DEPTH) {
+                const biome = biomeMap[ix + iz * WORLD_WIDTH];
+                const color = BIOME_FOLIAGE_COLORS[biome] || BIOME_COLORS[biome] || [1,1,1];
+                r += color[0]; g += color[1]; b += color[2];
+                count++;
+            }
+        }
+    }
+    const result = count > 0 ? [r/count, g/count, b/count] : [1,1,1];
+    _biomeFoliageTintCache.set(cacheKey, result);
     return result;
 }
 
@@ -307,11 +332,16 @@ function pushFace(x, y, z, face, positions, normals, uvs, colors, biomeTints, bl
     // Birch leaves (43) use a fixed classic colour — #80A755 — never biome-tinted
     const BIRCH_LEAF_TINT = [128/255, 167/255, 85/255];
 
-    const isTintedPlant = blockId === 14 || blockId === 16 || blockId === 22 || blockId === 24 || blockId === 66 || blockId === 67 || blockId === 97;
+    // Foliage-tinted blocks: oak leaves (14), jungle leaves (97), vines (66)
+    const isFoliageTinted = blockId === 14 || blockId === 97 || blockId === 66;
+    // Grass-tinted blocks: tall grass (16), flowers/bushes (22, 24), lily pad (67)
+    const isGrassTinted = blockId === 16 || blockId === 22 || blockId === 24 || blockId === 67;
 
     if (blockId === 43) {
         tintColor = BIRCH_LEAF_TINT;
-    } else if (isTintedPlant) {
+    } else if (isFoliageTinted) {
+        tintColor = getSmoothedFoliageTint(x, z);
+    } else if (isGrassTinted) {
         tintColor = getSmoothedBiomeTint(x, z);
     } else if (blockId === 1 && face.dir[1] === 1) {
         tintColor = getSmoothedBiomeTint(x, z);
