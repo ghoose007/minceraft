@@ -300,29 +300,21 @@ class Mob {
                     const id = val & 0xFF;
                     if (id === 4)  foundWater = true;
                     if (id === 27) foundLava  = true;
-                    // Pass through non-solids
                     if (id === 0 || isFluidBlock(id) || isCrossBlock(id) || id === 17 || id === 23 || id === 64 || id === 66 || id === 90) continue;
                     
-                    if (typeof getBlockBounds === 'function') {
-                        const bRaw = getBlockBounds(id, val, bx, by, bz);
-                        // FIXED: Array support prevents crashes on Glass Panes
-                        const boundsList = Array.isArray(bRaw) ? bRaw : [bRaw];
-                        
-                        for (let i = 0; i < boundsList.length; i++) {
-                            const b = boundsList[i];
-                            const blockAABB = {
-                                minX: bx + b.minX, maxX: bx + b.maxX,
-                                minY: by + b.minY, maxY: by + b.maxY,
-                                minZ: bz + b.minZ, maxZ: bz + b.maxZ
-                            };
-                            if (mobAABB.minX < blockAABB.maxX && mobAABB.maxX > blockAABB.minX &&
-                                mobAABB.minY < blockAABB.maxY && mobAABB.maxY > blockAABB.minY &&
-                                mobAABB.minZ < blockAABB.maxZ && mobAABB.maxZ > blockAABB.minZ) {
-                                collided = true;
-                            }
+                    const bRaw = typeof getBlockBounds === 'function' ? getBlockBounds(id, val, bx, by, bz) : { minX:0,maxX:1,minY:0,maxY:1,minZ:0,maxZ:1 };
+                    const boundsList = Array.isArray(bRaw) ? bRaw : [bRaw];
+                    for (const b of boundsList) {
+                        const blockAABB = {
+                            minX: bx + b.minX, maxX: bx + b.maxX,
+                            minY: by + b.minY, maxY: by + b.maxY,
+                            minZ: bz + b.minZ, maxZ: bz + b.maxZ
+                        };
+                        if (mobAABB.minX < blockAABB.maxX && mobAABB.maxX > blockAABB.minX &&
+                            mobAABB.minY < blockAABB.maxY && mobAABB.maxY > blockAABB.minY &&
+                            mobAABB.minZ < blockAABB.maxZ && mobAABB.maxZ > blockAABB.minZ) {
+                            collided = true;
                         }
-                    } else {
-                        collided = true;
                     }
                 }
             }
@@ -332,102 +324,122 @@ class Mob {
         return collided;
     }
 
-    // FIXED: Calculates exact block height directly below the mob for slabs/snow
+    // Get floor height at position — sweeps downward to find landing Y
     getFloorY(nx, ny, nz) {
+        const result = this._sweepAxis(nx, this.y + 0.5, nz, 'y', -(0.5 + (this.y - ny + 0.1)));
+        return result.pos.y;
+    }
+
+    // Sweep-based collision: move along one axis in small steps, stop on hit
+    _sweepAxis(x, y, z, axis, dist) {
+        if (dist === 0) return { collided: false, pos: { x, y, z } };
         const w = this.width / 2;
-        const mobAABB = {
-            minX: nx - w + 0.1, maxX: nx + w - 0.1,
-            minZ: nz - w + 0.1, maxZ: nz + w - 0.1
-        };
-        const sMinX = Math.floor(mobAABB.minX), sMaxX = Math.floor(mobAABB.maxX);
-        const sMinY = Math.floor(ny);
-        const sMaxY = Math.floor(ny + 1.0);
-        const sMinZ = Math.floor(mobAABB.minZ), sMaxZ = Math.floor(mobAABB.maxZ);
+        const steps = Math.max(1, Math.ceil(Math.abs(dist) / 0.1));
+        const stepDist = dist / steps;
+        const pos = { x, y, z };
 
-        let highestY = Math.floor(ny);
-
-        for (let bx = sMinX; bx <= sMaxX; bx++) {
-            for (let by = sMinY; by <= sMaxY; by++) {
-                for (let bz = sMinZ; bz <= sMaxZ; bz++) {
-                    const val = getVoxel(bx, by, bz);
-                    const id = val & 0xFF;
-                    if (id === 0 || isFluidBlock(id) || isCrossBlock(id) || id === 17 || id === 23 || id === 64 || id === 66 || id === 90) continue;
-                    
-                    if (typeof getBlockBounds === 'function') {
-                        const bRaw = getBlockBounds(id, val, bx, by, bz);
+        for (let i = 0; i < steps; i++) {
+            pos[axis] += stepDist;
+            const mobAABB = {
+                minX: pos.x - w + 0.1, maxX: pos.x + w - 0.1,
+                minY: pos.y, maxY: pos.y + this.height - 0.1,
+                minZ: pos.z - w + 0.1, maxZ: pos.z + w - 0.1
+            };
+            let hit = false;
+            const sMinX = Math.floor(mobAABB.minX), sMaxX = Math.floor(mobAABB.maxX);
+            const sMinY = Math.floor(mobAABB.minY), sMaxY = Math.floor(mobAABB.maxY);
+            const sMinZ = Math.floor(mobAABB.minZ), sMaxZ = Math.floor(mobAABB.maxZ);
+            for (let bx = sMinX; bx <= sMaxX && !hit; bx++) {
+                for (let by = sMinY; by <= sMaxY && !hit; by++) {
+                    for (let bz = sMinZ; bz <= sMaxZ && !hit; bz++) {
+                        const val = getVoxel(bx, by, bz);
+                        const id = val & 0xFF;
+                        if (id === 0 || isFluidBlock(id) || isCrossBlock(id) || id === 17 || id === 23 || id === 64 || id === 66 || id === 90) continue;
+                        const bRaw = typeof getBlockBounds === 'function' ? getBlockBounds(id, val, bx, by, bz) : {minX:0,maxX:1,minY:0,maxY:1,minZ:0,maxZ:1};
                         const boundsList = Array.isArray(bRaw) ? bRaw : [bRaw];
-                        
-                        for (let i = 0; i < boundsList.length; i++) {
-                            const b = boundsList[i];
-                            const blockAABB = {
-                                minX: bx + b.minX, maxX: bx + b.maxX,
-                                maxY: by + b.maxY,
-                                minZ: bz + b.minZ, maxZ: bz + b.maxZ
-                            };
-                            if (mobAABB.minX < blockAABB.maxX && mobAABB.maxX > blockAABB.minX &&
-                                mobAABB.minZ < blockAABB.maxZ && mobAABB.maxZ > blockAABB.minZ) {
-                                if (blockAABB.maxY > highestY && blockAABB.maxY <= this.y + 0.6) {
-                                    highestY = blockAABB.maxY;
-                                }
+                        for (const b of boundsList) {
+                            if (pos.x - w + 0.1 < bx + b.maxX && pos.x + w - 0.1 > bx + b.minX &&
+                                pos.y < by + b.maxY && pos.y + this.height - 0.1 > by + b.minY &&
+                                pos.z - w + 0.1 < bz + b.maxZ && pos.z + w - 0.1 > bz + b.minZ) {
+                                hit = true;
                             }
                         }
-                    } else {
-                        if (by + 1 > highestY && by + 1 <= this.y + 0.6) highestY = by + 1;
                     }
                 }
             }
+            if (hit) {
+                pos[axis] -= stepDist;
+                return { collided: true, pos };
+            }
         }
-        return highestY;
+        return { collided: false, pos };
     }
 
-    // FIXED: Centralized physics that stops bouncing by using getFloorY
+    // Physics using sweep collision — same approach as the player
     _applyPhysics(dt) {
-        let needsJump = false;
+        this.vy -= 28.0 * dt;
 
-        this.vy -= 28.0 * dt; // Gravity
-        let nextY = this.y + this.vy * dt;
-
-        if (this.checkCollision(this.x, nextY, this.z)) {
-            if (this.vy < 0) {
-                this.onGround = true;
-                // FIXED: Snap exactly to the top of the snow layer/slab surface
-                // This prevents the constant "falling/colliding" loop that causes bouncing.
-                nextY = this.getFloorY(this.x, nextY, this.z);
-            } else {
-                nextY = this.y;
-            }
+        // Y axis (gravity/jumping)
+        const yResult = this._sweepAxis(this.x, this.y, this.z, 'y', this.vy * dt);
+        if (yResult.collided) {
+            if (this.vy < 0) this.onGround = true;
             this.vy = 0;
         } else {
             this.onGround = false;
         }
-        this.y = nextY;
-        
-        // ... (rest of horizontal physics)
+        this.y = yResult.pos.y;
 
-        let nextX = this.x + this.vx * dt;
-        if (this.checkCollision(nextX, this.y, this.z)) {
-            if (this.onGround && !this.checkCollision(nextX, this.y + 0.6, this.z)) {
-                this.y += 0.6;
-                this.x = nextX;
+        // Update water/lava state
+        this.checkCollision(this.x, this.y, this.z);
+
+        const STEP_HEIGHT = this.onGround ? 0.6 : 0;
+        let needsJump = false;
+
+        // X axis
+        const dx = this.vx * dt;
+        const xResult = this._sweepAxis(this.x, this.y, this.z, 'x', dx);
+        if (xResult.collided && STEP_HEIGHT > 0) {
+            // Try stepping up like the player does
+            const steppedY = this.y + STEP_HEIGHT;
+            const xStep = this._sweepAxis(this.x, steppedY, this.z, 'x', dx);
+            if (!xStep.collided) {
+                const tmpX = this.x + dx;
+                const drop = this._sweepAxis(tmpX, steppedY, this.z, 'y', -STEP_HEIGHT);
+                this.x = tmpX;
+                this.y = drop.pos.y;
                 needsJump = true;
             } else {
+                this.x = xResult.pos.x;
                 this.vx = 0;
             }
+        } else if (xResult.collided) {
+            this.x = xResult.pos.x;
+            this.vx = 0;
         } else {
-            this.x = nextX;
+            this.x = xResult.pos.x;
         }
 
-        let nextZ = this.z + this.vz * dt;
-        if (this.checkCollision(this.x, this.y, nextZ)) {
-            if (this.onGround && !this.checkCollision(this.x, this.y + 0.6, nextZ)) {
-                this.y += 0.6;
-                this.z = nextZ;
+        // Z axis
+        const dz = this.vz * dt;
+        const zResult = this._sweepAxis(this.x, this.y, this.z, 'z', dz);
+        if (zResult.collided && STEP_HEIGHT > 0) {
+            const steppedY = this.y + STEP_HEIGHT;
+            const zStep = this._sweepAxis(this.x, steppedY, this.z, 'z', dz);
+            if (!zStep.collided) {
+                const tmpZ = this.z + dz;
+                const drop = this._sweepAxis(this.x, steppedY, tmpZ, 'y', -STEP_HEIGHT);
+                this.z = tmpZ;
+                this.y = drop.pos.y;
                 needsJump = true;
             } else {
+                this.z = zResult.pos.z;
                 this.vz = 0;
             }
+        } else if (zResult.collided) {
+            this.z = zResult.pos.z;
+            this.vz = 0;
         } else {
-            this.z = nextZ;
+            this.z = zResult.pos.z;
         }
 
         return needsJump;
@@ -498,12 +510,12 @@ function _mobWallAhead(mob, vx, vz) {
     // Check for solid block at foot level and one above (body height)
     for (let h = 0; h < Math.ceil(mob.height); h++) {
         const bid = getVoxel(probeX, feetY + h, probeZ) & 0xFF;
-        if (bid !== 0 && !isFluidBlock(bid) && !isCrossBlock(bid) && bid !== 17 && bid !== 23 && bid !== 64 && bid !== 66 && bid !== 90) {
+        if (bid !== 0 && !isFluidBlock(bid) && !isCrossBlock(bid) && bid !== 17 && bid !== 23 && bid !== 64 && bid !== 66 && bid !== 90 && bid !== 40) {
             // There's a wall — check if it's jumpable (just 1 block high with clearance above)
             if (h === 0) {
                 const aboveWall = getVoxel(probeX, feetY + 1, probeZ) & 0xFF;
                 const aboveWall2 = getVoxel(probeX, feetY + 2, probeZ) & 0xFF;
-                const isPassthrough = (id) => id === 0 || isFluidBlock(id) || isCrossBlock(id) || id === 17 || id === 23 || id === 64 || id === 66 || id === 90;
+                const isPassthrough = (id) => id === 0 || isFluidBlock(id) || isCrossBlock(id) || id === 17 || id === 23 || id === 64 || id === 66 || id === 90 || id === 40;
                 if (isPassthrough(aboveWall) && isPassthrough(aboveWall2)) {
                     return false; // Jumpable 1-block wall, physics will handle the jump
                 }

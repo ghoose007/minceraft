@@ -2,104 +2,132 @@
 function raycastVoxel() {
     const dir = new THREE.Vector3();
     
-    // In third-person mode, raycast from player's eyes in the direction they're looking,
-    // not from the camera position (which is behind/in front of the player)
-    let x, y, z;
+    let ox, oy, oz;
     if (typeof cameraMode !== 'undefined' && cameraMode !== 0) {
-        // Player look direction from yaw/pitch
         dir.set(
             -Math.sin(player.yaw) * Math.cos(player.pitch),
             Math.sin(player.pitch),
             -Math.cos(player.yaw) * Math.cos(player.pitch)
         );
-        x = player.x;
-        y = player.y + player.eyeLevel;
-        z = player.z;
+        ox = player.x;
+        oy = player.y + player.eyeLevel;
+        oz = player.z;
     } else {
         camera.getWorldDirection(dir);
-        x = camera.position.x;
-        y = camera.position.y;
-        z = camera.position.z;
+        ox = camera.position.x;
+        oy = camera.position.y;
+        oz = camera.position.z;
     }
     
-    let lastX = Math.floor(x);
-    let lastY = Math.floor(y);
-    let lastZ = Math.floor(z);
-    
-    const step = 0.05;
-    const maxDist = 5.0; 
-    
-    for (let t = 0; t < maxDist; t += step) {
-        x += dir.x * step;
-        y += dir.y * step;
-        z += dir.z * step;
-        
-        const vx = Math.floor(x);
-        const vy = Math.floor(y);
-        const vz = Math.floor(z);
-        
-        const val = getVoxel(vx, vy, vz);
+    const maxDist = 5.0;
+
+    // DDA raycast — steps exactly one voxel boundary at a time
+    let x = Math.floor(ox), y = Math.floor(oy), z = Math.floor(oz);
+    const stepX = dir.x >= 0 ? 1 : -1;
+    const stepY = dir.y >= 0 ? 1 : -1;
+    const stepZ = dir.z >= 0 ? 1 : -1;
+
+    // Distance along ray to next voxel boundary on each axis
+    const tDeltaX = dir.x !== 0 ? Math.abs(1 / dir.x) : Infinity;
+    const tDeltaY = dir.y !== 0 ? Math.abs(1 / dir.y) : Infinity;
+    const tDeltaZ = dir.z !== 0 ? Math.abs(1 / dir.z) : Infinity;
+
+    let tMaxX = dir.x !== 0 ? ((dir.x > 0 ? (x + 1 - ox) : (ox - x)) / Math.abs(dir.x)) : Infinity;
+    let tMaxY = dir.y !== 0 ? ((dir.y > 0 ? (y + 1 - oy) : (oy - y)) / Math.abs(dir.y)) : Infinity;
+    let tMaxZ = dir.z !== 0 ? ((dir.z > 0 ? (z + 1 - oz) : (oz - z)) / Math.abs(dir.z)) : Infinity;
+
+    let normal = [0, 0, 0];
+    let t = 0;
+
+    for (let i = 0; i < 200; i++) {
+        // Step to next voxel boundary
+        if (tMaxX < tMaxY && tMaxX < tMaxZ) {
+            t = tMaxX;
+            x += stepX;
+            tMaxX += tDeltaX;
+            normal = [-stepX, 0, 0];
+        } else if (tMaxY < tMaxZ) {
+            t = tMaxY;
+            y += stepY;
+            tMaxY += tDeltaY;
+            normal = [0, -stepY, 0];
+        } else {
+            t = tMaxZ;
+            z += stepZ;
+            tMaxZ += tDeltaZ;
+            normal = [0, 0, -stepZ];
+        }
+
+        if (t > maxDist) break;
+
+        const val = getVoxel(x, y, z);
         const id = val & 0xFF;
-        
+
         if (id !== 0 && !isFluidBlock(id)) {
-            const b = getBlockBounds(id, val, vx, vy, vz);
-            const localX = x - vx;
-            const localY = y - vy;
-            const localZ = z - vz;
-            
+            // For full blocks, the DDA hit is exact
+            const exactX = ox + dir.x * t;
+            const exactY = oy + dir.y * t;
+            const exactZ = oz + dir.z * t;
+
+            // For non-full blocks (slabs, stairs), verify the ray actually hits the AABB
+            const b = getBlockBounds(id, val, x, y, z);
+            const localX = exactX - x;
+            const localY = exactY - y;
+            const localZ = exactZ - z;
+
+            // Fine-step through this voxel to check custom bounds
             let hit = false;
-            let hitBounds = b;
-            if (localX >= b.minX && localX <= b.maxX &&
-                localY >= b.minY && localY <= b.maxY &&
-                localZ >= b.minZ && localZ <= b.maxZ) {
+            if (localX >= b.minX - 0.001 && localX <= b.maxX + 0.001 &&
+                localY >= b.minY - 0.001 && localY <= b.maxY + 0.001 &&
+                localZ >= b.minZ - 0.001 && localZ <= b.maxZ + 0.001) {
                 hit = true;
-                hitBounds = b;
             }
-            // Also check the upper step for stairs
+            
+            // Check stair upper bounds
             if (!hit && typeof isStairBlock === 'function' && isStairBlock(id)) {
                 const ub = getStairUpperBounds(id, val);
-                if (ub && localX >= ub.minX && localX <= ub.maxX &&
-                    localY >= ub.minY && localY <= ub.maxY &&
-                    localZ >= ub.minZ && localZ <= ub.maxZ) {
+                if (ub && localX >= ub.minX - 0.001 && localX <= ub.maxX + 0.001 &&
+                    localY >= ub.minY - 0.001 && localY <= ub.maxY + 0.001 &&
+                    localZ >= ub.minZ - 0.001 && localZ <= ub.maxZ + 0.001) {
                     hit = true;
-                    hitBounds = ub;
                 }
             }
-            
-            if (hit) {
-                // Compute normal by finding which AABB face the ray entered through.
-                // Back-trace from the hit point to find the entry face.
-                let normal = [0, 0, 0];
-                const hb = hitBounds;
-                
-                // Compute distance from hit point to each face of the AABB (in local coords)
-                // The face we entered through is the one closest to the hit point
-                // that the ray direction is opposing (moving into)
-                const dists = [];
-                if (dir.x > 0) dists.push({ d: (localX - hb.minX) / dir.x, axis: 0, sign: -1 }); // entered through -X face
-                if (dir.x < 0) dists.push({ d: (localX - hb.maxX) / dir.x, axis: 0, sign: 1 });  // entered through +X face
-                if (dir.y > 0) dists.push({ d: (localY - hb.minY) / dir.y, axis: 1, sign: -1 }); // entered through -Y face (bottom)
-                if (dir.y < 0) dists.push({ d: (localY - hb.maxY) / dir.y, axis: 1, sign: 1 });  // entered through +Y face (top)
-                if (dir.z > 0) dists.push({ d: (localZ - hb.minZ) / dir.z, axis: 2, sign: -1 }); // entered through -Z face
-                if (dir.z < 0) dists.push({ d: (localZ - hb.maxZ) / dir.z, axis: 2, sign: 1 });  // entered through +Z face
-                
-                // The entry face is the one with the smallest positive back-trace distance
-                let bestDist = Infinity;
-                let bestAxis = 1, bestSign = 1;
-                for (const f of dists) {
-                    if (f.d >= -0.001 && f.d < bestDist) {
-                        bestDist = f.d;
-                        bestAxis = f.axis;
-                        bestSign = f.sign;
+
+            // For slabs/stairs that weren't hit at the voxel boundary, do a fine sub-step
+            if (!hit) {
+                const exitT = Math.min(tMaxX, tMaxY, tMaxZ);
+                for (let st = t; st < exitT; st += 0.02) {
+                    const lx = ox + dir.x * st - x;
+                    const ly = oy + dir.y * st - y;
+                    const lz = oz + dir.z * st - z;
+                    if (lx >= b.minX && lx <= b.maxX && ly >= b.minY && ly <= b.maxY && lz >= b.minZ && lz <= b.maxZ) {
+                        hit = true;
+                        // Recompute normal for the sub-block hit
+                        const prevLx = ox + dir.x * (st - 0.02) - x;
+                        const prevLy = oy + dir.y * (st - 0.02) - y;
+                        const prevLz = oz + dir.z * (st - 0.02) - z;
+                        if (prevLx < b.minX) normal = [-1, 0, 0];
+                        else if (prevLx > b.maxX) normal = [1, 0, 0];
+                        else if (prevLy < b.minY) normal = [0, -1, 0];
+                        else if (prevLy > b.maxY) normal = [0, 1, 0];
+                        else if (prevLz < b.minZ) normal = [0, 0, -1];
+                        else if (prevLz > b.maxZ) normal = [0, 0, 1];
+                        break;
+                    }
+                    // Also check stair upper
+                    if (typeof isStairBlock === 'function' && isStairBlock(id)) {
+                        const ub = getStairUpperBounds(id, val);
+                        if (ub && lx >= ub.minX && lx <= ub.maxX && ly >= ub.minY && ly <= ub.maxY && lz >= ub.minZ && lz <= ub.maxZ) {
+                            hit = true; break;
+                        }
                     }
                 }
-                normal[bestAxis] = bestSign;
-                
-                return { hit: [vx, vy, vz], normal: normal, id: id, val: val, exactHit: [x, y, z] };
+            }
+
+            if (hit) {
+                return { hit: [x, y, z], normal: normal, id: id, val: val, exactHit: [ox + dir.x * t, oy + dir.y * t, oz + dir.z * t] };
             }
         }
-        
-        lastX = vx; lastY = vy; lastZ = vz;
     }
     return null;
 }

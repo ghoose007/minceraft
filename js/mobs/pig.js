@@ -48,7 +48,7 @@ Mob.prototype._testCollisionPure = function(x, y, z) {
 
 // Apply standard mob physics: gravity, vertical collision, horizontal
 // collision with wall sliding. Returns true if the mob should jump.
-// NO auto step-up teleporting — mobs jump over blocks like real Minecraft.
+// Uses sweep-based collision matching the player physics.
 Mob.prototype._applyPhysics = function(dt) {
     // --- Vertical ---
     if (this.inWater) {
@@ -59,80 +59,68 @@ Mob.prototype._applyPhysics = function(dt) {
     }
     if (this.vy < -20) this.vy = -20;
 
-    let nextY = this.y + this.vy * dt;
-    this.onGround = false;
-    if (this.checkCollision(this.x, nextY, this.z)) {
-        if (this.vy < 0) {
-            this.onGround = true;
-            nextY = Math.ceil(nextY);
-        } else {
-            nextY = Math.floor(this.y);
-        }
+    const yResult = this._sweepAxis(this.x, this.y, this.z, 'y', this.vy * dt);
+    if (yResult.collided) {
+        if (this.vy < 0) this.onGround = true;
+        else this.onGround = false;
         this.vy = 0;
+    } else {
+        this.onGround = false;
     }
-    this.y = nextY;
+    this.y = yResult.pos.y;
 
-    // --- Horizontal ---
+    // Update water/lava state
+    this.checkCollision(this.x, this.y, this.z);
+
+    // --- Horizontal with step-up ---
     let needsJump = false;
+    const STEP_HEIGHT = this.onGround ? 0.6 : 0;
     const moveX = this.vx * dt;
     const moveZ = this.vz * dt;
 
-    // Try combined XZ
-    let nx = this.x + moveX;
-    let nz = this.z + moveZ;
-    if (!this.checkCollision(nx, this.y, nz)) {
-        this.x = nx;
-        this.z = nz;
+    // Try combined XZ first
+    const xzResult = this._sweepAxis(this.x, this.y, this.z, 'x', moveX);
+    if (!xzResult.collided) {
+        this.x = xzResult.pos.x;
+    } else if (STEP_HEIGHT > 0) {
+        // Try step-up
+        const steppedY = this.y + STEP_HEIGHT;
+        const xStep = this._sweepAxis(this.x, steppedY, this.z, 'x', moveX);
+        if (!xStep.collided) {
+            const tmpX = this.x + moveX;
+            const drop = this._sweepAxis(tmpX, steppedY, this.z, 'y', -STEP_HEIGHT);
+            this.x = tmpX;
+            this.y = drop.pos.y;
+            needsJump = true;
+        } else {
+            this.x = xzResult.pos.x;
+            needsJump = this.onGround; // signal jump if blocked on ground
+        }
     } else {
-        // Wall slide: try each axis independently
-        let blockedX = false, blockedZ = false;
+        this.x = xzResult.pos.x;
+    }
 
-        nx = this.x + moveX;
-        if (Math.abs(moveX) > 0.0001) {
-            if (!this.checkCollision(nx, this.y, this.z)) {
-                this.x = nx;
-            } else {
-                blockedX = true;
-            }
+    const zResult = this._sweepAxis(this.x, this.y, this.z, 'z', moveZ);
+    if (!zResult.collided) {
+        this.z = zResult.pos.z;
+    } else if (STEP_HEIGHT > 0) {
+        const steppedY = this.y + STEP_HEIGHT;
+        const zStep = this._sweepAxis(this.x, steppedY, this.z, 'z', moveZ);
+        if (!zStep.collided) {
+            const tmpZ = this.z + moveZ;
+            const drop = this._sweepAxis(this.x, steppedY, tmpZ, 'y', -STEP_HEIGHT);
+            this.z = tmpZ;
+            this.y = drop.pos.y;
+            needsJump = true;
+        } else {
+            this.z = zResult.pos.z;
+            if (!needsJump) needsJump = this.onGround;
         }
-
-        nz = this.z + moveZ;
-        if (Math.abs(moveZ) > 0.0001) {
-            if (!this.checkCollision(this.x, this.y, nz)) {
-                this.z = nz;
-            } else {
-                blockedZ = true;
-            }
-        }
-
-        // If blocked while on ground, check if it's a 1-block wall we can jump over
-        if ((blockedX || blockedZ) && this.onGround) {
-            // Only signal jump if the obstacle is jumpable (1 block high with clearance above)
-            const headRoom = Math.ceil(this.height);
-            const feetY = Math.floor(this.y);
-            const w = this.width / 2;
-            const probeMinX = Math.floor(this.x + Math.sin(this.yaw) * 0.5 - w);
-            const probeMaxX = Math.floor(this.x + Math.sin(this.yaw) * 0.5 + w);
-            const probeMinZ = Math.floor(this.z + Math.cos(this.yaw) * 0.5 - w);
-            const probeMaxZ = Math.floor(this.z + Math.cos(this.yaw) * 0.5 + w);
-
-            // Check if there's space 1 block up (above the wall) + head clearance
-            let canJumpOver = true;
-            for (let bx = probeMinX; bx <= probeMaxX && canJumpOver; bx++) {
-                for (let bz = probeMinZ; bz <= probeMaxZ && canJumpOver; bz++) {
-                    for (let h = 0; h < headRoom; h++) {
-                        if (this._isSolid(bx, feetY + 1 + h, bz)) {
-                            canJumpOver = false;
-                        }
-                    }
-                }
-            }
-            if (canJumpOver) needsJump = true;
-        }
+    } else {
+        this.z = zResult.pos.z;
     }
 
     // --- Water sound hooks ---
-    // Splash when entering water (with cooldown to prevent bobbing spam)
     if (!this._splashCooldown) this._splashCooldown = 0;
     if (this._splashCooldown > 0) this._splashCooldown -= dt;
     
@@ -140,9 +128,8 @@ Mob.prototype._applyPhysics = function(dt) {
         if (typeof window._soundMobWaterSplash === 'function') {
             window._soundMobWaterSplash(this, false);
         }
-        this._splashCooldown = 2.0; // Don't splash again for 2 seconds
+        this._splashCooldown = 2.0;
     }
-    // Swim sound while moving in water
     if (this.inWater) {
         const moveDist = Math.sqrt(this.vx * this.vx + this.vz * this.vz) * dt;
         if (typeof window._soundMobSwim === 'function') window._soundMobSwim(this, moveDist);

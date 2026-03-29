@@ -162,10 +162,27 @@ class ZombiePigman extends Mob {
             const swordMesh = buildItemMesh(162); // Gold Sword
             if (swordMesh) {
                 swordMesh.scale.set(0.4, 0.4, 0.4);
-                swordMesh.rotation.set(1.75, 2.8, 0);
-                swordMesh.position.set(-0.02, -0.32, -0.25);
-                this.rightArmPivot.add(swordMesh);
+                swordMesh.rotation.set(1.75, 2.538, 0);
+                swordMesh.position.set(-1/16, 4/16, 0);
+                const heldAnchor = new THREE.Group();
+                heldAnchor.position.set(0, -12.5/16, 0);
+                heldAnchor.add(swordMesh);
+                this.rightArmPivot.add(heldAnchor);
                 this._swordMesh = swordMesh;
+
+                // DEBUG: pink cube + XYZ lines on sword mesh origin (F3 only)
+                const dbgGeo = new THREE.BoxGeometry(2/16, 2/16, 2/16);
+                const dbgMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+                const dbgCube = new THREE.Mesh(dbgGeo, dbgMat);
+                dbgCube.visible = false;
+                swordMesh.add(dbgCube);
+                const al = 0.4;
+                const xL = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(al,0,0)]), new THREE.LineBasicMaterial({color:0xff0000}));
+                const yL = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,al,0)]), new THREE.LineBasicMaterial({color:0x00ff00}));
+                const zL = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,al)]), new THREE.LineBasicMaterial({color:0x0000ff}));
+                xL.visible = false; yL.visible = false; zL.visible = false;
+                swordMesh.add(xL); swordMesh.add(yL); swordMesh.add(zL);
+                this._swordDebug = [dbgCube, xL, yL, zL];
             }
         }
     }
@@ -258,6 +275,8 @@ class ZombiePigman extends Mob {
             this.hurtTime -= dt;
             if (this.hurtTime <= 0) this.material.color.setHex(0xffffff);
         }
+
+        _tickMobEnvironmentDamage(this, dt);
 
         // Ambient sounds — idle when passive, angry when aggroed
         if (this._ambientTimer === undefined) this._ambientTimer = 3.0 + Math.random() * 5.0;
@@ -486,6 +505,12 @@ class ZombiePigman extends Mob {
         }
         if (Math.abs(sepX) > 0.0001 && !this._testCollisionPure(this.x + sepX, this.y, this.z)) this.x += sepX;
         if (Math.abs(sepZ) > 0.0001 && !this._testCollisionPure(this.x, this.y, this.z + sepZ)) this.z += sepZ;
+
+        // Toggle sword debug visuals with F3
+        if (this._swordDebug) {
+            const show = !!window.showDebugScreen;
+            for (const d of this._swordDebug) d.visible = show;
+        }
 
         this.updateLighting();
     }

@@ -192,7 +192,10 @@ window.tickMobSpawning = function(dt) {
                 const cz = Math.floor((pos.z + halfD) / CHUNK_SIZE);
                 if (_isChunkInBounds(cx, cz)) {
                     const sy = _findSurfaceSpawnY(pos.x, pos.z);
-                    if (sy >= GEN_SEA_LEVEL && (getVoxel(pos.x, sy, pos.z) & 0xFF) === 1) {
+                    const floorId = sy >= 0 ? (getVoxel(pos.x, sy, pos.z) & 0xFF) : 0;
+                    // Snow biomes: only 25% spawn rate
+                    const snowBlock = floorId === 40;
+                    if (sy >= GEN_SEA_LEVEL && (floorId === 1 || floorId === 40) && (!snowBlock || Math.random() < 0.25)) {
                         const light = Math.max(getSunLight(pos.x, sy+1, pos.z) * sunLevel, getTorchLight(pos.x, sy+1, pos.z));
                         if (light >= 9) {
                             const packSize = 1 + Math.floor(Math.random() * 4);
@@ -200,7 +203,7 @@ window.tickMobSpawning = function(dt) {
                                 const sx = pos.x + Math.floor(Math.random()*7)-3;
                                 const sz = pos.z + Math.floor(Math.random()*7)-3;
                                 const ssy = _findSurfaceSpawnY(sx, sz);
-                                if (ssy >= GEN_SEA_LEVEL && (getVoxel(sx, ssy, sz) & 0xFF) === 1) {
+                                if (ssy >= GEN_SEA_LEVEL && ((getVoxel(sx, ssy, sz) & 0xFF) === 1 || (getVoxel(sx, ssy, sz) & 0xFF) === 40)) {
                                     spawnMob(type, sx+0.5, ssy+1, sz+0.5);
                                 }
                             }

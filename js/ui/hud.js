@@ -2,6 +2,75 @@
 // HUD, HOTBAR & ITEM DISPLAY
 // ==========================================
 
+// --- SPAWN EGG TEXTURE COMPOSITING ---
+// Composites base (index 150) + detail (index 151) from terrain.png with per-mob tint colors
+const SPAWN_EGG_COLORS = {
+    190: { base: [0xF0, 0xA5, 0xA2], detail: [0xDB, 0x63, 0x5F] }, // Pig
+    191: { base: [0x44, 0x36, 0x26], detail: [0xA1, 0xA1, 0xA1] }, // Cow
+    192: { base: [0xE7, 0xE7, 0xE7], detail: [0xFF, 0xB5, 0xB5] }, // Sheep
+    193: { base: [0x00, 0xAF, 0xAF], detail: [0x79, 0x9C, 0x65] }, // Zombie
+    194: { base: [0x0D, 0xA7, 0x0B], detail: [0x00, 0x00, 0x00] }, // Creeper
+    195: { base: [0xC1, 0xC1, 0xC1], detail: [0x49, 0x49, 0x49] }, // Skeleton
+    196: { base: [0xEA, 0x93, 0x93], detail: [0x4C, 0x71, 0x29] }, // Zombie Pigman
+};
+const _spawnEggDataUrls = {};
+let _spawnEggAtlasReady = false;
+
+function _buildSpawnEggTextures() {
+    if (_spawnEggAtlasReady) return;
+    const img = new Image();
+    img.src = 'textures/terrain.png?v=' + ASSET_VERSION;
+    img.onload = () => {
+        const srcCanvas = document.createElement('canvas');
+        srcCanvas.width = img.width; srcCanvas.height = img.height;
+        const srcCtx = srcCanvas.getContext('2d');
+        srcCtx.drawImage(img, 0, 0);
+        
+        // Extract base (150) and detail (151) tiles
+        const baseCol = 150 % 16, baseRow = Math.floor(150 / 16);
+        const detCol = 151 % 16, detRow = Math.floor(151 / 16);
+        const baseData = srcCtx.getImageData(baseCol * 16, baseRow * 16, 16, 16);
+        const detData = srcCtx.getImageData(detCol * 16, detRow * 16, 16, 16);
+        
+        for (const [idStr, colors] of Object.entries(SPAWN_EGG_COLORS)) {
+            const c = document.createElement('canvas');
+            c.width = 16; c.height = 16;
+            const ctx = c.getContext('2d');
+            const out = ctx.createImageData(16, 16);
+            
+            for (let i = 0; i < 16 * 16; i++) {
+                const idx = i * 4;
+                // Base layer tinted
+                const ba = baseData.data[idx + 3];
+                if (ba > 0) {
+                    const gray = baseData.data[idx] / 255;
+                    out.data[idx]     = Math.round(colors.base[0] * gray);
+                    out.data[idx + 1] = Math.round(colors.base[1] * gray);
+                    out.data[idx + 2] = Math.round(colors.base[2] * gray);
+                    out.data[idx + 3] = ba;
+                }
+                // Detail layer tinted (overwrites base where opaque)
+                const da = detData.data[idx + 3];
+                if (da > 0) {
+                    const gray = detData.data[idx] / 255;
+                    out.data[idx]     = Math.round(colors.detail[0] * gray);
+                    out.data[idx + 1] = Math.round(colors.detail[1] * gray);
+                    out.data[idx + 2] = Math.round(colors.detail[2] * gray);
+                    out.data[idx + 3] = da;
+                }
+            }
+            ctx.putImageData(out, 0, 0);
+            _spawnEggDataUrls[idStr] = c.toDataURL();
+        }
+        _spawnEggAtlasReady = true;
+    };
+}
+_buildSpawnEggTextures();
+
+function getSpawnEggDataUrl(itemId) {
+    return _spawnEggDataUrls[itemId] || '';
+}
+
 // --- 3D CSS INJECTION FOR INVENTORY BLOCKS, DAMAGE SHAKE & DURABILITY ---
 if (!document.getElementById('mc-3d-styles')) {
     const style = document.createElement('style');
@@ -264,6 +333,13 @@ function getIconStyle(blockId) {
         return `background-image: url('textures/terrain.png?v=${ASSET_VERSION}'); background-position: -${col * 100}% -${row * 100}%; background-size: 1600% 1600%; image-rendering: pixelated;`;
     }
     
+    // Spawn eggs — composited canvas texture
+    if (id >= 190 && id <= 196) {
+        const url = getSpawnEggDataUrl(id);
+        if (url) return `background-image: url('${url}'); background-size: contain; image-rendering: pixelated;`;
+        return '';
+    }
+    
     // Tools — any item in TOOL_DATA with an atlasIdx that maps to tools.png
     if (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[id] && TOOL_DATA[id].maxDurability) {
         const data = TOOL_DATA[id];
@@ -296,6 +372,14 @@ function createIconElement(id) {
             const atlasIdx = data.atlasIdx;
             const col = atlasIdx % 16, row = Math.floor(atlasIdx / 16);
             icon.style = `background-image: url('textures/terrain.png?v=${ASSET_VERSION}'); background-position: -${col * 100}% -${row * 100}%; background-size: 1600% 1600%; image-rendering: pixelated;`;
+        }
+        return icon;
+    }
+    // Spawn eggs — composited canvas texture
+    if (parsedId >= 190 && parsedId <= 196) {
+        const url = getSpawnEggDataUrl(parsedId);
+        if (url) {
+            icon.style = `background-image: url('${url}'); background-size: contain; image-rendering: pixelated;`;
         }
         return icon;
     }

@@ -831,7 +831,7 @@ window.getTargetedMob = function() {
                     window.blockBreakCooldown = 0.3;
                 } else {
                     window.breakBlock(x, y, z);
-                    window.blockBreakCooldown = 0.1; 
+                    window.blockBreakCooldown = 0.3; 
                 }
             } else {
                 miningState.isMining = true;
@@ -1006,7 +1006,7 @@ window.getTargetedMob = function() {
             // Block placement of tools/items — only allow actual placeable blocks and saplings
             if (currentBuildBlock >= 100) {
                 // These are placeable despite being >= 100
-                const placeableHighIds = [116, 117, 118, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158];
+                const placeableHighIds = [116, 117, 118, 128, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158, 190, 191, 192, 193, 194, 195, 196];
                 if (!placeableHighIds.includes(currentBuildBlock)) return;
             }
 
@@ -1110,7 +1110,29 @@ window.getTargetedMob = function() {
             if (isCrossBlock(targetId)) {
                 px = target.hit[0]; py = target.hit[1]; pz = target.hit[2];
             }
-            
+
+            // ---> SPAWN EGG USE (before canPlaceBlock since eggs aren't blocks) <---
+            if (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[currentBuildBlock] && TOOL_DATA[currentBuildBlock].type === 'spawn_egg') {
+                const mobType = TOOL_DATA[currentBuildBlock].mobType;
+                if (typeof window.spawnMob === 'function') {
+                    const sx = target.hit[0] + target.normal[0] + 0.5;
+                    const sy = target.hit[1] + target.normal[1];
+                    const sz = target.hit[2] + target.normal[2] + 0.5;
+                    window.spawnMob(mobType, sx, sy, sz);
+                }
+                if (gameMode === 'survival') {
+                    inventory[activeSlot].count--;
+                    if (inventory[activeSlot].count <= 0) {
+                        inventory[activeSlot].id = 0;
+                        inventory[activeSlot].count = 0;
+                    }
+                    if (typeof buildUI === 'function') buildUI();
+                    if (typeof selectSlot === 'function') selectSlot(activeSlot);
+                }
+                swingAnimation = 1.0;
+                return;
+            }
+
             if (!canPlaceBlock(currentBuildBlock, px, py, pz, target.normal)) return;
             
             // ---> NEW: Flint and Steel Ignition <---

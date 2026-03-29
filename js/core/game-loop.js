@@ -714,16 +714,31 @@ function animate() {
                 const bX = Math.floor(nextX);
                 const bY = Math.floor(nextY - 0.15); 
                 const bZ = Math.floor(nextZ);
-                const blockBelowId = getVoxel(bX, bY, bZ) & 0xFF;
+                const blockBelowVal = getVoxel(bX, bY, bZ);
+                const blockBelowId = blockBelowVal & 0xFF;
                 
                 let onGround = false;
-                if (blockBelowId !== 0 && !isFluidBlock(blockBelowId) && !isCrossBlock(blockBelowId)) {
-                    nextY = bY + 1 + 0.15;
-                    if (item.vy < -4.0) item.vy *= -0.3; 
-                    else item.vy = 0;
-                    item.vx *= Math.exp(-12.0 * dt); 
-                    item.vz *= Math.exp(-12.0 * dt);
-                    onGround = true;
+                if (blockBelowId !== 0 && !isFluidBlock(blockBelowId) && !isCrossBlock(blockBelowId) && blockBelowId !== 17 && blockBelowId !== 23 && blockBelowId !== 64 && blockBelowId !== 66 && blockBelowId !== 90) {
+                    // Get actual block top height for partial blocks (snow, slabs)
+                    let blockTop = bY + 1;
+                    if (typeof getBlockBounds === 'function') {
+                        const bounds = getBlockBounds(blockBelowId, blockBelowVal, bX, bY, bZ);
+                        if (!Array.isArray(bounds)) {
+                            blockTop = bY + bounds.maxY;
+                        } else {
+                            let maxTop = 0;
+                            for (const b of bounds) if (b.maxY > maxTop) maxTop = b.maxY;
+                            blockTop = bY + maxTop;
+                        }
+                    }
+                    if (nextY - 0.15 < blockTop) {
+                        nextY = blockTop + 0.15;
+                        if (item.vy < -4.0) item.vy *= -0.3; 
+                        else item.vy = 0;
+                        item.vx *= Math.exp(-12.0 * dt); 
+                        item.vz *= Math.exp(-12.0 * dt);
+                        onGround = true;
+                    }
                 } else {
                     item.vx *= Math.exp(-1.5 * dt);
                     item.vz *= Math.exp(-1.5 * dt);
@@ -748,7 +763,14 @@ function animate() {
                 item.mesh.rotation.y += dt * 0.314;
 
                 if (onGround) {
-                    item.shadow.position.set(item.x, bY + 1.01, item.z);
+                    // Use actual block top for shadow (respects snow layers, slabs)
+                    let shadowTop = bY + 1.01;
+                    if (typeof getBlockBounds === 'function') {
+                        const sb = getBlockBounds(blockBelowId, blockBelowVal, bX, bY, bZ);
+                        if (!Array.isArray(sb)) shadowTop = bY + sb.maxY + 0.01;
+                        else { let mx = 0; for (const b of sb) if (b.maxY > mx) mx = b.maxY; shadowTop = bY + mx + 0.01; }
+                    }
+                    item.shadow.position.set(item.x, shadowTop, item.z);
                     item.shadow.visible = true;
                 } else item.shadow.visible = false;
 

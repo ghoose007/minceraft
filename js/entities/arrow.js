@@ -114,6 +114,16 @@ class Arrow {
                 this._remove();
                 return true;
             }
+            // Check if the block the arrow is stuck in was broken
+            if (this._stuckBlock) {
+                const bid = getVoxel(this._stuckBlock[0], this._stuckBlock[1], this._stuckBlock[2]) & 0xFF;
+                if (bid === 0 || isFluidBlock(bid)) {
+                    // Block was removed — unstick and let arrow fall
+                    this.stuck = false;
+                    this.vy = 0; // start falling from rest
+                    // Don't reset stuckTimer — keeps the original despawn countdown
+                }
+            }
             return false;
         }
 
@@ -184,6 +194,7 @@ class Arrow {
             const bid = getVoxel(cx, cy, cz) & 0xFF;
             if (bid !== 0 && !isFluidBlock(bid) && !isCrossBlock(bid) && bid !== 17 && bid !== 23 && bid !== 64 && bid !== 66 && bid !== 90) {
                 this.stuck = true;
+                this._stuckBlock = [cx, cy, cz];
                 this.vx = 0; this.vy = 0; this.vz = 0;
                 if (typeof window.playArrowHitSound === 'function') window.playArrowHitSound(this.x, this.y, this.z);
                 return false;

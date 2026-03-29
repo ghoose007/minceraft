@@ -89,5 +89,14 @@ const TOOL_DATA = {
     182: { name: 'Gold Helmet', atlasIdx: 42, type: 'armor', armorSlot: 'helmet', defense: 2, maxDurability: 77 },
     183: { name: 'Gold Chestplate', atlasIdx: 41, type: 'armor', armorSlot: 'chestplate', defense: 5, maxDurability: 112 },
     184: { name: 'Gold Leggings', atlasIdx: 40, type: 'armor', armorSlot: 'leggings', defense: 3, maxDurability: 105 },
-    185: { name: 'Gold Boots', atlasIdx: 39, type: 'armor', armorSlot: 'boots', defense: 1, maxDurability: 91 }
+    185: { name: 'Gold Boots', atlasIdx: 39, type: 'armor', armorSlot: 'boots', defense: 1, maxDurability: 91 },
+
+    // Spawn Eggs (terrain.png atlas)
+    190: { name: 'Spawn Pig', atlasIdx: 152, type: 'spawn_egg', mobType: 'pig', isTerrainAtlas: true },
+    191: { name: 'Spawn Cow', atlasIdx: 153, type: 'spawn_egg', mobType: 'cow', isTerrainAtlas: true },
+    192: { name: 'Spawn Sheep', atlasIdx: 154, type: 'spawn_egg', mobType: 'sheep', isTerrainAtlas: true },
+    193: { name: 'Spawn Zombie', atlasIdx: 155, type: 'spawn_egg', mobType: 'zombie', isTerrainAtlas: true },
+    194: { name: 'Spawn Creeper', atlasIdx: 156, type: 'spawn_egg', mobType: 'creeper', isTerrainAtlas: true },
+    195: { name: 'Spawn Skeleton', atlasIdx: 157, type: 'spawn_egg', mobType: 'skeleton', isTerrainAtlas: true },
+    196: { name: 'Spawn Zombie Pigman', atlasIdx: 158, type: 'spawn_egg', mobType: 'zombie_pigman', isTerrainAtlas: true }
 };

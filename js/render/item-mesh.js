@@ -20,6 +20,8 @@ window.buildItemMesh = function(id) {
     // Route materials, saplings, flowers, and bushes to the 3D extruded material mesher
     if ((id >= 112 && id <= 123) || id === 128 || id === 129 || id === 134 || id === 135 || id === 137 || id === 142 || id === 143 || id === 151 || id === 153 || id === 165 || id === 186 || id === 187 || id === 188
         || id === 23 || id === 53 || id === 24 || id === 116 || id === 117 || id === 118) return buildMaterialMesh(id);
+    // Spawn eggs — use composited canvas texture as flat sprite
+    if (id >= 190 && id <= 196) return buildSpawnEggMesh(id);
     // Vine and lilypad: render as flat 3D items like materials
     if (id === 66 || id === 67) return buildFlatBlockItemMesh(id);
     if (id >= 100 && typeof TOOL_DATA !== 'undefined' && TOOL_DATA[id]) return buildToolMesh(id);
@@ -564,6 +566,113 @@ function buildFlatBlockItemMesh(blockId) {
     mesh.position.set(-0.5 + 1.13 / 16, -0.5 + -1.0 / 16, -0.35);
     
     const grp = new THREE.Group();
+    grp.add(mesh);
+    return grp;
+}
+// --- SPAWN EGG 3D MESH ---
+// Extruded pixel mesh composited from base (150) + detail (151) terrain tiles with tint colors
+function buildSpawnEggMesh(id) {
+    const grp = new THREE.Group();
+    
+    let pixData = null;
+    try { pixData = getTerrainPixelData(); } catch(e) { return grp; }
+    if (!pixData || !pixData.data) return grp;
+
+    const colors = typeof SPAWN_EGG_COLORS !== 'undefined' ? SPAWN_EGG_COLORS[id] : null;
+    if (!colors) return grp;
+
+    // Read base (150) and detail (151) tiles from terrain atlas, composite with tint
+    const baseCol = 150 % 16, baseRow = Math.floor(150 / 16);
+    const detCol = 151 % 16, detRow = Math.floor(151 / 16);
+    const baseX = baseCol * 16, baseY = baseRow * 16;
+    const detX = detCol * 16, detY = detRow * 16;
+    const atlasW = 256; // terrain.png is 256px wide
+
+    // Composite into a 16x16 RGBA buffer
+    const comp = new Uint8Array(16 * 16 * 4);
+    for (let py = 0; py < 16; py++) {
+        for (let px = 0; px < 16; px++) {
+            const ci = (py * 16 + px) * 4;
+            // Base layer
+            const bi = ((baseY + py) * atlasW + baseX + px) * 4;
+            const ba = pixData.data[bi + 3];
+            if (ba > 0) {
+                const gray = pixData.data[bi] / 255;
+                comp[ci] = Math.round(colors.base[0] * gray);
+                comp[ci+1] = Math.round(colors.base[1] * gray);
+                comp[ci+2] = Math.round(colors.base[2] * gray);
+                comp[ci+3] = ba;
+            }
+            // Detail layer overwrites
+            const di = ((detY + py) * atlasW + detX + px) * 4;
+            const da = pixData.data[di + 3];
+            if (da > 0) {
+                const gray = pixData.data[di] / 255;
+                comp[ci] = Math.round(colors.detail[0] * gray);
+                comp[ci+1] = Math.round(colors.detail[1] * gray);
+                comp[ci+2] = Math.round(colors.detail[2] * gray);
+                comp[ci+3] = da;
+            }
+        }
+    }
+
+    // Create canvas texture from composited data
+    const c = document.createElement('canvas');
+    c.width = 16; c.height = 16;
+    const ctx = c.getContext('2d');
+    const imgData = ctx.createImageData(16, 16);
+    imgData.data.set(comp);
+    ctx.putImageData(imgData, 0, 0);
+    const tex = new THREE.CanvasTexture(c);
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+
+    // Build extruded pixel mesh
+    const positions = [], uvs = [], indices = [];
+    let indexOffset = 0;
+    const pSize = 1/16, thick = 1/16;
+
+    function addQuad(p1, p2, p3, p4, uMin, vMax, uMax, vMin) {
+        positions.push(...p1, ...p2, ...p3, ...p4);
+        uvs.push(uMin, vMax, uMax, vMax, uMin, vMin, uMax, vMin);
+        indices.push(indexOffset, indexOffset+2, indexOffset+1, indexOffset+2, indexOffset+3, indexOffset+1);
+        indexOffset += 4;
+    }
+
+    for (let py = 0; py < 16; py++) {
+        for (let px = 0; px < 16; px++) {
+            if (comp[(py * 16 + px) * 4 + 3] > 5) {
+                const x = (px * pSize) - 0.5;
+                const y = ((15 - py) * pSize) - 0.5;
+                const uMin = px / 16, uMax = (px + 1) / 16;
+                const vMin = 1.0 - ((py + 1) / 16), vMax = 1.0 - (py / 16);
+
+                addQuad([x, y+pSize, thick/2], [x+pSize, y+pSize, thick/2], [x, y, thick/2], [x+pSize, y, thick/2], uMin, vMax, uMax, vMin);
+                addQuad([x+pSize, y+pSize, -thick/2], [x, y+pSize, -thick/2], [x+pSize, y, -thick/2], [x, y, -thick/2], uMax, vMax, uMin, vMin);
+                if (py === 0 || comp[((py-1)*16+px)*4+3] <= 5) addQuad([x, y+pSize, -thick/2], [x+pSize, y+pSize, -thick/2], [x, y+pSize, thick/2], [x+pSize, y+pSize, thick/2], uMin, vMax, uMax, vMin);
+                if (py === 15 || comp[((py+1)*16+px)*4+3] <= 5) addQuad([x, y, thick/2], [x+pSize, y, thick/2], [x, y, -thick/2], [x+pSize, y, -thick/2], uMin, vMax, uMax, vMin);
+                if (px === 0 || comp[(py*16+px-1)*4+3] <= 5) addQuad([x, y+pSize, -thick/2], [x, y+pSize, thick/2], [x, y, -thick/2], [x, y, thick/2], uMin, vMax, uMax, vMin);
+                if (px === 15 || comp[(py*16+px+1)*4+3] <= 5) addQuad([x+pSize, y+pSize, thick/2], [x+pSize, y+pSize, -thick/2], [x+pSize, y, thick/2], [x+pSize, y, -thick/2], uMin, vMax, uMax, vMin);
+            }
+        }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+
+    const colors2 = new Float32Array(positions.length).fill(1);
+    geo.setAttribute('color', new THREE.BufferAttribute(colors2, 3));
+    const biomeTints = new Float32Array(positions.length).fill(1);
+    geo.setAttribute('aBiomeTint', new THREE.BufferAttribute(biomeTints, 3));
+
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.scale.set(0.68 / 0.35, 0.68 / 0.35, 0.68 / 0.35);
+    mesh.rotation.set(0, -45 * Math.PI / 180, 25 * Math.PI / 180);
+    mesh.position.set(-0.5 + 1.13 / 16, -0.5 + -1.0 / 16, -0.35);
     grp.add(mesh);
     return grp;
 }
