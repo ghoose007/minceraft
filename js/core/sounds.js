@@ -814,4 +814,9 @@
         playNamedSoundAt(key, 0.5, 0.9, 1.1, wx, wy, wz);
     };
 
+    window.playWaterSplashAt = function(wx, wy, wz, vol) {
+        if (vol === undefined) vol = 0.15;
+        playFluidSoundAt('splash', vol, 0.9, 1.1, wx, wy, wz);
+    };
+
 })();

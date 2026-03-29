@@ -695,19 +695,73 @@ function animate() {
                 item.age += dt;
                 if (item.pickupDelay > 0) item.pickupDelay -= dt;
 
-                item.vy -= GRAVITY * dt * 0.4; 
+                // --- WATER DETECTION FOR THIS ITEM ---
+                const _itemIx = Math.floor(item.x), _itemIy = Math.floor(item.y), _itemIz = Math.floor(item.z);
+                const _itemBlockAtFeet = getVoxel(_itemIx, _itemIy, _itemIz) & 0xFF;
+                const itemInWater = (_itemBlockAtFeet === 4);
+
+                // Splash sound & particles when item first enters water
+                if (itemInWater && !item._wasInWater) {
+                    const splashVol = Math.min(0.2, 0.05 + Math.abs(item.vy) * 0.015);
+                    if (typeof window.playWaterSplashAt === 'function') {
+                        window.playWaterSplashAt(item.x, item.y, item.z, splashVol);
+                    }
+                    if (typeof window.spawnWaterSplash === 'function') {
+                        window.spawnWaterSplash(item.x, item.y, item.z);
+                    }
+                }
+                item._wasInWater = itemInWater;
+
+                if (itemInWater) {
+                    // Check if the block above is also water or air
+                    const _aboveId = getVoxel(_itemIx, _itemIy + 1, _itemIz) & 0xFF;
+                    const atSurface = (_aboveId !== 4); // block above is NOT water = at surface level
+
+                    if (atSurface && Math.abs(item.vy) < 0.5) {
+                        // At surface AND nearly stopped: settle to rest position
+                        item.vy *= Math.exp(-10.0 * dt);
+                        const surfaceY = _itemIy + 0.85;
+                        const diff = surfaceY - item.y;
+                        item.vy += diff * 6.0 * dt;
+                    } else {
+                        // Sinking or rising through water: gravity + buoyancy
+                        item.vy -= GRAVITY * dt * 0.15;  // reduced gravity
+                        item.vy += 4.0 * dt;              // buoyancy
+                        if (item.vy > 2.0) item.vy = 2.0;
+                        // Drag slows vertical movement (makes sinking feel heavy)
+                        item.vy *= Math.exp(-2.0 * dt);
+                    }
+                    if (item.vy < -3.0) item.vy = -3.0;
+                    item.vx *= Math.exp(-6.0 * dt);
+                    item.vz *= Math.exp(-6.0 * dt);
+
+                    // --- WATER FLOW PUSH (items) ---
+                    if (typeof getWaterFlowDirection === 'function') {
+                        const flow = getWaterFlowDirection(_itemIx, _itemIy, _itemIz);
+                        const ITEM_FLOW_FORCE = 5.6;
+                        item.vx += flow.x * ITEM_FLOW_FORCE * dt;
+                        item.vz += flow.z * ITEM_FLOW_FORCE * dt;
+                    }
+                } else {
+                    item.vy -= GRAVITY * dt * 0.4; 
+                }
                 
                 let nextX = item.x + item.vx * dt;
                 let nextY = item.y + item.vy * dt;
                 let nextZ = item.z + item.vz * dt;
 
-                if (getVoxel(Math.floor(nextX), Math.floor(item.y), Math.floor(item.z)) !== 0) {
+                // X/Z wall collisions — skip fluid blocks so items can enter water
+                const _wallXId = getVoxel(Math.floor(nextX), Math.floor(item.y), Math.floor(item.z)) & 0xFF;
+                if (_wallXId !== 0 && !isFluidBlock(_wallXId)) {
                     item.vx *= -0.5; nextX = item.x;
                 }
-                if (getVoxel(Math.floor(item.x), Math.floor(item.y), Math.floor(nextZ)) !== 0) {
+                const _wallZId = getVoxel(Math.floor(item.x), Math.floor(item.y), Math.floor(nextZ)) & 0xFF;
+                if (_wallZId !== 0 && !isFluidBlock(_wallZId)) {
                     item.vz *= -0.5; nextZ = item.z;
                 }
-                if (getVoxel(Math.floor(item.x), Math.floor(item.y + 0.3), Math.floor(item.z)) !== 0) {
+                // Ceiling collision — skip fluid blocks
+                const _ceilId = getVoxel(Math.floor(item.x), Math.floor(item.y + 0.3), Math.floor(item.z)) & 0xFF;
+                if (_ceilId !== 0 && !isFluidBlock(_ceilId)) {
                     if (item.vy > 0) item.vy = -0.5; 
                 }
 
@@ -735,11 +789,21 @@ function animate() {
                         nextY = blockTop + 0.15;
                         if (item.vy < -4.0) item.vy *= -0.3; 
                         else item.vy = 0;
-                        item.vx *= Math.exp(-12.0 * dt); 
-                        item.vz *= Math.exp(-12.0 * dt);
+
+                        // --- ICE SLIPPERINESS FOR ITEMS ---
+                        // MC ice: 0.98 slipperiness, packed ice: 0.989, normal: 0.6
+                        // Friction multiplier per tick = slipperiness. Higher = more sliding.
+                        let itemFriction;
+                        if (blockBelowId === 95) itemFriction = 0.98;          // Ice
+                        else if (blockBelowId === 138) itemFriction = 0.989;    // Packed Ice
+                        else itemFriction = 0.6;                                // Normal
+                        // Convert MC per-tick friction to continuous: pow(slip, 20) per second
+                        const frictionDecay = -Math.log(itemFriction) * 20.0;
+                        item.vx *= Math.exp(-frictionDecay * dt); 
+                        item.vz *= Math.exp(-frictionDecay * dt);
                         onGround = true;
                     }
-                } else {
+                } else if (!itemInWater) {
                     item.vx *= Math.exp(-1.5 * dt);
                     item.vz *= Math.exp(-1.5 * dt);
                 }

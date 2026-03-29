@@ -160,9 +160,9 @@ window.tossItem = function(id, count, durability) {
     const dir = new THREE.Vector3();
     camera.getWorldDirection(dir);
     
-    const throwForce = 12.0; 
+    const throwForce = 2.0; 
     const vx = (player.vx * 0.5) + (dir.x * throwForce); 
-    const vy = (dir.y * throwForce * 0.5) + 4.5; 
+    const vy = (dir.y * throwForce * 0.5) + 2.0; 
     const vz = (player.vz * 0.5) + (dir.z * throwForce);
 
     const spawnX = player.x + (dir.x * 0.6);

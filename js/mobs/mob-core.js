@@ -392,6 +392,15 @@ class Mob {
         // Update water/lava state
         this.checkCollision(this.x, this.y, this.z);
 
+        // --- WATER FLOW PUSH (mobs) ---
+        if (this.inWater && typeof getWaterFlowDirection === 'function') {
+            const mx = Math.floor(this.x), my = Math.floor(this.y), mz = Math.floor(this.z);
+            const flow = getWaterFlowDirection(mx, my, mz);
+            const FLOW_FORCE = 5.6;
+            this.vx += flow.x * FLOW_FORCE * dt;
+            this.vz += flow.z * FLOW_FORCE * dt;
+        }
+
         const STEP_HEIGHT = this.onGround ? 0.6 : 0;
         let needsJump = false;
 

@@ -115,7 +115,7 @@ function recalculateLighting(ux, uy, uz) {
             let hy = 0;
             for(let by = maxY; by >= minY; by--) {
                 const id = getVoxel(bx, by, bz) & 0xFF;
-                if (!isBlockTransparent(id) || id === 4 || id === 14 || id === 22 || id === 43 || id === 27 || id === 38 || id === 39) {
+                if (!isBlockTransparent(id) || id === 4 || id === 14 || id === 22 || id === 43 || id === 97 || id === 27 || id === 38 || id === 39) {
                     hy = by; break;
                 }
             }
@@ -162,7 +162,11 @@ function recalculateLighting(ux, uy, uz) {
                 
                 if (isOpaque) {
                     sunLevel = 0;
-                } else if (id === 4 || id === 14 || id === 22 || id === 43 || id === 27) {
+                } else if (id === 14 || id === 22 || id === 43 || id === 97) {
+                    // Leaves reduce light by 2 per block (MC-like)
+                    sunLevel = Math.max(0, sunLevel - 2);
+                } else if (id === 4 || id === 27) {
+                    // Water and lava reduce light by 1
                     sunLevel = Math.max(0, sunLevel - 1);
                 }
                 
@@ -212,7 +216,10 @@ function recalculateLighting(ux, uy, uz) {
             const id = getVoxel(nx, ny, nz) & 0xFF;
             if (!isBlockTransparent(id)) continue;
             
-            let nLevel = sl - 1;
+            // Leaves reduce light by 2 per block, everything else by 1
+            const reduction = (id === 14 || id === 22 || id === 43 || id === 97) ? 2 : 1;
+            let nLevel = sl - reduction;
+            if (nLevel < 0) nLevel = 0;
             
             if (nx === sx && nz === sz && ny < sy && sl === 15 && id === 0) nLevel = 15;
             
@@ -239,7 +246,10 @@ function recalculateLighting(ux, uy, uz) {
             const id = getVoxel(nx, ny, nz) & 0xFF;
             if (!isBlockTransparent(id)) continue;
             
-            const nLevel = tl - 1;
+            // Leaves reduce torch light by 2 per block too
+            const reduction = (id === 14 || id === 22 || id === 43 || id === 97) ? 2 : 1;
+            let nLevel = tl - reduction;
+            if (nLevel < 0) nLevel = 0;
             
             if (nLevel > getTorchLight(nx, ny, nz)) {
                 setTorchLight(nx, ny, nz, nLevel);

@@ -296,20 +296,15 @@ function movePlayer(dt) {
         }
     }
 
-    // Ice slipperiness: very low friction/acceleration when standing on ice
-    // MC ice has 0.98 slipperiness (vs normal 0.6) — player slides and has very sluggish control
-    let _onIce = false;
+    // Ice slipperiness: MC ice = 0.98, packed ice = 0.989 (vs normal ground 0.6)
+    // This translates to much lower acceleration so the player slides
+    // MC accel formula: accel = 0.1 * (0.6/slip)^3 where slip is block slipperiness
+    // Normal (0.6): accel ≈ 0.1, Ice (0.98): accel ≈ 0.023, Packed Ice (0.989): accel ≈ 0.022
+    let _iceSlip = 0;
     if (!player.flying && player.onGround) {
         const iceCheckId = getVoxel(Math.floor(player.x), Math.floor(player.y - 0.1), Math.floor(player.z)) & 0xFF;
-        if (iceCheckId === 95) _onIce = true;
-    }
-
-    // Ice slipperiness: check block under player's feet
-    // In MC, ice has very low friction — player slides and takes longer to stop/turn
-    let onIce = false;
-    if (!player.flying) {
-        const iceCheckId = getVoxel(Math.floor(player.x), Math.floor(player.y - 0.1), Math.floor(player.z)) & 0xFF;
-        if (iceCheckId === 95) onIce = true;
+        if (iceCheckId === 95) _iceSlip = 0.98;        // Ice
+        else if (iceCheckId === 138) _iceSlip = 0.989;  // Packed Ice
     }
 
     const yaw = player.yaw;
@@ -338,11 +333,26 @@ function movePlayer(dt) {
         targetVz = (inputX * Math.sin(yaw) + inputZ * Math.cos(yaw)) * -speed;
     }
 
-    // MC ice friction: acceleration is much lower so player slides
-    // Normal ground accel = 10, air = 2, ice = 1.2 (very slippery)
-    const accel = _onIce ? 1.0 : (player.onGround || player.flying || fluid.inWater || fluid.inLava ? 10.0 : 2.0); 
+    // MC-accurate acceleration: ice uses slipperiness-based formula
+    let accel;
+    if (_iceSlip > 0) {
+        const slip3 = (0.6 / _iceSlip) * (0.6 / _iceSlip) * (0.6 / _iceSlip);
+        accel = slip3 * 2.0;  // scaled for our dt-based system
+    } else {
+        accel = (player.onGround || player.flying || fluid.inWater || fluid.inLava) ? 10.0 : 2.0;
+    }
     player.vx += (targetVx - player.vx) * dt * accel;
     player.vz += (targetVz - player.vz) * dt * accel;
+
+    // --- WATER FLOW PUSH (player) ---
+    // MC applies ~0.014 blocks/tick² horizontal acceleration in flow direction = 0.28/s² at 20tps
+    if (fluid.inWater && typeof getWaterFlowDirection === 'function') {
+        const px = Math.floor(player.x), py = Math.floor(player.y), pz = Math.floor(player.z);
+        const flow = getWaterFlowDirection(px, py, pz);
+        const FLOW_FORCE = 5.6; // MC 0.014 * 20tps * 20 (our accel scaling)
+        player.vx += flow.x * FLOW_FORCE * dt;
+        player.vz += flow.z * FLOW_FORCE * dt;
+    }
 
     if (player.flying) {
         player.vy = 0;

@@ -136,7 +136,12 @@ function createFluidMaterial(texture, isWater) {
                     col = mix(sampleFrame(frame0, localUv), sampleFrame(frame1, localUv), blend);
                 }
                 
-                vec3 lightCalc = vColor.b * uAmbientColor + vColor.r * uSunColor * uSunLevel + vColor.g * uTorchColor;
+                float shade = vColor.b;
+                float rawSun = (shade > 0.001) ? clamp(vColor.r / shade, 0.0, 1.0) : 0.0;
+                float rawTorch = (shade > 0.001) ? clamp(vColor.g / shade, 0.0, 1.0) : 0.0;
+                float mcSun = pow(0.8, 15.0 * (1.0 - rawSun));
+                float mcTorch = pow(0.8, 15.0 * (1.0 - rawTorch));
+                vec3 lightCalc = shade * uAmbientColor + mcSun * shade * uSunColor * uSunLevel + mcTorch * shade * uTorchColor;
                 col.rgb *= min(vec3(1.0), lightCalc);
                 col.a *= uOpacity;
                 

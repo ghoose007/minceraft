@@ -983,7 +983,9 @@ function buildChunkMesh(cx, cz) {
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(waterColors, 3));
         geometry.setAttribute('aFluidType', new THREE.Float32BufferAttribute(waterFluidTypes, 1));
         geometry.setAttribute('aFlowDir', new THREE.Float32BufferAttribute(waterFlowDirs, 2));
-        chunkGroup.add(new THREE.Mesh(geometry, waterMaterial));
+        const waterMesh_ = new THREE.Mesh(geometry, waterMaterial);
+        waterMesh_.renderOrder = 2;
+        chunkGroup.add(waterMesh_);
     }
     // --- LAVA MESH ---
     if (lavaPositions.length > 0) {
@@ -994,7 +996,8 @@ function buildChunkMesh(cx, cz) {
         lavaGeo.setAttribute('color', new THREE.Float32BufferAttribute(lavaColors, 3));
         lavaGeo.setAttribute('aFluidType', new THREE.Float32BufferAttribute(lavaFluidTypes, 1));
         lavaGeo.setAttribute('aFlowDir', new THREE.Float32BufferAttribute(lavaFlowDirs, 2));
-        chunkGroup.add(new THREE.Mesh(lavaGeo, lavaMaterial));
+        const lavaMesh_ = new THREE.Mesh(lavaGeo, lavaMaterial);
+        chunkGroup.add(lavaMesh_);
     }
 
     // --- FIRE MESH ---

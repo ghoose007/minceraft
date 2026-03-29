@@ -106,12 +106,19 @@ async function init(seed, loadedData) {
     celestialGroup = new THREE.Group();
     scene.add(celestialGroup);
     
-    const sunMat = new THREE.MeshBasicMaterial({ color: 0xFFFFAA, fog: false, side: THREE.DoubleSide });
-    sunMesh = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), sunMat);
+    const _texLoader = new THREE.TextureLoader();
+    const sunTex = _texLoader.load('textures/sun.png?v=' + ASSET_VERSION);
+    sunTex.magFilter = THREE.NearestFilter;
+    sunTex.minFilter = THREE.NearestFilter;
+    const sunMat = new THREE.MeshBasicMaterial({ map: sunTex, fog: false, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+    sunMesh = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), sunMat);
     celestialGroup.add(sunMesh);
     
-    const moonMat = new THREE.MeshBasicMaterial({ color: 0xDDDDDD, fog: false, side: THREE.DoubleSide });
-    moonMesh = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), moonMat);
+    const moonTex = _texLoader.load('textures/full_moon.png?v=' + ASSET_VERSION);
+    moonTex.magFilter = THREE.NearestFilter;
+    moonTex.minFilter = THREE.NearestFilter;
+    const moonMat = new THREE.MeshBasicMaterial({ map: moonTex, fog: false, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+    moonMesh = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), moonMat);
     celestialGroup.add(moonMesh);
 
     // --- INITIALIZE CLOUDS (TEXTURE MAP) ---

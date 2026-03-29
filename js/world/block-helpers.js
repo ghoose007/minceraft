@@ -312,3 +312,50 @@ function checkSupport(x, y, z) {
     }
     return true;
 }
+
+// ==========================================
+// WATER FLOW DIRECTION (MC-accurate)
+// ==========================================
+// Returns {x, z} normalized flow vector at a given water block position.
+// MC computes flow from the gradient of effective water levels among neighbors.
+
+function _getEffectiveWaterLevel(x, y, z) {
+    const val = getVoxel(x, y, z);
+    const id = val & 0xFF;
+    if (id !== 4) return -1;
+    const isSource = (val >> 13) & 0x1;
+    if (isSource) return 8;
+    const isFalling = (val >> 12) & 0x1;
+    if (isFalling) return 8;
+    return (val >> 8) & 0xF;
+}
+
+function getWaterFlowDirection(x, y, z) {
+    const val = getVoxel(x, y, z);
+    if ((val & 0xFF) !== 4) return { x: 0, z: 0 };
+
+    const myLevel = _getEffectiveWaterLevel(x, y, z);
+    let flowX = 0, flowZ = 0;
+
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (const [dx, dz] of dirs) {
+        const nLevel = _getEffectiveWaterLevel(x + dx, y, z + dz);
+        if (nLevel < 0) {
+            const nId = getVoxel(x + dx, y, z + dz) & 0xFF;
+            if (nId !== 0 && !isFluidBlock(nId) && !isCrossBlock(nId)) continue;
+            flowX += dx * myLevel;
+            flowZ += dz * myLevel;
+        } else {
+            const diff = myLevel - nLevel;
+            flowX += dx * diff;
+            flowZ += dz * diff;
+        }
+    }
+
+    const len = Math.sqrt(flowX * flowX + flowZ * flowZ);
+    if (len > 0.001) {
+        flowX /= len;
+        flowZ /= len;
+    }
+    return { x: flowX, z: flowZ };
+}
