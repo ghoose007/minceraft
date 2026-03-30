@@ -204,6 +204,8 @@ async function saveWorld(slot) {
         gameMode: gameMode,
         chunksX: CHUNKS_X,
         chunksZ: CHUNKS_Z,
+        overworldChunksX: overworldChunksX || CHUNKS_X,
+        overworldChunksZ: overworldChunksZ || CHUNKS_Z,
         numChunkBatches: numOwBatches,
         numNetherChunkBatches: numNtBatches,
         
@@ -311,9 +313,11 @@ async function loadWorldFromSlot(slot) {
     }
     data.netherChunks = ntChunks;
     
-    // Restore world dimensions
-    CHUNKS_X_ACTIVE = data.chunksX;
-    CHUNKS_Z_ACTIVE = data.chunksZ;
+    // Restore world dimensions (always use overworld dimensions for init)
+    const owCX = data.overworldChunksX || data.chunksX;
+    const owCZ = data.overworldChunksZ || data.chunksZ;
+    CHUNKS_X_ACTIVE = owCX;
+    CHUNKS_Z_ACTIVE = owCZ;
     
     // Restore seed and RNG
     _worldSeed = data.seed;

@@ -18,6 +18,10 @@ let netherGeneratedChunks = null;
 let netherGenerated = false;
 let overworldPlayerPos = null;
 let netherPlayerPos = null;
+
+// Overworld/Nether dimension sizes (saved/restored on dimension switch)
+let overworldChunksX = 0, overworldChunksZ = 0;
+let netherChunksX = 0, netherChunksZ = 0;
 let portalCooldown = 0;
 
 // --- SETTINGS ---

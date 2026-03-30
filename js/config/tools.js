@@ -98,5 +98,10 @@ const TOOL_DATA = {
     193: { name: 'Spawn Zombie', atlasIdx: 155, type: 'spawn_egg', mobType: 'zombie', isTerrainAtlas: true },
     194: { name: 'Spawn Creeper', atlasIdx: 156, type: 'spawn_egg', mobType: 'creeper', isTerrainAtlas: true },
     195: { name: 'Spawn Skeleton', atlasIdx: 157, type: 'spawn_egg', mobType: 'skeleton', isTerrainAtlas: true },
-    196: { name: 'Spawn Zombie Pigman', atlasIdx: 158, type: 'spawn_egg', mobType: 'zombie_pigman', isTerrainAtlas: true }
+    196: { name: 'Spawn Zombie Pigman', atlasIdx: 158, type: 'spawn_egg', mobType: 'zombie_pigman', isTerrainAtlas: true },
+
+    // New items (terrain.png atlas)
+    197: { name: 'Paper', atlasIdx: 152, type: 'material', tier: 0, speed: 1.0, isTerrainAtlas: true },
+    198: { name: 'Book', atlasIdx: 153, type: 'material', tier: 0, speed: 1.0, isTerrainAtlas: true },
+    199: { name: 'Lapis Lazuli', atlasIdx: 155, type: 'material', tier: 0, speed: 1.0, isTerrainAtlas: true }
 };

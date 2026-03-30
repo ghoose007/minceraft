@@ -366,7 +366,8 @@ function createIconElement(id) {
     const parsedId = parseInt(id);
     
     // Terrain Items (Sticks, Saplings, Food, Seeds 128, Wheat 129, Nether Brick 142, Gold Ingot 143, Quartz 153)
-    if ((parsedId >= 112 && parsedId <= 123) || parsedId === 128 || parsedId === 129 || parsedId === 134 || parsedId === 135 || parsedId === 137 || parsedId === 142 || parsedId === 143 || parsedId === 151 || parsedId === 153 || parsedId === 165 || parsedId === 186 || parsedId === 187 || parsedId === 188) {
+    if ((parsedId >= 112 && parsedId <= 123) || parsedId === 128 || parsedId === 129 || parsedId === 134 || parsedId === 135 || parsedId === 137 || parsedId === 142 || parsedId === 143 || parsedId === 151 || parsedId === 153 || parsedId === 165 || parsedId === 186 || parsedId === 187 || parsedId === 188
+        || parsedId === 197 || parsedId === 198 || parsedId === 199) {
         const data = BLOCK_DATA[parsedId] || TOOL_DATA[parsedId];
         if (data) {
             const atlasIdx = data.atlasIdx;
@@ -473,6 +474,13 @@ function createIconElement(id) {
                     
                     <div class="face front" style="${getBgPos(texFront)} ${tintFilter} clip-path: inset(50% 0 0 0);"></div>
                     <div class="face front" style="${getBgPos(texFront)} ${tintFilter} clip-path: inset(0 0 50% 0); transform: translateZ(0px) !important;"></div>
+                `;
+            } else if (parsedId === 201) {
+                // Enchanting table: 12/16 = 75% height, clip top 25% of sides
+                icon.innerHTML = `
+                    <div class="face top" style="${getBgPos(texTop)} ${topTint} transform: rotateX(90deg) translateZ(4px) !important;"></div>
+                    <div class="face right" style="${getBgPos(texSide)} ${tintFilter} clip-path: inset(25% 0 0 0);"></div>
+                    <div class="face front" style="${getBgPos(texFront)} ${tintFilter} clip-path: inset(25% 0 0 0);"></div>
                 `;
             } else {
                 // Standard Blocks

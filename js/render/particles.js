@@ -69,7 +69,7 @@ function spawnParticles(x, y, z, blockId) {
         return;
     }
     
-    const particleBlockId = blockId === 1 ? 2 : (blockId === 149 || blockId === 150) ? 29 : blockId;
+    const particleBlockId = blockId === 1 ? 2 : (blockId === 149 || blockId === 150) ? 29 : blockId === 201 ? 28 : blockId;
     const count = 12 + Math.floor(Math.random() * 8); 
     
     const baseGeo = getParticleGeometry(particleBlockId);

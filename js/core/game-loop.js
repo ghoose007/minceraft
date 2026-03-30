@@ -103,6 +103,7 @@ function animate() {
         if (typeof tickSpawnerBlocks === 'function') tickSpawnerBlocks(dt);
         if (typeof updateTNTEntities === 'function') updateTNTEntities(dt);
         if (typeof window.updateHerobrineEntities === 'function') window.updateHerobrineEntities(dt);
+        if (typeof window._tickEnchantBooks === 'function') window._tickEnchantBooks(dt);
 
         // Sound system — update listener position for spatial audio, then tick sounds
         if (typeof window._soundUpdateListener === 'function') window._soundUpdateListener();
@@ -875,6 +876,7 @@ function animate() {
                                 else if (uiState === 'CRAFTING' && typeof renderInventory === 'function') renderInventory();
                                 else if (uiState === 'FURNACE' && typeof renderFurnace === 'function') renderFurnace();
                                 else if (uiState === 'CHEST' && typeof renderChest === 'function') renderChest();
+                                else if (uiState === 'ENCHANTING' && typeof renderEnchanting === 'function') renderEnchanting();
                                 continue;
                             } else {
                                 item.count = leftover;
@@ -883,6 +885,7 @@ function animate() {
                                 else if (uiState === 'CRAFTING' && typeof renderInventory === 'function') renderInventory();
                                 else if (uiState === 'FURNACE' && typeof renderFurnace === 'function') renderFurnace();
                                 else if (uiState === 'CHEST' && typeof renderChest === 'function') renderChest();
+                                else if (uiState === 'ENCHANTING' && typeof renderEnchanting === 'function') renderEnchanting();
                             }
                         }
                     }
@@ -1165,12 +1168,9 @@ function animate() {
             const bZ = Math.floor(player.z);
             
             // Get biome at player position
-            const halfW = Math.floor(WORLD_WIDTH / 2);
-            const halfD = Math.floor(WORLD_DEPTH / 2);
-            const biomeIdx = (bX + halfW) + (bZ + halfD) * WORLD_WIDTH;
-            const currentBiome = (biomeIdx >= 0 && biomeIdx < WORLD_WIDTH * WORLD_DEPTH && biomeMap[biomeIdx]) 
-                ? biomeMap[biomeIdx] : 'unknown';
-            const biomeDisplay = currentBiome.charAt(0).toUpperCase() + currentBiome.slice(1);
+            const biomeDisplay = (typeof getBiomeDisplayName === 'function')
+                ? getBiomeDisplayName(bX, bZ)
+                : 'Unknown';
             
             // Get facing direction from yaw
             let yawDeg = ((player.yaw * 180 / Math.PI) % 360 + 360) % 360;

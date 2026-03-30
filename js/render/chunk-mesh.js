@@ -260,6 +260,15 @@ function buildChunkMesh(cx, cz) {
                     continue;
                 }
 
+                // --- ENCHANTING TABLE HEIGHT (12/16 = 0.75) ---
+                if (id === 201) {
+                    const enchantHeights = { h00: 0.75, h10: 0.75, h01: 0.75, h11: 0.75 };
+                    for (let face of blockFaces) {
+                        pushFace(x, y, z, face, solidPositions, solidNormals, solidUvs, solidColors, solidBiomeTints, id, enchantHeights, null, val);
+                    }
+                    continue;
+                }
+
                 // NEW: Render Wheat Crops using the square crop geometry and growth stage textures
                 if (id === 64) {
                     const stage = (val >> 8) & 0x7; // Bits 8-10 (values 0-7)

@@ -7,7 +7,7 @@
 // ==========================================
 
 // Persistent noise instances (created once per world, reused for lazy gen)
-let _wgPerlinTemp, _wgPerlinHumid, _wgPerlinElevation, _wgPerlinVolatility, _wgPerlin3D, _wgPerlinMountains, _wgPerlinOcean, _wgPerlinSeabed, _wgPerlinClay;
+let _wgPerlinTemp, _wgPerlinHumid, _wgPerlinElevation, _wgPerlinVolatility, _wgPerlin3D, _wgPerlinMountains, _wgPerlinOcean, _wgPerlinSeabed, _wgPerlinClay, _wgPerlinRiver, _wgPerlinRiver2;
 let _wgCavePrimary;
 let _wgTerrainMult, _wgBiomeScale, _wgSmoothness, _wgCaveDensityMult;
 
@@ -65,6 +65,8 @@ function _initWorldGenNoise() {
     const s7 = ((_worldSeed * 101 + 409) * 0.00000001) % 1; // NEW: Ocean Seed
     const s8 = ((_worldSeed * 103 + 509) * 0.00000001) % 1; // NEW: Seabed seed
     const s9 = ((_worldSeed * 107 + 601) * 0.00000001) % 1; // NEW: Clay seed
+    const s10 = ((_worldSeed * 113 + 701) * 0.00000001) % 1; // River seed
+    const s11 = ((_worldSeed * 131 + 797) * 0.00000001) % 1; // River warp seed
     
     _wgPerlinTemp      = new PerlinNoise(Math.abs(s1) + 0.01);
     _wgPerlinOcean     = new PerlinNoise(Math.abs(s7) + 0.01);
@@ -75,6 +77,8 @@ function _initWorldGenNoise() {
     _wgPerlinMountains = new PerlinNoise(Math.abs(s6) + 0.01); // NEW: Mountain Noise
     _wgPerlinSeabed    = new PerlinNoise(Math.abs(s8) + 0.01); // NEW: Seabed Noise
     _wgPerlinClay      = new PerlinNoise(Math.abs(s9) + 0.01); // NEW: Clay Noise
+    _wgPerlinRiver     = new PerlinNoise(Math.abs(s10) + 0.01); // River path noise
+    _wgPerlinRiver2    = new PerlinNoise(Math.abs(s11) + 0.01); // River warp noise
     _wgTerrainMult = GEN_TERRAIN_HEIGHT / 80;
     _wgBiomeScale = GEN_BIOME_SCALE;
     _wgSmoothness = GEN_SMOOTHNESS;

@@ -84,6 +84,47 @@ function _getRawBiome(x, z) {
         bV = bV * (1.0 - blend) + 2 * blend;
     }
     
+    // --- RIVER OVERRIDE ---
+    // Uses ridge noise (1 - abs(noise)) to create narrow winding channels.
+    // Multiple warp layers at different frequencies create realistic meanders.
+    // Rivers blend terrain height down to sea level with tight bank transitions.
+    if (biome !== 'ocean' && biome !== 'desert') {
+        // Multi-scale domain warping for realistic river meanders
+        // Large-scale bends (river valley direction)
+        const rWarp1X = _wgPerlinRiver2.fbm(wx / 300, wz / 300, 2) * 60;
+        const rWarp1Z = _wgPerlinRiver2.fbm(wx / 300 + 500, wz / 300 + 500, 2) * 60;
+        // Medium-scale meanders (the classic S-curves)
+        const rWarp2X = _wgPerlinRiver2.noise2D(wx / 80 + 200, wz / 80 + 200) * 25;
+        const rWarp2Z = _wgPerlinRiver2.noise2D(wx / 80 + 700, wz / 80 + 700) * 25;
+        // Small-scale wobble (organic irregularity)
+        const rWarp3X = _wgPerlinRiver.noise2D(wx / 30 + 900, wz / 30 + 900) * 8;
+        const rWarp3Z = _wgPerlinRiver.noise2D(wx / 30 + 1200, wz / 30 + 1200) * 8;
+        
+        const rwx = wx + rWarp1X + rWarp2X + rWarp3X;
+        const rwz = wz + rWarp1Z + rWarp2Z + rWarp3Z;
+        
+        // Ridge noise at smaller scale for narrow paths
+        const riverScale = 150;
+        const rn = _wgPerlinRiver.fbm(rwx / riverScale, rwz / riverScale, 2);
+        const ridge = 1.0 - Math.abs(rn);
+        
+        // Tight thresholds: core > 0.94, bank 0.90-0.94 gives ~4-8 block wide rivers
+        const RIVER_CORE = 0.94;
+        const RIVER_BANK = 0.90;
+        
+        if (ridge > RIVER_BANK) {
+            const riverBlend = Math.min(1.0, (ridge - RIVER_BANK) / (RIVER_CORE - RIVER_BANK));
+            // Smooth-step for more natural bank profile (steep sides, flat bottom)
+            const smooth = riverBlend * riverBlend * (3.0 - 2.0 * riverBlend);
+            
+            const riverH = GEN_SEA_LEVEL - 2;
+            const riverV = 1;
+            
+            bH = bH * (1.0 - smooth) + riverH * smooth;
+            bV = bV * (1.0 - smooth) + riverV * smooth;
+        }
+    }
+    
     return { biome, bH, bV };
 }
 
@@ -201,4 +242,52 @@ function _computeChunkBiomeData(cx, cz) {
     const data = { biomes, heightMap: blurredH, volMap: blurredV };
     chunkBiomeCache.set(key, data);
     return data;
+}
+
+// --- Biome sub-type detection for F3 display ---
+// Checks if a world position is in a river zone (replicates the river noise from _getRawBiome)
+function isInRiverZone(x, z) {
+    if (!_wgPerlinRiver || !_wgPerlinRiver2) return false;
+    
+    // Replicate the same domain warp from _getRawBiome
+    const warpScale = _wgBiomeScale * 0.8;
+    const warpStrength = _wgBiomeScale * 0.3;
+    const warpX = _wgPerlinVolatility.fbm(x / warpScale + 500, z / warpScale + 500, 2) * warpStrength;
+    const warpZ = _wgPerlinVolatility.fbm(x / warpScale + 800, z / warpScale + 800, 2) * warpStrength;
+    const wx = x + warpX;
+    const wz = z + warpZ;
+    
+    // River domain warp (same as in _getRawBiome)
+    const rWarp1X = _wgPerlinRiver2.fbm(wx / 300, wz / 300, 2) * 60;
+    const rWarp1Z = _wgPerlinRiver2.fbm(wx / 300 + 500, wz / 300 + 500, 2) * 60;
+    const rWarp2X = _wgPerlinRiver2.noise2D(wx / 80 + 200, wz / 80 + 200) * 25;
+    const rWarp2Z = _wgPerlinRiver2.noise2D(wx / 80 + 700, wz / 80 + 700) * 25;
+    const rWarp3X = _wgPerlinRiver.noise2D(wx / 30 + 900, wz / 30 + 900) * 8;
+    const rWarp3Z = _wgPerlinRiver.noise2D(wx / 30 + 1200, wz / 30 + 1200) * 8;
+    
+    const rwx = wx + rWarp1X + rWarp2X + rWarp3X;
+    const rwz = wz + rWarp1Z + rWarp2Z + rWarp3Z;
+    
+    const rn = _wgPerlinRiver.fbm(rwx / 150, rwz / 150, 2);
+    const ridge = 1.0 - Math.abs(rn);
+    
+    return ridge > 0.90;
+}
+
+// Returns a display-friendly biome name including River/Ocean sub-labels
+function getBiomeDisplayName(x, z) {
+    const halfW = Math.floor(WORLD_WIDTH / 2);
+    const halfD = Math.floor(WORLD_DEPTH / 2);
+    const biomeIdx = (x + halfW) + (z + halfD) * WORLD_WIDTH;
+    const baseBiome = (biomeIdx >= 0 && biomeIdx < WORLD_WIDTH * WORLD_DEPTH && biomeMap[biomeIdx])
+        ? biomeMap[biomeIdx] : 'unknown';
+    
+    if (baseBiome === 'ocean') return 'Ocean';
+    
+    // Check river zone (skip in nether)
+    if (currentDimension === 'overworld' && baseBiome !== 'desert' && isInRiverZone(x, z)) {
+        return 'River';
+    }
+    
+    return baseBiome.charAt(0).toUpperCase() + baseBiome.slice(1);
 }

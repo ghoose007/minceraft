@@ -47,6 +47,12 @@ async function init(seed, loadedData) {
     WORLD_WIDTH = CHUNKS_X * CHUNK_SIZE;
     WORLD_DEPTH = CHUNKS_Z * CHUNK_SIZE;
     
+    // Save overworld dimensions for nether ratio calculations
+    overworldChunksX = CHUNKS_X;
+    overworldChunksZ = CHUNKS_Z;
+    netherChunksX = 0;
+    netherChunksZ = 0;
+    
     // Reset dimension state for fresh starts (loaded worlds restore this later)
     currentDimension = 'overworld';
     netherGenerated = false;
@@ -338,13 +344,15 @@ async function init(seed, loadedData) {
             overworldGeneratedChunks = generatedChunksArr;
             overworldBiomeMap = biomeMap;
             
+            // Switch to nether dimensions
+            if (typeof _setNetherWorldSize === 'function') _setNetherWorldSize();
+            
             const total = CHUNKS_X * CHUNKS_Z;
             netherChunkStorage = new Array(total);
             for (let i = 0; i < total; i++) netherChunkStorage[i] = null;
             netherGeneratedChunks = new Uint8Array(total);
             
             if (loadedData.netherChunks && loadedData.netherChunks.length > 0) {
-                // Temporarily point active arrays at nether storage for decompression
                 chunkStorageArr = netherChunkStorage;
                 generatedChunksArr = netherGeneratedChunks;
                 if (loadedData.netherGeneratedFlags) {
@@ -354,7 +362,6 @@ async function init(seed, loadedData) {
                 if (typeof decompressChunks === 'function') decompressChunks(loadedData.netherChunks);
             }
             
-            // Swap active arrays to nether (player is in nether)
             chunkStorageArr = netherChunkStorage;
             generatedChunksArr = netherGeneratedChunks;
             biomeMap = new Array(WORLD_WIDTH * WORLD_DEPTH);
@@ -364,6 +371,10 @@ async function init(seed, loadedData) {
             currentDimension = 'overworld';
             // If nether was previously generated, restore its data into stored arrays
             if (loadedData._netherGenerated && loadedData.netherChunks && loadedData.netherChunks.length > 0) {
+                // Temporarily switch to nether dimensions for decompression
+                const savedCX = CHUNKS_X, savedCZ = CHUNKS_Z, savedWW = WORLD_WIDTH, savedWD = WORLD_DEPTH;
+                if (typeof _setNetherWorldSize === 'function') _setNetherWorldSize();
+                
                 const total = CHUNKS_X * CHUNKS_Z;
                 netherChunkStorage = new Array(total);
                 for (let i = 0; i < total; i++) netherChunkStorage[i] = null;
@@ -378,8 +389,13 @@ async function init(seed, loadedData) {
                         generatedChunksArr[i] = loadedData.netherGeneratedFlags[i];
                 }
                 if (typeof decompressChunks === 'function') decompressChunks(loadedData.netherChunks);
+                
+                // Restore overworld dimensions and arrays
                 chunkStorageArr = savedArr;
                 generatedChunksArr = savedGen;
+                CHUNKS_X = savedCX; CHUNKS_Z = savedCZ;
+                WORLD_WIDTH = savedWW; WORLD_DEPTH = savedWD;
+                _updateWorldHalves();
                 netherGenerated = true;
             }
         }
@@ -633,6 +649,7 @@ async function init(seed, loadedData) {
                     else if (uiState === 'CRAFTING' && typeof renderInventory === 'function') renderInventory();
                     else if (uiState === 'FURNACE' && typeof renderFurnace === 'function') renderFurnace();
                     else if (uiState === 'CHEST' && typeof renderChest === 'function') renderChest();
+                    else if (uiState === 'ENCHANTING' && typeof renderEnchanting === 'function') renderEnchanting();
                 }
             }
         }
@@ -650,12 +667,13 @@ async function init(seed, loadedData) {
                 }
                 
                 if (typeof renderInventory === 'function') renderInventory();
-            } else if (uiState === 'INVENTORY' || uiState === 'CRAFTING' || uiState === 'FURNACE' || uiState === 'CHEST') {
+            } else if (uiState === 'INVENTORY' || uiState === 'CRAFTING' || uiState === 'FURNACE' || uiState === 'CHEST' || uiState === 'ENCHANTING') {
                 // Play chest close sound if we're closing a chest
                 if (uiState === 'CHEST' && typeof window.playChestCloseSound === 'function') window.playChestCloseSound(window._lastChestX, window._lastChestY, window._lastChestZ);
                 if (typeof closeCraftingTable === 'function') closeCraftingTable();
                 if (typeof closeFurnace === 'function') closeFurnace();
                 if (typeof closeChest === 'function') closeChest();
+                if (typeof closeEnchantingTable === 'function') closeEnchantingTable();
                 if (typeof window._stopInventoryDoll === 'function') window._stopInventoryDoll();
                 document.body.requestPointerLock(); 
             }
@@ -675,7 +693,7 @@ async function init(seed, loadedData) {
             if (typeof toggleCameraMode === 'function') toggleCameraMode();
         }
 
-        if ((uiState === 'PLAYING' || uiState === 'INVENTORY' || uiState === 'CRAFTING' || uiState === 'FURNACE' || uiState === 'CHEST') && e.key >= '1' && e.key <= '9') {
+        if ((uiState === 'PLAYING' || uiState === 'INVENTORY' || uiState === 'CRAFTING' || uiState === 'FURNACE' || uiState === 'CHEST' || uiState === 'ENCHANTING') && e.key >= '1' && e.key <= '9') {
             selectSlot(parseInt(e.key) - 1);
             if (uiState === 'INVENTORY' || uiState === 'CRAFTING') {
                 if (typeof renderInventory === 'function') renderInventory();
@@ -685,6 +703,9 @@ async function init(seed, loadedData) {
             }
             if (uiState === 'CHEST' && typeof renderChest === 'function') {
                 renderChest();
+            }
+            if (uiState === 'ENCHANTING' && typeof renderEnchanting === 'function') {
+                renderEnchanting();
             }
         }
     });
@@ -734,17 +755,19 @@ window.getTargetedMob = function() {
     document.addEventListener('mousedown', (e) => {
         
         // --- INVENTORY OUTSIDE-CLICK TOSS LOGIC ---
-        if ((uiState === 'INVENTORY' || uiState === 'CRAFTING' || uiState === 'FURNACE' || uiState === 'CHEST') && typeof cursorItem !== 'undefined' && cursorItem) {
+        if ((uiState === 'INVENTORY' || uiState === 'CRAFTING' || uiState === 'FURNACE' || uiState === 'CHEST' || uiState === 'ENCHANTING') && typeof cursorItem !== 'undefined' && cursorItem) {
             const survModal = document.getElementById('survival-inventory-modal');
             const creatModal = document.getElementById('inventory-modal');
             const craftModal = document.getElementById('crafting-table-modal');
             const furnModal = document.getElementById('furnace-modal');
+            const enchantModal = document.getElementById('enchanting-modal');
             
             let clickedInside = false;
             if (survModal && survModal.contains(e.target)) clickedInside = true;
             if (creatModal && creatModal.contains(e.target)) clickedInside = true;
             if (craftModal && craftModal.contains(e.target)) clickedInside = true;
             if (furnModal && furnModal.contains(e.target)) clickedInside = true;
+            if (enchantModal && enchantModal.contains(e.target)) clickedInside = true;
             if (e.target.closest('.item-slot')) clickedInside = true;
 
             if (!clickedInside) {
@@ -975,6 +998,14 @@ window.getTargetedMob = function() {
                 return; 
             }
 
+            // ---> ENCHANTING TABLE INTERACTION <---
+            if (interactTargetId === 201 && uiState === 'PLAYING') {
+                uiState = 'ENCHANTING';
+                document.exitPointerLock();
+                if (typeof openEnchantingTable === 'function') openEnchantingTable(target.hit[0], target.hit[1], target.hit[2]);
+                return;
+            }
+
             // ---> DOOR INTERACTION (toggle open/close) <---
             if (interactTargetId === 149 && uiState === 'PLAYING') {
                 const dx = target.hit[0], dy = target.hit[1], dz = target.hit[2];
@@ -1013,7 +1044,7 @@ window.getTargetedMob = function() {
             // Block placement of tools/items — only allow actual placeable blocks and saplings
             if (currentBuildBlock >= 100) {
                 // These are placeable despite being >= 100
-                const placeableHighIds = [116, 117, 118, 128, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158, 190, 191, 192, 193, 194, 195, 196];
+                const placeableHighIds = [116, 117, 118, 128, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158, 190, 191, 192, 193, 194, 195, 196, 200, 201];
                 if (!placeableHighIds.includes(currentBuildBlock)) return;
             }
 
@@ -1436,6 +1467,7 @@ window.getTargetedMob = function() {
             if (typeof closeCraftingTable === 'function') closeCraftingTable();
             if (typeof closeFurnace === 'function') closeFurnace();
             if (typeof closeChest === 'function') closeChest();
+            if (typeof closeEnchantingTable === 'function') closeEnchantingTable();
             
             document.getElementById('pause-menu').classList.add('hidden');
             crosshair.style.display = 'block';
@@ -1462,7 +1494,7 @@ window.getTargetedMob = function() {
                 document.getElementById('pause-menu').classList.remove('hidden');
                 showPauseScreen('pause-main');
             // Added uiState !== 'CHEST' to prevent the game from pausing
-            } else if (uiState !== 'INVENTORY' && uiState !== 'CRAFTING' && uiState !== 'FURNACE' && uiState !== 'CHEST' && uiState !== 'PAUSED') {
+            } else if (uiState !== 'INVENTORY' && uiState !== 'CRAFTING' && uiState !== 'FURNACE' && uiState !== 'CHEST' && uiState !== 'ENCHANTING' && uiState !== 'PAUSED') {
                 uiState = 'MENU';
                 uiLayer.classList.remove('hidden');
             }
@@ -1470,7 +1502,7 @@ window.getTargetedMob = function() {
     });
 
     document.addEventListener('mousemove', (e) => {
-        if (uiState === 'INVENTORY' || uiState === 'CRAFTING' || uiState === 'FURNACE' || uiState === 'CHEST') {
+        if (uiState === 'INVENTORY' || uiState === 'CRAFTING' || uiState === 'FURNACE' || uiState === 'CHEST' || uiState === 'ENCHANTING') {
             const tooltip = document.getElementById('item-tooltip');
             // Tooltip is position:fixed and excluded from CSS zoom, so use raw clientX
             tooltip.style.left = (e.clientX + 16) + 'px';

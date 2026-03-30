@@ -61,6 +61,15 @@ window.spawnBlockDrops = function(targetId, x, y, z, val) {
         if (isTopHalf) dropId = 0;
     }
 
+    // Lapis Ore: drops 4-9 lapis lazuli (MC-accurate)
+    if (targetId === 50) {
+        dropId = 0;
+        const count = 4 + Math.floor(Math.random() * 6); // 4-9
+        for (let i = 0; i < count; i++) {
+            window.spawnDroppedItem(x + 0.5, y + 0.5, z + 0.5, 199);
+        }
+    }
+
     if (dropId !== 0) {
         window.spawnDroppedItem(x + 0.5, y + 0.5, z + 0.5, dropId);
     }

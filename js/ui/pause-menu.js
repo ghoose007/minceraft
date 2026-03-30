@@ -50,7 +50,7 @@ window.applyGUIScale = function() {
     }
     const zoomLevel = scale / 2; 
     
-    const uiElements = ['main-menu', 'create-world', 'loading-screen', 'pause-menu', 'ui-layer', 'crosshair', 'debug-info', 'coordinates-display', 'flight-indicator', 'clock-container', 'hud-layer', 'inventory-modal', 'survival-inventory-modal', 'crafting-table-modal', 'furnace-modal', 'chest-modal', 'dragged-item'];
+    const uiElements = ['main-menu', 'create-world', 'loading-screen', 'pause-menu', 'ui-layer', 'crosshair', 'debug-info', 'coordinates-display', 'flight-indicator', 'clock-container', 'hud-layer', 'inventory-modal', 'survival-inventory-modal', 'crafting-table-modal', 'furnace-modal', 'chest-modal', 'enchanting-modal', 'dragged-item'];
     // item-tooltip is intentionally excluded from zoom scaling — it must stay
     // position:fixed at real screen coords so mousemove tracking works correctly.
     

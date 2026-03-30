@@ -681,7 +681,7 @@
         }
 
         /* ===== SURVIVAL INVENTORY MODALS ===== */
-        #survival-inventory-modal, #crafting-table-modal, #furnace-modal, #chest-modal {
+        #survival-inventory-modal, #crafting-table-modal, #furnace-modal, #chest-modal, #enchanting-modal {
             position: absolute;
             top: 50%; left: 50%;
             transform: translate(-50%, -50%);
@@ -691,7 +691,7 @@
         }
 
         /* Crafting table, furnace use texture backgrounds */
-        #crafting-table-modal, #furnace-modal {
+        #crafting-table-modal, #furnace-modal, #enchanting-modal {
             width: auto;
             padding: 0;
             background: none;
@@ -1015,6 +1015,59 @@
             transition: width 0.1s linear;
         }
 
+        /* ===== ENCHANTING TABLE TEXTURE UI ===== */
+        .enchanting-bg {
+            width: 352px;
+            height: 332px;
+            background-image: url('textures/enchanting.png');
+            background-size: 352px 332px;
+            background-repeat: no-repeat;
+            image-rendering: pixelated;
+            position: relative;
+        }
+
+        #enchanting-modal .item-slot {
+            width: 36px;
+            height: 36px;
+            background-color: transparent;
+            border: none;
+            box-shadow: none;
+            position: relative;
+            cursor: pointer;
+            box-sizing: border-box;
+        }
+
+        #enchant-item-slot {
+            position: absolute !important;
+            left: 28px;
+            top: 92px;
+        }
+
+        #enchant-lapis-slot {
+            position: absolute !important;
+            left: 68px;
+            top: 92px;
+        }
+
+        #enchanting-modal .surv-inv-grid {
+            position: absolute;
+            display: grid;
+            grid-template-columns: repeat(9, 36px);
+            grid-template-rows: repeat(3, 36px);
+            gap: 0px;
+            left: 14px;
+            top: 166px;
+        }
+
+        #enchanting-modal .surv-hotbar-grid {
+            position: absolute;
+            display: grid;
+            grid-template-columns: repeat(9, 36px);
+            gap: 0px;
+            left: 14px;
+            top: 282px;
+        }
+
         .surv-top-half {
             display: flex;
             height: 172px; 
@@ -1316,7 +1369,7 @@
 
             <div class="mc-setting-group">
                 <div class="mc-setting-label">World Size</div>
-                <button class="mc-button" style="width: 100%; height: 32px;" id="opt-worldsize" onclick="toggleOption('worldsize')">1024 × 1024</button>
+                <button class="mc-button" style="width: 100%; height: 32px;" id="opt-worldsize" onclick="toggleOption('worldsize')">Classic (864 × 864)</button>
             </div>
 
             <div class="mc-setting-group">
@@ -1668,6 +1721,16 @@
         </div>
     </div>
 
+    <!-- ENCHANTING TABLE MODAL -->
+    <div id="enchanting-modal" class="hidden">
+        <div class="enchanting-bg">
+            <div class="item-slot" id="enchant-item-slot"></div>
+            <div class="item-slot" id="enchant-lapis-slot"></div>
+            <div class="surv-inv-grid" id="enchant-main-inv"></div>
+            <div class="surv-hotbar-grid" id="enchant-hotbar"></div>
+        </div>
+    </div>
+
     <div id="structure-modal" class="hidden">
         <h2>Structure Block</h2>
         <div class="struct-row" style="justify-content: center; gap: 8px; margin-bottom: 16px;">
@@ -1766,6 +1829,7 @@
     <script src="js/ui/inventory.js?v=106"></script>
     <script src="js/ui/inventory-doll.js?v=106"></script>
     <script src="js/ui/chest.js?v=106"></script>
+    <script src="js/ui/enchanting.js?v=106"></script>
     <script src="js/ui/death-screen.js?v=106"></script>
 
     <script src="js/core/physics.js?v=106"></script>

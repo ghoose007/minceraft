@@ -98,15 +98,15 @@ const worldOptions = {
     lava: true,
     gamemode: 'survival'
 };
-const worldSizeLabels = ['1024 × 1024', '512 × 512', '256 × 256', '2048 × 2048', '4096 × 4096', '8192 × 8192'];
-const worldSizeChunks = [64, 32, 16, 128, 256, 512];
+const worldSizeLabels = ['Classic (864 × 864)', 'Small (1024 × 1024)', 'Medium (3072 × 3072)', 'Large (5120 × 5120)'];
+const worldSizeChunks = [54, 64, 192, 320];
 const worldTypeLabels = ['Default', 'Superflat', 'Amplified', 'Single Biome'];
 const singleBiomeList = ['plains', 'forest', 'desert', 'tundra', 'taiga', 'rainforest', 'swamp', 'jungle', 'extreme_hills'];
 const singleBiomeLabels = ['Plains', 'Forest', 'Desert', 'Tundra', 'Taiga', 'Rainforest', 'Swamp', 'Jungle', 'Extreme Hills'];
 
 function toggleOption(key) {
     if (key === 'worldsize') {
-        worldOptions.worldsize = (worldOptions.worldsize + 1) % 6;
+        worldOptions.worldsize = (worldOptions.worldsize + 1) % 4;
         document.getElementById('opt-worldsize').textContent = worldSizeLabels[worldOptions.worldsize];
     } else if (key === 'gamemode') {
         worldOptions.gamemode = worldOptions.gamemode === 'survival' ? 'creative' : 'survival';

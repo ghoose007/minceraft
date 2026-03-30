@@ -7,10 +7,84 @@
 // ==========================================
 // PORTAL LINK REGISTRY
 // ==========================================
-// Maps portal positions between dimensions
-// Each entry: { overworldX, overworldY, overworldZ, netherX, netherY, netherZ }
 if (!window._portalLinks) window._portalLinks = [];
 let _dimensionSwitching = false;
+
+// --- NETHER SIZING ---
+// Classic (54 chunks, 864 blocks) and Small (64 chunks, 1024 blocks): 1:3 ratio
+// Medium (192 chunks, 3072 blocks) and Large (320 chunks, 5120 blocks): 1:8 ratio
+// Returns { ratio, netherChunks } based on the overworld chunk count
+function _getNetherConfig() {
+    // Use stored overworld size (or current if we haven't switched yet)
+    const owChunks = overworldChunksX || CHUNKS_X;
+    if (owChunks <= 64) {
+        // Classic/Small: 1:3 ratio
+        return { ratio: 3, netherChunks: Math.ceil(owChunks / 3) };
+    } else {
+        // Medium/Large: 1:8 ratio
+        return { ratio: 8, netherChunks: Math.ceil(owChunks / 8) };
+    }
+}
+
+function _getNetherRatio() {
+    return _getNetherConfig().ratio;
+}
+
+// Swap world dimensions to nether size
+function _setNetherWorldSize() {
+    const cfg = _getNetherConfig();
+    netherChunksX = cfg.netherChunks;
+    netherChunksZ = cfg.netherChunks;
+    CHUNKS_X = netherChunksX;
+    CHUNKS_Z = netherChunksZ;
+    WORLD_WIDTH = CHUNKS_X * CHUNK_SIZE;
+    WORLD_DEPTH = CHUNKS_Z * CHUNK_SIZE;
+    _updateWorldHalves();
+}
+
+// Restore world dimensions to overworld size
+function _setOverworldWorldSize() {
+    CHUNKS_X = overworldChunksX;
+    CHUNKS_Z = overworldChunksZ;
+    WORLD_WIDTH = CHUNKS_X * CHUNK_SIZE;
+    WORLD_DEPTH = CHUNKS_Z * CHUNK_SIZE;
+    _updateWorldHalves();
+}
+
+// Clamp Y to valid nether interior
+function _clampNetherY(y) {
+    return Math.max(2, Math.min(NETHER_HEIGHT - 6, y));
+}
+
+// Convert overworld coords to nether coords (clamped to nether world bounds)
+function _overworldToNether(ox, oy, oz) {
+    const ratio = _getNetherRatio();
+    const nx = Math.floor(ox / ratio);
+    const nz = Math.floor(oz / ratio);
+    const ny = _clampNetherY(Math.floor(oy / 2));
+    // Clamp to nether world bounds
+    const cfg = _getNetherConfig();
+    const netherHalf = Math.floor((cfg.netherChunks * CHUNK_SIZE) / 2);
+    return {
+        x: Math.max(-netherHalf + 5, Math.min(netherHalf - 5, nx)),
+        y: ny,
+        z: Math.max(-netherHalf + 5, Math.min(netherHalf - 5, nz))
+    };
+}
+
+// Convert nether coords to overworld coords (clamped to overworld world bounds)
+function _netherToOverworld(nx, ny, nz) {
+    const ratio = _getNetherRatio();
+    const ox = Math.floor(nx * ratio);
+    const oz = Math.floor(nz * ratio);
+    const oy = Math.floor(ny * 2);
+    const owHalf = Math.floor((overworldChunksX * CHUNK_SIZE) / 2);
+    return {
+        x: Math.max(-owHalf + 5, Math.min(owHalf - 5, ox)),
+        y: oy,
+        z: Math.max(-owHalf + 5, Math.min(owHalf - 5, oz))
+    };
+}
 
 // Find which portal the player is standing in (returns {x,y,z} of any portal block nearby)
 function _findPlayerPortal() {
@@ -177,9 +251,16 @@ window.switchDimension = async function() {
         updateLoadingBar(5, 'Saving overworld...');
         await yieldToUI();
 
+        // Save overworld dimensions
+        overworldChunksX = CHUNKS_X;
+        overworldChunksZ = CHUNKS_Z;
+
         overworldChunkStorage = chunkStorageArr;
         overworldGeneratedChunks = generatedChunksArr;
         overworldBiomeMap = biomeMap;
+
+        // Resize world to nether dimensions
+        _setNetherWorldSize();
 
         if (!netherGenerated) {
             const total = CHUNKS_X * CHUNKS_Z;
@@ -192,6 +273,14 @@ window.switchDimension = async function() {
         generatedChunksArr = netherGeneratedChunks;
         biomeMap = new Array(WORLD_WIDTH * WORLD_DEPTH);
         currentDimension = 'nether';
+        
+        // Reinitialize chunk storage arrays for the new dimensions
+        if (!netherGenerated) {
+            initChunkStorage();
+            chunkStorageArr = netherChunkStorage = new Array(CHUNKS_X * CHUNKS_Z);
+            for (let i = 0; i < chunkStorageArr.length; i++) chunkStorageArr[i] = null;
+            generatedChunksArr = netherGeneratedChunks = new Uint8Array(CHUNKS_X * CHUNKS_Z);
+        }
 
         if (!netherGenerated) {
             updateLoadingBar(10, 'Generating Nether...');
@@ -220,16 +309,17 @@ window.switchDimension = async function() {
             player.y = linkedDest.y;
             player.z = linkedDest.z + 0.5;
         } else {
-            // No link — spawn a new nether portal and register the link
-            const destX = Math.floor(savedX);
-            const destZ = Math.floor(savedZ);
+            // No link — apply coordinate ratio and spawn a new nether portal
+            const netherDest = _overworldToNether(savedX, savedY, savedZ);
+            const destX = netherDest.x;
+            const destZ = netherDest.z;
             
             // Ensure nether chunks around the destination are generated
             const halfW = Math.floor(WORLD_WIDTH / 2);
             const halfD = Math.floor(WORLD_DEPTH / 2);
             const destCX = Math.floor((destX + halfW) / CHUNK_SIZE);
             const destCZ = Math.floor((destZ + halfD) / CHUNK_SIZE);
-            const genRadius = 3; // Generate a small area around the destination
+            const genRadius = 3;
             for (let dcx = destCX - genRadius; dcx <= destCX + genRadius; dcx++) {
                 for (let dcz = destCZ - genRadius; dcz <= destCZ + genRadius; dcz++) {
                     if (dcx >= 0 && dcx < CHUNKS_X && dcz >= 0 && dcz < CHUNKS_Z) {
@@ -261,6 +351,10 @@ window.switchDimension = async function() {
         netherChunkStorage = chunkStorageArr;
         netherGeneratedChunks = generatedChunksArr;
 
+        // Restore overworld dimensions
+        _setOverworldWorldSize();
+        initChunkStorage();
+
         chunkStorageArr = overworldChunkStorage;
         generatedChunksArr = overworldGeneratedChunks;
         biomeMap = overworldBiomeMap;
@@ -284,9 +378,10 @@ window.switchDimension = async function() {
             player.y = linkedDest.y;
             player.z = linkedDest.z + 0.5;
         } else {
-            // No link found — spawn a new overworld portal and register it
-            const destX = Math.floor(savedX);
-            const destZ = Math.floor(savedZ);
+            // No link found — apply coordinate ratio and spawn a new overworld portal
+            const overworldDest = _netherToOverworld(savedX, savedY, savedZ);
+            const destX = overworldDest.x;
+            const destZ = overworldDest.z;
             
             // Ensure overworld chunks around destination are generated (for lazy-gen worlds)
             if (useLazyGeneration && typeof ensureChunkGenerated === 'function') {
@@ -410,29 +505,35 @@ window.switchDimension = async function() {
 
 // Find a safe Y spawn in the nether (air pocket near the given X,Z)
 function _findNetherSpawnY(x, z) {
-    // Search from middle of nether upward for a 2-tall air pocket
-    for (let y = 30; y < NETHER_HEIGHT - 10; y++) {
-        const b0 = getVoxel(Math.floor(x), y, Math.floor(z)) & 0xFF;
-        const b1 = getVoxel(Math.floor(x), y + 1, Math.floor(z)) & 0xFF;
-        const bBelow = getVoxel(Math.floor(x), y - 1, Math.floor(z)) & 0xFF;
+    const fx = Math.floor(x), fz = Math.floor(z);
+    // Search within valid nether interior (above bedrock floor at y=0, below ceiling at ~y=123)
+    const minY = 2;
+    const maxY = NETHER_HEIGHT - 6; // Stay below the ceiling bedrock
+    
+    for (let y = minY; y <= maxY; y++) {
+        const b0 = getVoxel(fx, y, fz) & 0xFF;
+        const b1 = getVoxel(fx, y + 1, fz) & 0xFF;
+        const bBelow = getVoxel(fx, y - 1, fz) & 0xFF;
         if (b0 === 0 && b1 === 0 && bBelow !== 0 && !isFluidBlock(bBelow)) {
             return y;
         }
     }
-    // Fallback: carve out a space
-    const fy = 40;
+    // Fallback: carve out a space in the middle of valid range
+    const fy = Math.min(40, maxY - 5);
     for (let dy = 0; dy < 3; dy++) {
-        setVoxel(Math.floor(x), fy + dy, Math.floor(z), 0);
+        setVoxel(fx, fy + dy, fz, 0);
     }
-    setVoxel(Math.floor(x), fy - 1, Math.floor(z), 87);
+    setVoxel(fx, fy - 1, fz, 87);
     return fy;
 }
 
-// Spawn a portal structure in the nether at given overworld coords
-function _spawnNetherPortal(ox, oz) {
-    const px = Math.floor(ox);
-    const pz = Math.floor(oz);
-    const py = _findNetherSpawnY(px, pz);
+// Spawn a portal structure in the nether at given nether coordinates
+function _spawnNetherPortal(nx, nz) {
+    const px = Math.floor(nx);
+    const pz = Math.floor(nz);
+    const rawY = _findNetherSpawnY(px, pz);
+    // Ensure the full portal frame (5 blocks tall) fits within nether bounds
+    const py = Math.max(2, Math.min(NETHER_HEIGHT - 8, rawY));
 
     const frameMinX = px;
     const frameMaxX = px + 3;

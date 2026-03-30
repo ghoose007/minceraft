@@ -19,7 +19,9 @@ const toolMaterials = {};
 window.buildItemMesh = function(id) {
     // Route materials, saplings, flowers, and bushes to the 3D extruded material mesher
     if ((id >= 112 && id <= 123) || id === 128 || id === 129 || id === 134 || id === 135 || id === 137 || id === 142 || id === 143 || id === 151 || id === 153 || id === 165 || id === 186 || id === 187 || id === 188
-        || id === 23 || id === 53 || id === 24 || id === 116 || id === 117 || id === 118) return buildMaterialMesh(id);
+        || id === 197 || id === 198 || id === 199
+        || id === 23 || id === 53 || id === 24 || id === 116 || id === 117 || id === 118
+        || id === 17) return buildMaterialMesh(id);
     // Spawn eggs — use composited canvas texture as flat sprite
     if (id >= 190 && id <= 196) return buildSpawnEggMesh(id);
     // Vine and lilypad: render as flat 3D items like materials
@@ -412,6 +414,36 @@ function buildBlockItemMesh(blockId) {
         // MC block.json firstperson_righthand: rotation [0, 45, 0], scale [0.40]
         group.rotation.set(0, 45 * Math.PI / 180, 0);
         group.scale.set(0.40 / 0.35, 0.40 / 0.35, 0.40 / 0.35);
+        return group;
+    }
+    
+    // Enchanting table: 12/16 height block (same approach as slab but 0.75 height)
+    if (blockId === 201) {
+        const geo = new THREE.BoxGeometry(1, 0.75, 1).toNonIndexed();
+        const uvs = geo.attributes.uv.array;
+        let etTop, etBot, etSide;
+        if (typeof block.atlasIdx === 'object') {
+            etTop = block.atlasIdx.top; etBot = block.atlasIdx.bottom; etSide = block.atlasIdx.side;
+        } else { etTop = etBot = etSide = block.atlasIdx; }
+        const setFaceUV = (faceIdx, tIdx, clipV) => {
+            const col = tIdx % 16, row = Math.floor(tIdx / 16);
+            const uMin = col / 16, uMax = (col + 1) / 16;
+            const vMax = 1.0 - (row / 16), vMin = 1.0 - ((row + 1) / 16);
+            const vBot = clipV ? vMin + (vMax - vMin) * 0.25 : vMin; // clip top 25% of side texture
+            const uvArr = [ uMin, vMax, uMin, vBot, uMax, vMax, uMin, vBot, uMax, vBot, uMax, vMax ];
+            for(let i=0; i<6; i++) { uvs[(faceIdx * 6 + i) * 2] = uvArr[i*2]; uvs[(faceIdx * 6 + i) * 2 + 1] = uvArr[i*2+1]; }
+        };
+        setFaceUV(0, etSide, true); setFaceUV(1, etSide, true); setFaceUV(2, etTop, false);
+        setFaceUV(3, etBot, false); setFaceUV(4, etSide, true); setFaceUV(5, etSide, true);
+        const colors = new Float32Array(geo.attributes.position.count * 3).fill(1);
+        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        geo.setAttribute('aBiomeTint', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 3).fill(1), 3));
+        const mesh = new THREE.Mesh(geo, solidMaterial);
+        mesh.position.set(-0.5, -0.625, -0.5);
+        mesh.rotation.set(0, 45 * Math.PI / 180, 0);
+        mesh.scale.set(0.40 / 0.35, 0.40 / 0.35, 0.40 / 0.35);
+        const group = new THREE.Group();
+        group.add(mesh);
         return group;
     }
     

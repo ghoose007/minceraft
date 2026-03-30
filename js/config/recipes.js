@@ -176,7 +176,20 @@ const RECIPES = [
     { pattern: [[143, 143, 143], [143, 0, 143]], output: { id: 182, count: 1 } }, // Gold Helmet
     { pattern: [[143, 0, 143], [143, 143, 143], [143, 143, 143]], output: { id: 183, count: 1 } }, // Gold Chestplate
     { pattern: [[143, 143, 143], [143, 0, 143], [143, 0, 143]], output: { id: 184, count: 1 } }, // Gold Leggings
-    { pattern: [[143, 0, 143], [143, 0, 143]], output: { id: 185, count: 1 } } // Gold Boots
+    { pattern: [[143, 0, 143], [143, 0, 143]], output: { id: 185, count: 1 } }, // Gold Boots
+
+    // --- Paper (3 sugarcane in a row) ---
+    { pattern: [[52, 52, 52]], output: { id: 197, count: 3 } },
+
+    // --- Book (1 leather + 3 paper) ---
+    { pattern: [[197], [197], [186]], output: { id: 198, count: 1 } },
+    { pattern: [[186], [197], [197]], output: { id: 198, count: 1 } },
+
+    // --- Bookshelf (3 planks + 3 books + 3 planks) ---
+    { pattern: [['plank', 'plank', 'plank'], [198, 198, 198], ['plank', 'plank', 'plank']], output: { id: 200, count: 1 } },
+
+    // --- Enchanting Table (book + diamonds + obsidian) ---
+    { pattern: [[0, 198, 0], [114, 28, 114], [28, 28, 28]], output: { id: 201, count: 1 } }
 
 ];
 
