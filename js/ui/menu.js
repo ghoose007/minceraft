@@ -89,7 +89,7 @@ function drawDirtBg(canvasId) {
 }
 
 // Toggle options state
-const worldOptions = {
+var worldOptions = {
     worldsize: 0,
     worldtype: 0, // 0=Default, 1=Superflat, 2=Amplified, 3=Single Biome
     singleBiome: 0, // index into singleBiomeList
@@ -98,16 +98,23 @@ const worldOptions = {
     lava: true,
     gamemode: 'survival'
 };
-const worldSizeLabels = ['Classic (864 × 864)', 'Small (1024 × 1024)', 'Medium (3072 × 3072)', 'Large (5120 × 5120)'];
-const worldSizeChunks = [54, 64, 192, 320];
+var worldSizeLabelsDesktop = ['Classic (864 × 864)', 'Small (1024 × 1024)', 'Medium (3072 × 3072)', 'Large (5120 × 5120)'];
+var worldSizeChunksDesktop = [54, 64, 192, 320];
+var worldSizeLabelsMobile = ['Normal (256 × 256)', 'Large (512 × 512) — May Crash'];
+var worldSizeChunksMobile = [16, 32];
+
+function _getWorldSizeLabels() { return (window._deviceChoice === 'mobile') ? worldSizeLabelsMobile : worldSizeLabelsDesktop; }
+function _getWorldSizeChunks() { return (window._deviceChoice === 'mobile') ? worldSizeChunksMobile : worldSizeChunksDesktop; }
+
 const worldTypeLabels = ['Default', 'Superflat', 'Amplified', 'Single Biome'];
 const singleBiomeList = ['plains', 'forest', 'desert', 'tundra', 'taiga', 'rainforest', 'swamp', 'jungle', 'extreme_hills'];
 const singleBiomeLabels = ['Plains', 'Forest', 'Desert', 'Tundra', 'Taiga', 'Rainforest', 'Swamp', 'Jungle', 'Extreme Hills'];
 
 function toggleOption(key) {
     if (key === 'worldsize') {
-        worldOptions.worldsize = (worldOptions.worldsize + 1) % 4;
-        document.getElementById('opt-worldsize').textContent = worldSizeLabels[worldOptions.worldsize];
+        var labels = _getWorldSizeLabels();
+        worldOptions.worldsize = (worldOptions.worldsize + 1) % labels.length;
+        document.getElementById('opt-worldsize').textContent = labels[worldOptions.worldsize];
     } else if (key === 'gamemode') {
         worldOptions.gamemode = worldOptions.gamemode === 'survival' ? 'creative' : 'survival';
         document.getElementById('opt-gamemode').textContent = worldOptions.gamemode === 'survival' ? 'Survival' : 'Creative';
@@ -145,6 +152,10 @@ function showMainMenu() {
 function showCreateWorld() {
     document.getElementById('main-menu').classList.add('hidden');
     document.getElementById('create-world').classList.remove('hidden');
+    // Reset world size to first option for current device mode
+    worldOptions.worldsize = 0;
+    var labels = _getWorldSizeLabels();
+    document.getElementById('opt-worldsize').textContent = labels[0];
     requestAnimationFrame(() => drawDirtBg('dirt-bg-2'));
 }
 
@@ -257,8 +268,9 @@ async function startWorldCreation() {
     
     // Set world size
     const sizeIdx = worldOptions.worldsize;
-    CHUNKS_X_ACTIVE = worldSizeChunks[sizeIdx];
-    CHUNKS_Z_ACTIVE = worldSizeChunks[sizeIdx];
+    const chunks = _getWorldSizeChunks();
+    CHUNKS_X_ACTIVE = chunks[sizeIdx];
+    CHUNKS_Z_ACTIVE = chunks[sizeIdx];
 
     // Show loading screen
     document.getElementById('create-world').classList.add('hidden');

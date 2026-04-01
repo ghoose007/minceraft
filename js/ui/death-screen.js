@@ -183,6 +183,9 @@ window.killPlayer = function() {
     }
     if (typeof updateArmorBar === 'function') updateArmorBar();
 
+    // Drop XP orbs and reset experience
+    if (typeof window.resetPlayerXP === 'function') window.resetPlayerXP();
+
     // Clear fire state
     player.onFire = false;
     player._fireTimer = 0;
@@ -288,6 +291,7 @@ window.respawnPlayer = function() {
     // Refresh UI
     if (typeof updateHealthUI === 'function') updateHealthUI();
     if (typeof buildUI === 'function') buildUI();
+    if (typeof window.updateXPBarUI === 'function') window.updateXPBarUI();
 
     uiState = 'PLAYING';
     setTimeout(() => document.body.requestPointerLock(), 100);

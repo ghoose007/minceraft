@@ -22,7 +22,7 @@ function _showClickToPlay() {
     `;
     
     const text = document.createElement('div');
-    text.textContent = 'Click to Play';
+    text.textContent = 'Tap to Play';
     text.style.cssText = `
         font-family: 'Minecraft', 'Silkscreen', monospace, sans-serif;
         font-size: 36px;
@@ -32,9 +32,16 @@ function _showClickToPlay() {
     `;
     overlay.appendChild(text);
     
-    overlay.addEventListener('click', () => {
+    function _startPlaying() {
+        if (!overlay.parentNode) return; // Already removed
         overlay.remove();
         document.body.requestPointerLock();
+    }
+    
+    overlay.addEventListener('click', _startPlaying);
+    overlay.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        _startPlaying();
     });
     
     document.body.appendChild(overlay);
@@ -310,6 +317,11 @@ async function init(seed, loadedData) {
             }
         }
         
+        // Restore experience state
+        if (loadedData.xpState && typeof window.setPlayerXPState === 'function') {
+            window.setPlayerXPState(loadedData.xpState.level, loadedData.xpState.xp, loadedData.xpState.totalXP);
+        }
+        
         // Restore chests
         if (loadedData.chests && typeof activeChests !== 'undefined') {
             activeChests.clear();
@@ -542,6 +554,8 @@ async function init(seed, loadedData) {
     document.getElementById('ui-layer').classList.remove('hidden');
     document.getElementById('clock-container').style.display = '';
     document.getElementById('hud-layer').style.display = '';
+    if (typeof window.buildXPBarUI === 'function') window.buildXPBarUI();
+    if (typeof window.updateXPBarUI === 'function') window.updateXPBarUI();
     
     if (typeof applyGUIScale === 'function') applyGUIScale(); 
     
@@ -1453,8 +1467,15 @@ window.getTargetedMob = function() {
     const crosshair = document.getElementById('crosshair');
 
     uiLayer.addEventListener('click', () => { document.body.requestPointerLock(); });
+    uiLayer.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        document.body.requestPointerLock();
+    });
 
     document.addEventListener('pointerlockchange', () => {
+        // On mobile, pointer lock is faked — ignore real pointerlockchange events
+        if (window._mobileSkipPointerLock) return;
+        
         if (document.pointerLockElement === document.body) {
             isPointerLocked = true;
             uiState = 'PLAYING';

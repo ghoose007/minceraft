@@ -397,6 +397,7 @@ function animatePlayerModel(dt) {
     updatePlayerModelHeldItem();
     updatePlayerModelLighting();
     updatePlayerArmorMeshes();
+    _tintPlayerArmorByLight();
 }
 
 // ==========================================
@@ -548,6 +549,71 @@ function updatePlayerArmorMeshes() {
             mesh.position.set(0, -6/16, 0);
             leftLeg.add(mesh);
             _armorMeshes.bootL = mesh;
+        }
+    }
+}
+
+// ==========================================
+// ENTITY LIGHT TINTING
+// ==========================================
+// For entities that don't use the chunk vertex-color lighting pipeline
+// (arrows, armor, player doll), sample sun + torch light at their position
+// and tint the material color to match the environment.
+
+function _computeEntityLightColor(wx, wy, wz) {
+    const ix = Math.floor(wx);
+    const iy = Math.floor(wy);
+    const iz = Math.floor(wz);
+
+    const sunRaw = (typeof getSunLight === 'function') ? getSunLight(ix, iy, iz) : 15;
+    const torchRaw = (typeof getTorchLight === 'function') ? getTorchLight(ix, iy, iz) : 0;
+
+    // MC brightness curve: brightness = pow(0.8, 15 - level)
+    const mcSun = Math.pow(0.8, 15 - sunRaw);
+    const mcTorch = Math.pow(0.8, 15 - torchRaw);
+
+    // Get current sun level from time-of-day uniforms
+    const sunLevel = (typeof timeUniforms !== 'undefined') ? timeUniforms.uSunLevel.value : 1.0;
+
+    // Combine: ambient + sun contribution + torch contribution
+    const ambR = 0.12, ambG = 0.12, ambB = 0.16;
+    const sunR = mcSun * sunLevel;
+    const sunG = mcSun * sunLevel;
+    const sunB = mcSun * sunLevel;
+    const torR = mcTorch * 1.0;
+    const torG = mcTorch * 0.85;
+    const torB = mcTorch * 0.6;
+
+    const r = Math.min(1.0, ambR + sunR + torR);
+    const g = Math.min(1.0, ambG + sunG + torG);
+    const b = Math.min(1.0, ambB + sunB + torB);
+
+    return { r, g, b };
+}
+
+// Tint all meshes in an entity group by environment light
+function _tintEntityByLight(meshGroup, wx, wy, wz) {
+    const c = _computeEntityLightColor(wx, wy, wz);
+    meshGroup.traverse(child => {
+        if (child.isMesh && child.material && child.material.color) {
+            child.material.color.setRGB(c.r, c.g, c.b);
+        }
+    });
+}
+
+// Tint player armor meshes by light at player position
+function _tintPlayerArmorByLight() {
+    let hasArmor = false;
+    for (const key of Object.keys(_armorMeshes)) {
+        if (_armorMeshes[key]) { hasArmor = true; break; }
+    }
+    if (!hasArmor) return;
+
+    const c = _computeEntityLightColor(player.x, player.y + player.eyeLevel, player.z);
+    for (const key of Object.keys(_armorMeshes)) {
+        const mesh = _armorMeshes[key];
+        if (mesh && mesh.material && mesh.material.color) {
+            mesh.material.color.setRGB(c.r, c.g, c.b);
         }
     }
 }

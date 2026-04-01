@@ -397,6 +397,8 @@ function movePlayer(dt) {
 
     const STEP_HEIGHT = (player.onGround && !isSneaking && !fluid.inWater) ? 0.6 : 0;
 
+    let _blockedX = false, _blockedZ = false;
+
     const xResult = sweepAxis('x', dx, {x: player.x, y: player.y, z: player.z}, player.height);
     if (xResult.collided) {
         if (STEP_HEIGHT > 0 && player.onGround && !isSneaking) {
@@ -411,10 +413,12 @@ function movePlayer(dt) {
             } else {
                 player.x = xResult.val;
                 player.vx = 0; 
+                _blockedX = true;
             }
         } else {
             player.x = xResult.val;
             player.vx = 0; 
+            _blockedX = true;
         }
     } else {
         player.x += dx;
@@ -434,13 +438,36 @@ function movePlayer(dt) {
             } else {
                 player.z = zResult.val;
                 player.vz = 0; 
+                _blockedZ = true;
             }
         } else {
             player.z = zResult.val;
             player.vz = 0; 
+            _blockedZ = true;
         }
     } else {
         player.z += dz;
+    }
+
+    // --- AUTOJUMP (mobile only) ---
+    if (typeof window.isMobileMode === 'function' && window.isMobileMode() &&
+        player.onGround && !isSneaking && !fluid.inWater && !fluid.inLava && !player.flying &&
+        (inputX !== 0 || inputZ !== 0) && (_blockedX || _blockedZ)) {
+        // Use intended movement direction, not dx/dz (which are 0 after wall collision)
+        const intendedDx = targetVx * dt;
+        const intendedDz = targetVz * dt;
+        const jumpY = player.y + 1.01;
+        let canClear = false;
+        if (_blockedX && intendedDx !== 0) {
+            canClear = !sweepAxis('x', intendedDx, {x: player.x, y: jumpY, z: player.z}, player.height).collided;
+        }
+        if (!canClear && _blockedZ && intendedDz !== 0) {
+            canClear = !sweepAxis('z', intendedDz, {x: player.x, y: jumpY, z: player.z}, player.height).collided;
+        }
+        if (canClear) {
+            player.vy = JUMP_FORCE;
+            player.onGround = false;
+        }
     }
 
     if (isSneaking && player.onGround && !fluid.inWater) {

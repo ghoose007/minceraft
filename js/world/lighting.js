@@ -197,6 +197,15 @@ function recalculateLighting(ux, uy, uz) {
                         torchQueueLen++;
                     }
                 }
+                // Lit furnace: emits light level 13 (MC-accurate)
+                if (id === 59 && ((getVoxel(x, y, z) >> 12) & 0x1) === 1) {
+                    setTorchLight(x, y, z, 13);
+                    if (torchQueueLen < queueCapacity) {
+                        torchQueueX[torchQueueLen] = x; torchQueueY[torchQueueLen] = y;
+                        torchQueueZ[torchQueueLen] = z; torchQueueL[torchQueueLen] = 13;
+                        torchQueueLen++;
+                    }
+                }
             }
         }
     }

@@ -73,6 +73,11 @@ window.spawnBlockDrops = function(targetId, x, y, z, val) {
     if (dropId !== 0) {
         window.spawnDroppedItem(x + 0.5, y + 0.5, z + 0.5, dropId);
     }
+
+    // --- XP from ore blocks ---
+    if (typeof window.spawnOreBreakXP === 'function') {
+        window.spawnOreBreakXP(x, y, z, targetId);
+    }
 };
 
 // --- GLOBAL BLOCK BREAK FUNCTION ---

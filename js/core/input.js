@@ -613,9 +613,22 @@
     const uiLayer = document.getElementById('ui-layer');
     const crosshair = document.getElementById('crosshair');
 
-    uiLayer.addEventListener('click', () => { document.body.requestPointerLock(); });
+    uiLayer.addEventListener('click', () => {
+        if (window._mobileSkipPointerLock) {
+            // Mobile: skip pointer lock, just go to playing state
+            isPointerLocked = true;
+            uiState = 'PLAYING';
+            uiLayer.classList.add('hidden');
+            document.getElementById('pause-menu').classList.add('hidden');
+            return;
+        }
+        document.body.requestPointerLock();
+    });
 
     document.addEventListener('pointerlockchange', () => {
+        // On mobile, pointer lock is faked — ignore real pointerlockchange events
+        if (window._mobileSkipPointerLock) return;
+        
         if (document.pointerLockElement === document.body) {
             isPointerLocked = true;
             uiState = 'PLAYING';

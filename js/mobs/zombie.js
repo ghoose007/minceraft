@@ -128,7 +128,11 @@ class Zombie extends Mob {
 
         this.vy -= 28.0 * dt;
         let nextY = this.y + this.vy * dt;
+        // Use reduced height during death animation (mob is falling over)
+        const savedHeight = this.height;
+        this.height = 0.5;
         if (this.checkCollision(this.x, nextY, this.z)) { if (this.vy < 0) nextY = this.getFloorY(this.x, nextY, this.z); this.vy = 0; }
+        this.height = savedHeight;
         this.y = nextY;
         this.mesh.position.set(this.x, this.y, this.z);
 
@@ -146,6 +150,7 @@ class Zombie extends Mob {
             if (Math.random() < 0.10 && typeof window.spawnDroppedItem === 'function') {
                 window.spawnDroppedItem(this.x, this.y + 0.5, this.z, 113, 1);
             }
+            if (typeof window.spawnMobDeathXP === 'function') window.spawnMobDeathXP(this.x, this.y, this.z, 'zombie');
         }
     }
 

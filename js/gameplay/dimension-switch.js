@@ -17,7 +17,10 @@ let _dimensionSwitching = false;
 function _getNetherConfig() {
     // Use stored overworld size (or current if we haven't switched yet)
     const owChunks = overworldChunksX || CHUNKS_X;
-    if (owChunks <= 64) {
+    if (owChunks <= 32) {
+        // Mobile sizes (16 or 32 chunks): 1:1 ratio for bigger nether
+        return { ratio: 1, netherChunks: owChunks };
+    } else if (owChunks <= 64) {
         // Classic/Small: 1:3 ratio
         return { ratio: 3, netherChunks: Math.ceil(owChunks / 3) };
     } else {
@@ -200,6 +203,9 @@ window.switchDimension = async function() {
         }
         droppedItems.length = 0;
     }
+
+    // Clear XP orbs
+    if (typeof window.clearXPOrbs === 'function') window.clearXPOrbs();
 
     // --- SAVE MOBS for current dimension and remove from scene ---
     if (!window._dimensionMobs) window._dimensionMobs = { overworld: [], nether: [] };

@@ -29,6 +29,8 @@ function handleFurnaceClick(slotName, e) {
     let slotItem = f[slotName]; 
     if (slotName === 'output') {
         if (slotItem.id === 0 || slotItem.count === 0) return;
+        const smeltOutputId = slotItem.id;
+        const smeltCount = slotItem.count;
         if (!window.cursorItem) {
             window.cursorItem = { ...slotItem };
             slotItem.id = 0; slotItem.count = 0; delete slotItem.durability;
@@ -36,6 +38,13 @@ function handleFurnaceClick(slotName, e) {
             window.cursorItem.count += slotItem.count;
             slotItem.id = 0; slotItem.count = 0; delete slotItem.durability;
         } else { return; }
+        // Spawn smelting XP orbs at furnace position
+        if (typeof window.spawnSmeltXP === 'function' && currentFurnacePos) {
+            const parts = currentFurnacePos.split(',');
+            if (parts.length === 3) {
+                window.spawnSmeltXP(parseInt(parts[0]), parseInt(parts[1]), parseInt(parts[2]), smeltOutputId, smeltCount);
+            }
+        }
     } else {
         interactWithSlot(slotItem, e);
     }

@@ -17,6 +17,7 @@
 
     // --- AUDIO CONTEXT (shared, lazy-init) ---
     let _audioCtx = null;
+    let _audioWarmedUp = false;
     function getAudioCtx() {
         if (!_audioCtx) {
             _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -24,12 +25,29 @@
         return _audioCtx;
     }
 
+    // Expose globally so XP and button sounds can share the same context
+    window._getSharedAudioCtx = getAudioCtx;
+
     function ensureAudioResumed() {
         const ctx = getAudioCtx();
         if (ctx.state === 'suspended') ctx.resume();
+        // Play a silent buffer to warm up the audio pipeline on mobile
+        // This prevents the first real sound from being clipped
+        if (!_audioWarmedUp && ctx.state === 'running') {
+            _audioWarmedUp = true;
+            try {
+                const silent = ctx.createBuffer(1, ctx.sampleRate * 0.05, ctx.sampleRate);
+                const src = ctx.createBufferSource();
+                src.buffer = silent;
+                src.connect(ctx.destination);
+                src.start(0);
+            } catch(e) {}
+        }
     }
     document.addEventListener('mousedown', ensureAudioResumed);
     document.addEventListener('keydown', ensureAudioResumed);
+    document.addEventListener('touchstart', ensureAudioResumed);
+    document.addEventListener('touchend', ensureAudioResumed);
 
     // =============================================
     // LISTENER UPDATE — called every frame from game loop

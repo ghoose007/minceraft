@@ -273,7 +273,9 @@ async function saveWorld(slot) {
                 vx: item.vx, vy: item.vy, vz: item.vz,
                 durability: item.durability !== undefined ? item.durability : undefined
             }));
-        })()
+        })(),
+        // Experience state
+        xpState: typeof window.getPlayerXPState === 'function' ? window.getPlayerXPState() : { level: 0, xp: 0, totalXP: 0 }
     };
     
     await dbPut(saveData);

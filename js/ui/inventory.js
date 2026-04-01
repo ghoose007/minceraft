@@ -285,5 +285,65 @@ function applyDirtBackground() {
 applyDirtBackground();
 
 // ==========================================
+// MOBILE CREATIVE INVENTORY SCROLL BUTTONS
+// ==========================================
+(function() {
+    function _setupMobileInvScroll() {
+        const grid = document.getElementById('inventory-grid');
+        const btnUp = document.getElementById('inv-scroll-up');
+        const btnDown = document.getElementById('inv-scroll-down');
+        if (!grid || !btnUp || !btnDown) return;
+
+        const SCROLL_AMOUNT = 40;
+        let scrollInterval = null;
+
+        function startScroll(dir) {
+            stopScroll();
+            grid.scrollTop += dir * SCROLL_AMOUNT;
+            scrollInterval = setInterval(() => { grid.scrollTop += dir * SCROLL_AMOUNT; }, 250);
+        }
+        function stopScroll() {
+            if (scrollInterval) { clearInterval(scrollInterval); scrollInterval = null; }
+        }
+
+        btnUp.addEventListener('mousedown', () => startScroll(-1));
+        btnUp.addEventListener('touchstart', (e) => { e.preventDefault(); startScroll(-1); });
+        btnUp.addEventListener('mouseup', stopScroll);
+        btnUp.addEventListener('touchend', stopScroll);
+        btnUp.addEventListener('mouseleave', stopScroll);
+        btnUp.addEventListener('touchcancel', stopScroll);
+
+        btnDown.addEventListener('mousedown', () => startScroll(1));
+        btnDown.addEventListener('touchstart', (e) => { e.preventDefault(); startScroll(1); });
+        btnDown.addEventListener('mouseup', stopScroll);
+        btnDown.addEventListener('touchend', stopScroll);
+        btnDown.addEventListener('mouseleave', stopScroll);
+        btnDown.addEventListener('touchcancel', stopScroll);
+    }
+
+    // Show scroll buttons on mobile when inventory opens
+    const _origRenderInv = window.renderInventory || (typeof renderInventory !== 'undefined' ? renderInventory : null);
+
+    function _mobileInvPostRender() {
+        const btnUp = document.getElementById('inv-scroll-up');
+        const btnDown = document.getElementById('inv-scroll-down');
+        if (!btnUp || !btnDown) return;
+        const isMobile = typeof window.isMobileMode === 'function' && window.isMobileMode();
+        btnUp.style.display = isMobile ? 'block' : 'none';
+        btnDown.style.display = isMobile ? 'block' : 'none';
+        if (isMobile) _setupMobileInvScroll();
+    }
+
+    // Hook into renderInventory
+    if (typeof renderInventory === 'function') {
+        const orig = renderInventory;
+        renderInventory = function() {
+            orig.apply(this, arguments);
+            _mobileInvPostRender();
+        };
+    }
+})();
+
+// ==========================================
 // CHEST SYSTEM
 // ==========================================

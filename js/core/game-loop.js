@@ -104,6 +104,7 @@ function animate() {
         if (typeof updateTNTEntities === 'function') updateTNTEntities(dt);
         if (typeof window.updateHerobrineEntities === 'function') window.updateHerobrineEntities(dt);
         if (typeof window._tickEnchantBooks === 'function') window._tickEnchantBooks(dt);
+        if (typeof window.updateXPOrbs === 'function') window.updateXPOrbs(dt);
 
         // Sound system — update listener position for spatial audio, then tick sounds
         if (typeof window._soundUpdateListener === 'function') window._soundUpdateListener();
@@ -472,6 +473,10 @@ function animate() {
 
                 if (isBurning !== wasBurning) {
                     setVoxel(fx, fy, fz, 59, (val >> 8) & 0xF, isBurning ? 1 : 0, 0);
+                    // MC lit furnace emits light level 13
+                    if (typeof setTorchLight === 'function') {
+                        setTorchLight(fx, fy, fz, isBurning ? 13 : 0);
+                    }
                     pendingBlockUpdates.push({x: fx, y: fy, z: fz});
                 }
 

@@ -381,11 +381,15 @@ class Pig extends Mob {
                 }
                 const dropCount = 1 + Math.floor(Math.random() * 3);
                 if (typeof spawnDroppedItem === 'function') spawnDroppedItem(this.x, this.y + 0.5, this.z, 122, dropCount);
+                if (typeof window.spawnMobDeathXP === 'function') window.spawnMobDeathXP(this.x, this.y, this.z, 'pig');
                 return;
             }
             this.vy -= 28.0 * dt;
             let nextY = this.y + this.vy * dt;
+            const savedHeight = this.height;
+            this.height = 0.5;
             if (this.checkCollision(this.x, nextY, this.z)) { if (this.vy < 0) nextY = this.getFloorY(this.x, nextY, this.z); this.vy = 0; }
+            this.height = savedHeight;
             this.y = nextY;
             this.mesh.position.set(this.x, this.y, this.z);
             return;

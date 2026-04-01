@@ -124,6 +124,10 @@ class Arrow {
                     // Don't reset stuckTimer — keeps the original despawn countdown
                 }
             }
+            // Tint stuck arrow by environment lighting
+            if (typeof _tintEntityByLight === 'function') {
+                _tintEntityByLight(this.mesh, this.x, this.y, this.z);
+            }
             return false;
         }
 
@@ -204,7 +208,10 @@ class Arrow {
         this.x = nx; this.y = ny; this.z = nz;
         this.mesh.position.set(this.x, this.y, this.z);
 
-        // Toggle debug visuals based on F3 state
+        // Tint arrow by environment lighting
+        if (typeof _tintEntityByLight === 'function') {
+            _tintEntityByLight(this.mesh, this.x, this.y, this.z);
+        }
         if (this.mesh._debugMeshes) {
             const showDebug = !!window.showDebugScreen;
             for (const dm of this.mesh._debugMeshes) dm.visible = showDebug;

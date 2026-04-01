@@ -158,23 +158,29 @@ function buildChunkMesh(cx, cz) {
                     const nt=(dx,dy,dz)=>{const n=getVoxel(x+dx,y+dy,z+dz)&0xFF;return n===0||isBlockTransparent(n);};
                     
                     const Q=(ax,ay,az,bx,by,bz,cx,cy,cz,dx,dy,dz,a,b,c,d,n)=>{
-                        // Calculate face plane exactly to see if it touches the outside bounding box
+                        // Check if this face is on the outer bounding box of the voxel
                         const isExt = (n[0]===1 && ax===x+1) || (n[0]===-1 && ax===x) || 
                                       (n[1]===1 && ay===y+1) || (n[1]===-1 && ay===y) || 
                                       (n[2]===1 && az===z+1) || (n[2]===-1 && az===z);
                         
-                        // Sample neighbor if external, sample self if internal
+                        // External faces sample from neighbor; internal faces (step tops, inner walls)
+                        // sample from the stair block itself since it has open air space
                         const lx = isExt ? n[0] : 0;
                         const ly = isExt ? n[1] : 0;
                         const lz = isExt ? n[2] : 0;
+                        
+                        // For internal upward faces, sample from above (y+1) since stair block
+                        // itself may have 0 light stored
+                        let sampleX = x+lx, sampleY = y+ly, sampleZ = z+lz;
+                        if (!isExt && n[1] === 1) { sampleY = y + 1; }
                         
                         let sh = 1.0;
                         if (n[1] === -1) sh = 0.5;
                         else if (Math.abs(n[0]) === 1) sh = 0.8;
                         else if (Math.abs(n[2]) === 1) sh = 0.6;
                         
-                        const sl = getSunLight(x+lx, y+ly, z+lz) / 15.0;
-                        const tl = getTorchLight(x+lx, y+ly, z+lz) / 15.0;
+                        const sl = getSunLight(sampleX, sampleY, sampleZ) / 15.0;
+                        const tl = getTorchLight(sampleX, sampleY, sampleZ) / 15.0;
                         
                         solidPositions.push(ax,ay,az,bx,by,bz,cx,cy,cz,ax,ay,az,cx,cy,cz,dx,dy,dz);
                         solidUvs.push(a[0],a[1],b[0],b[1],c[0],c[1],a[0],a[1],c[0],c[1],d[0],d[1]);

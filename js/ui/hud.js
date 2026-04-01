@@ -128,11 +128,11 @@ if (!document.getElementById('mc-3d-styles')) {
             pointer-events: none;
         }
 
-        /* Health Bar: Anchored to the left side above the 364px hotbar */
+        /* Health Bar: Anchored to the left side above the XP bar (which is above hotbar) */
         #health-bar {
             position: fixed;
-            bottom: 44px;
-            left: calc(50% - 178px);
+            bottom: 56px;
+            left: calc(50% - 182px);
             display: flex;
             flex-direction: row;
             z-index: 101;
@@ -141,8 +141,8 @@ if (!document.getElementById('mc-3d-styles')) {
         /* Armor Bar: Same position as health but 20px higher */
         #armor-bar {
             position: fixed;
-            bottom: 64px;
-            left: calc(50% - 178px);
+            bottom: 76px;
+            left: calc(50% - 182px);
             display: flex;
             flex-direction: row;
             z-index: 101;
@@ -269,7 +269,7 @@ function updateDurabilityBar(slotEl, item) {
         /* action-text: fixed, anchored just above the 44px hotbar */
         '#action-text {',
         '    position: fixed !important;',
-        '    bottom: 48px !important;',
+        '    bottom: 60px !important;',
         '    left: 50% !important;',
         '    transform: translateX(-50%) !important;',
         '    z-index: 200 !important;',

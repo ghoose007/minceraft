@@ -107,7 +107,7 @@ function _isValidSpawnFloor(x, y, z) {
 
 function _randomSpawnPos() {
     const angle = Math.random() * Math.PI * 2;
-    const dist = 24 + Math.random() * 104;
+    const dist = 32 + Math.random() * 96;
     return { x: Math.floor(player.x + Math.cos(angle) * dist), z: Math.floor(player.z + Math.sin(angle) * dist) };
 }
 

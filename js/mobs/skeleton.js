@@ -146,7 +146,10 @@ class Skeleton extends Mob {
         this.material.opacity = Math.max(0, this.deathTimer);
         this.vy -= 28.0 * dt;
         let nextY = this.y + this.vy * dt;
+        const savedHeight = this.height;
+        this.height = 0.5;
         if (this.checkCollision(this.x, nextY, this.z)) { if (this.vy < 0) nextY = this.getFloorY(this.x, nextY, this.z); this.vy = 0; }
+        this.height = savedHeight;
         this.y = nextY;
         this.mesh.position.set(this.x, this.y, this.z);
         if (this.deathTimer <= 0) {
@@ -156,6 +159,7 @@ class Skeleton extends Mob {
                     window.spawnSmoke(this.x + (Math.random() - 0.5) * 0.8, this.y + 0.9 + Math.random() * 0.6, this.z + (Math.random() - 0.5) * 0.8);
                 }
             }
+            if (typeof window.spawnMobDeathXP === 'function') window.spawnMobDeathXP(this.x, this.y, this.z, 'skeleton');
         }
     }
 
