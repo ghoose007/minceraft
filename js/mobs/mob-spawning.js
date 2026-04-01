@@ -107,7 +107,8 @@ function _isValidSpawnFloor(x, y, z) {
 
 function _randomSpawnPos() {
     const angle = Math.random() * Math.PI * 2;
-    const dist = 32 + Math.random() * 96;
+    const minDist = (typeof GEN_SPAWN_DIST !== 'undefined') ? GEN_SPAWN_DIST : 32;
+    const dist = minDist + Math.random() * 96;
     return { x: Math.floor(player.x + Math.cos(angle) * dist), z: Math.floor(player.z + Math.sin(angle) * dist) };
 }
 
@@ -216,11 +217,15 @@ window.tickMobSpawning = function(dt) {
 
     // ---- OVERWORLD: HOSTILE ----
     if (!inNether) {
-        _hostileSpawnTimer += dt;
-        if (_hostileSpawnTimer >= 1.0) {
-            _hostileSpawnTimer = 0;
-            const count = globalMobs.filter(_isHostileMob).length;
-            if (count < MOB_CAP_HOSTILE) {
+        // Check if hostile spawns are enabled
+        var hostileEnabled = (typeof GEN_HOSTILE_SPAWNS !== 'undefined') ? GEN_HOSTILE_SPAWNS : true;
+        if (hostileEnabled) {
+            var hostileRateMult = ((typeof GEN_HOSTILE_RATE !== 'undefined') ? GEN_HOSTILE_RATE : 100) / 100;
+            _hostileSpawnTimer += dt * hostileRateMult;
+            if (_hostileSpawnTimer >= 1.0) {
+                _hostileSpawnTimer = 0;
+                const count = globalMobs.filter(_isHostileMob).length;
+                if (count < MOB_CAP_HOSTILE) {
                 for (let attempt = 0; attempt < 3; attempt++) {
                     const pos = _randomSpawnPos();
                     const cx = Math.floor((pos.x + halfW) / CHUNK_SIZE);
@@ -241,6 +246,7 @@ window.tickMobSpawning = function(dt) {
                 }
             }
         }
+        } // hostileEnabled
     }
 
     // ---- NETHER: ZOMBIE PIGMAN ----

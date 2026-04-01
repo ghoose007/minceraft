@@ -228,7 +228,23 @@ async function saveWorld(slot) {
             volatility: GEN_VOLATILITY_MULT,
             tempOffset: GEN_TEMP_OFFSET,
             humidOffset: GEN_HUMID_OFFSET,
-            foliageDensity: GEN_FOLIAGE_DENSITY
+            foliageDensity: GEN_FOLIAGE_DENSITY,
+            // Advanced cave settings
+            caveSize: GEN_CAVE_SIZE,
+            caveMinY: GEN_CAVE_MIN_Y,
+            caveLavaY: GEN_CAVE_LAVA_Y,
+            // Ravine settings
+            ravineFrequency: GEN_RAVINE_FREQUENCY,
+            ravineDepth: GEN_RAVINE_DEPTH,
+            ravineWidth: GEN_RAVINE_WIDTH,
+            // Mob/gameplay settings
+            hostileSpawns: GEN_HOSTILE_SPAWNS,
+            hostileCap: GEN_HOSTILE_CAP,
+            hostileRate: GEN_HOSTILE_RATE,
+            spawnDist: GEN_SPAWN_DIST,
+            xpEnabled: GEN_XP_ENABLED,
+            // Per-biome overrides
+            biomeOverrides: GEN_BIOME_OVERRIDES
         },
         worldSpawnX: window.worldSpawnX || 0,
         worldSpawnY: window.worldSpawnY || 64,
@@ -350,6 +366,28 @@ async function loadWorldFromSlot(slot) {
         GEN_TEMP_OFFSET = data.genParams.tempOffset || 0;
         GEN_HUMID_OFFSET = data.genParams.humidOffset || 0;
         GEN_FOLIAGE_DENSITY = data.genParams.foliageDensity || 100;
+        // Advanced cave settings (fallback to defaults for old saves)
+        GEN_CAVE_SIZE = data.genParams.caveSize || 100;
+        GEN_CAVE_MIN_Y = data.genParams.caveMinY !== undefined ? data.genParams.caveMinY : 2;
+        GEN_CAVE_LAVA_Y = data.genParams.caveLavaY !== undefined ? data.genParams.caveLavaY : 6;
+        // Ravine settings (fallback to defaults for old saves)
+        GEN_RAVINE_FREQUENCY = data.genParams.ravineFrequency || 100;
+        GEN_RAVINE_DEPTH = data.genParams.ravineDepth || 100;
+        GEN_RAVINE_WIDTH = data.genParams.ravineWidth || 100;
+        // Mob/gameplay settings (fallback to defaults for old saves)
+        GEN_HOSTILE_SPAWNS = data.genParams.hostileSpawns !== undefined ? data.genParams.hostileSpawns : true;
+        GEN_HOSTILE_CAP = data.genParams.hostileCap || 32;
+        GEN_HOSTILE_RATE = data.genParams.hostileRate || 100;
+        GEN_SPAWN_DIST = data.genParams.spawnDist || 32;
+        GEN_XP_ENABLED = data.genParams.xpEnabled !== undefined ? data.genParams.xpEnabled : true;
+        // Per-biome overrides (fallback to defaults for old saves)
+        if (data.genParams.biomeOverrides) {
+            GEN_BIOME_OVERRIDES = data.genParams.biomeOverrides;
+        } else {
+            if (typeof _resetBiomeOverrides === 'function') _resetBiomeOverrides();
+        }
+        // Apply mob settings to runtime globals
+        if (typeof MOB_CAP_HOSTILE !== 'undefined') MOB_CAP_HOSTILE = GEN_HOSTILE_CAP;
     }
     
     // Show loading screen

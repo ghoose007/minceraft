@@ -144,7 +144,7 @@ function _classifyBiome(temp, humid) {
         else if (biome === 'extreme_hills') { bH = GEN_SEA_LEVEL + 20; bV = 22; }
         else if (biome === 'forest')   { bH = GEN_SEA_LEVEL + 6;  bV = 18; }
         else                           { bH = GEN_SEA_LEVEL + 3;  bV = 10; }
-        return { biome, bH, bV };
+        return _applyBiomeOverrides(biome, bH, bV);
     }
     
     if (temp > 0.2 && humid < -0.1)        { biome = 'desert';     bH = GEN_SEA_LEVEL + 2;  bV = 8;  }
@@ -157,7 +157,20 @@ function _classifyBiome(temp, humid) {
     else if (temp > -0.05 && temp <= 0.2 && humid >= -0.1 && humid < 0.1) { biome = 'forest'; bH = GEN_SEA_LEVEL + 6; bV = 18; }
     else                                    { biome = 'plains';     bH = GEN_SEA_LEVEL + 3;  bV = 10; }
     
-    return { biome, bH, bV };
+    return _applyBiomeOverrides(biome, bH, bV);
+}
+
+// Apply per-biome height/variation overrides from GEN_BIOME_OVERRIDES
+function _applyBiomeOverrides(biome, bH, bV) {
+    if (typeof GEN_BIOME_OVERRIDES !== 'undefined' && GEN_BIOME_OVERRIDES[biome]) {
+        var ov = GEN_BIOME_OVERRIDES[biome];
+        // Height override: scale the elevation above sea level
+        var aboveSea = bH - GEN_SEA_LEVEL;
+        bH = GEN_SEA_LEVEL + aboveSea * (ov.height / 100);
+        // Variation override: scale the height variation
+        bV = bV * (ov.variation / 100);
+    }
+    return { biome: biome, bH: bH, bV: bV };
 }
 
 function _computeChunkBiomeData(cx, cz) {

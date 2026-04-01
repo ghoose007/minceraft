@@ -145,7 +145,12 @@ function createFallingBlockMesh(blockId, wx, wy, wz) {
     return new THREE.Mesh(geometry, solidMaterial);
 }
 
-function checkGravity(x, y, z) {
+function checkGravity(x, y, z, _visited) {
+    if (!_visited) _visited = new Set();
+    const key = x + ',' + y + ',' + z;
+    if (_visited.has(key)) return;
+    _visited.add(key);
+    
     const val = getVoxel(x, y, z);
     const id = val & 0xFF;
     if (id !== 5 && id !== 15) return; 
@@ -162,7 +167,13 @@ function checkGravity(x, y, z) {
         scene.add(mesh);
         
         fallingBlocks.add({ x: x, y: y, z: z, id: id, vy: 0, mesh: mesh });
-        checkGravity(x, y + 1, z);
+        // Check above (column cascade)
+        checkGravity(x, y + 1, z, _visited);
+        // Check horizontal neighbors — they may now be unsupported too
+        checkGravity(x + 1, y, z, _visited);
+        checkGravity(x - 1, y, z, _visited);
+        checkGravity(x, y, z + 1, _visited);
+        checkGravity(x, y, z - 1, _visited);
     }
 }
 

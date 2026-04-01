@@ -53,7 +53,8 @@ function createFluidMaterial(texture, isWater) {
         {
             uOpacity: { value: isWater ? 0.75 : 1.0 },
             uFlowScrollSpeed: { value: flowScrollSpeed },
-            uFrameSpeed: { value: frameSpeed }
+            uFrameSpeed: { value: frameSpeed },
+            uIsWater: { value: isWater ? 1.0 : 0.0 }
         }
     ]);
     
@@ -69,8 +70,10 @@ function createFluidMaterial(texture, isWater) {
         vertexShader: `
             attribute float aFluidType;
             attribute vec2 aFlowDir;
+            attribute vec3 aBiomeTint;
             varying vec2 vUv;
             varying vec3 vColor;
+            varying vec3 vBiomeTint;
             varying float vFluidType;
             varying vec2 vFlowDir;
             #include <fog_pars_vertex>
@@ -78,6 +81,7 @@ function createFluidMaterial(texture, isWater) {
             void main() {
                 vUv = uv;
                 vColor = color;
+                vBiomeTint = aBiomeTint;
                 vFluidType = aFluidType;
                 vFlowDir = aFlowDir;
                 vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
@@ -93,12 +97,14 @@ function createFluidMaterial(texture, isWater) {
             uniform vec3 uTorchColor;
             uniform vec3 uAmbientColor;
             uniform float uOpacity;
+            uniform float uIsWater;
             uniform float uFlowScrollSpeed;
             uniform float uFrameSpeed;
             #include <fog_pars_fragment>
             
             varying vec2 vUv;
             varying vec3 vColor;
+            varying vec3 vBiomeTint;
             varying float vFluidType;
             varying vec2 vFlowDir;
             
@@ -134,6 +140,11 @@ function createFluidMaterial(texture, isWater) {
                     localUv += center;
 
                     col = mix(sampleFrame(frame0, localUv), sampleFrame(frame1, localUv), blend);
+                }
+                
+                // Apply biome water tint (only for water, not lava)
+                if (uIsWater > 0.5) {
+                    col.rgb *= vBiomeTint;
                 }
                 
                 float shade = vColor.b;

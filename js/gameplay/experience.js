@@ -190,6 +190,7 @@ function spawnXPOrb(x, y, z, amount) {
 
 // Spawn multiple small orbs with randomized amounts (MC-style split)
 function spawnXPOrbsFromSource(x, y, z, totalXP) {
+    if (typeof GEN_XP_ENABLED !== 'undefined' && !GEN_XP_ENABLED) return;
     if (totalXP <= 0) return;
 
     // MC splits XP into several orbs of varying sizes
@@ -425,7 +426,9 @@ function buildXPBarUI() {
 function updateXPBarUI() {
     const container = document.getElementById('xp-bar-container');
     if (container) {
-        container.style.display = (typeof gameMode !== 'undefined' && gameMode === 'creative') ? 'none' : '';
+        var hideXP = (typeof gameMode !== 'undefined' && gameMode === 'creative') ||
+                     (typeof GEN_XP_ENABLED !== 'undefined' && !GEN_XP_ENABLED);
+        container.style.display = hideXP ? 'none' : '';
     }
 
     const fgBar = document.getElementById('xp-bar-fg');

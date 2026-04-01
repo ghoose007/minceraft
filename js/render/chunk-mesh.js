@@ -6,12 +6,13 @@ function buildChunkMesh(cx, cz) {
     // Clear per-chunk biome tint cache for fresh data
     _biomeTintCache.clear();
     _biomeFoliageTintCache.clear();
+    _biomeWaterTintCache.clear();
 
     const firePositions = [], fireNormals = [], fireUvs = [], fireColors = [], fireBiomeTints = [];
     const portalPositions = [], portalNormals = [], portalUvs = [], portalColors = [], portalBiomeTints = [];
     const solidPositions = [], solidNormals = [], solidUvs = [], solidColors = [], solidBiomeTints = [];
     const glassPositions = [], glassNormals = [], glassUvs = [], glassColors = [], glassBiomeTints = [];
-    const waterPositions = [], waterNormals = [], waterUvs = [], waterColors = [], waterFluidTypes = [], waterFlowDirs = [];
+    const waterPositions = [], waterNormals = [], waterUvs = [], waterColors = [], waterBiomeTints = [], waterFluidTypes = [], waterFlowDirs = [];
     const lavaPositions = [], lavaNormals = [], lavaUvs = [], lavaColors = [], lavaFluidTypes = [], lavaFlowDirs = [];
 
     const startX = cx * CHUNK_SIZE, startZ = cz * CHUNK_SIZE;
@@ -920,7 +921,12 @@ function buildChunkMesh(cx, cz) {
                                 for (let ft = 0; ft < 6; ft++) { lavaFluidTypes.push(fluidType); lavaFlowDirs.push(flowDirX, flowDirY); }
                             } else {
                                 pushFace(x, y, z, face, waterPositions, waterNormals, waterUvs, waterColors, null, id, heights, null, val);
-                                for (let ft = 0; ft < 6; ft++) { waterFluidTypes.push(fluidType); waterFlowDirs.push(flowDirX, flowDirY); }
+                                const wTint = getSmoothedWaterTint(x, z);
+                                for (let ft = 0; ft < 6; ft++) {
+                                    waterBiomeTints.push(wTint[0], wTint[1], wTint[2]);
+                                    waterFluidTypes.push(fluidType);
+                                    waterFlowDirs.push(flowDirX, flowDirY);
+                                }
                             }
                         }
                     } else { 
@@ -996,6 +1002,7 @@ function buildChunkMesh(cx, cz) {
         geometry.setAttribute('normal', new THREE.Float32BufferAttribute(waterNormals, 3));
         geometry.setAttribute('uv', new THREE.Float32BufferAttribute(waterUvs, 2));
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(waterColors, 3));
+        geometry.setAttribute('aBiomeTint', new THREE.Float32BufferAttribute(waterBiomeTints, 3));
         geometry.setAttribute('aFluidType', new THREE.Float32BufferAttribute(waterFluidTypes, 1));
         geometry.setAttribute('aFlowDir', new THREE.Float32BufferAttribute(waterFlowDirs, 2));
         const waterMesh_ = new THREE.Mesh(geometry, waterMaterial);
@@ -1009,6 +1016,8 @@ function buildChunkMesh(cx, cz) {
         lavaGeo.setAttribute('normal', new THREE.Float32BufferAttribute(lavaNormals, 3));
         lavaGeo.setAttribute('uv', new THREE.Float32BufferAttribute(lavaUvs, 2));
         lavaGeo.setAttribute('color', new THREE.Float32BufferAttribute(lavaColors, 3));
+        const lavaTints = new Float32Array(lavaPositions.length).fill(1);
+        lavaGeo.setAttribute('aBiomeTint', new THREE.Float32BufferAttribute(lavaTints, 3));
         lavaGeo.setAttribute('aFluidType', new THREE.Float32BufferAttribute(lavaFluidTypes, 1));
         lavaGeo.setAttribute('aFlowDir', new THREE.Float32BufferAttribute(lavaFlowDirs, 2));
         const lavaMesh_ = new THREE.Mesh(lavaGeo, lavaMaterial);

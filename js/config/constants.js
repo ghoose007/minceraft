@@ -80,3 +80,17 @@ const BIOME_FOLIAGE_COLORS = {
     'jungle': [48/255, 150/255, 22/255],
     'extreme_hills': [0x6D/255, 0xA3/255, 0x6B/255]
 };
+
+// MC-accurate water tint colors per biome
+const BIOME_WATER_COLORS = {
+    'plains':        [0x44/255, 0xAF/255, 0xF5/255],
+    'desert':        [0x61/255, 0x7B/255, 0x64/255],
+    'forest':        [0x3F/255, 0x76/255, 0xE4/255],
+    'taiga':         [0x28/255, 0x7E/255, 0x98/255],
+    'tundra':        [0x39/255, 0x38/255, 0xC9/255],
+    'swamp':         [0x4C/255, 0x67/255, 0x59/255],
+    'jungle':        [0x14/255, 0xA2/255, 0xC5/255],
+    'rainforest':    [0x1B/255, 0x9E/255, 0xD8/255],
+    'ocean':         [0x3F/255, 0x76/255, 0xE4/255],
+    'extreme_hills': [0x00/255, 0x7B/255, 0xF7/255]
+};

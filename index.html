@@ -37,7 +37,7 @@
             z-index: 1;
         }
 
-        #dirt-bg, #dirt-bg-2, #dirt-bg-3, #dirt-bg-ws {
+        #dirt-bg, #dirt-bg-2, #dirt-bg-3, #dirt-bg-ws, #dirt-bg-adv {
             position: absolute;
             top: 0; left: 0;
             width: 100%; height: 100%;
@@ -251,6 +251,25 @@
         .mc-settings-scroll::-webkit-scrollbar { width: 8px; }
         .mc-settings-scroll::-webkit-scrollbar-track { background: #2a2a2a; }
         .mc-settings-scroll::-webkit-scrollbar-thumb { background: #6a6a6a; border: 1px solid #444; }
+
+        /* Advanced settings screen — proper flex layout */
+        #advanced-settings {
+            padding: 10px 0;
+            justify-content: flex-start;
+        }
+        #advanced-settings .mc-create-title {
+            flex-shrink: 0;
+            margin: 10px 0 8px;
+        }
+        #adv-settings-scroll {
+            flex: 1;
+            min-height: 0;
+            max-height: none !important;
+            overflow-y: auto;
+        }
+        #advanced-settings .btn-grid {
+            flex-shrink: 0;
+        }
 
         .mc-setting-group { margin-bottom: 12px; }
 
@@ -1369,9 +1388,6 @@
                 <button class="mc-button" style="width: 100%; height: 32px;" id="opt-gamemode" onclick="toggleOption('gamemode')">Survival</button>
             </div>
 
-            <div class="mc-separator"></div>
-            <div class="mc-setting-label" style="color:#fff; font-size:13px; margin-bottom:8px;">World Generation Settings</div>
-
             <div class="mc-setting-group">
                 <div class="mc-setting-label">World Size</div>
                 <button class="mc-button" style="width: 100%; height: 32px;" id="opt-worldsize" onclick="toggleOption('worldsize')">Classic (864 × 864)</button>
@@ -1386,183 +1402,301 @@
                 <div class="mc-setting-label">Biome</div>
                 <button class="mc-button" style="width: 100%; height: 32px;" id="opt-singlebiome" onclick="toggleOption('singlebiome')">Plains</button>
             </div>
+        </div>
+        <div style="height: 10px;"></div>
+        <div class="btn-grid" style="width:440px; max-width:85vw;">
+            <button class="mc-button" onclick="showAdvancedSettings()">Advanced Settings...</button>
+        </div>
+        <div style="height: 6px;"></div>
+        <div class="btn-grid" style="width:440px; max-width:85vw;">
+            <button class="mc-button" onclick="startWorldCreation()">Create New World</button>
+            <button class="mc-button" onclick="showMainMenu()">Cancel</button>
+        </div>
+        <div style="height: 16px;"></div>
+    </div>
 
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Sea Level</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-sealevel" type="range" min="40" max="80" value="62" oninput="updateSliderVal(this, 'val-sealevel')">
-                    <div class="mc-slider-val" id="val-sealevel">62</div>
+    <!-- ===== ADVANCED WORLD SETTINGS ===== -->
+    <div id="advanced-settings" class="mc-screen hidden">
+        <canvas id="dirt-bg-adv" width="1" height="1"></canvas>
+        <div class="mc-create-title">Advanced World Settings</div>
+        <div class="mc-settings-scroll" id="adv-settings-scroll">
+
+            <!-- CATEGORY BUTTONS -->
+            <div class="mc-setting-group" style="text-align:center;">
+                <button class="mc-button adv-cat-btn" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('terrain')">Terrain Settings</button>
+                <button class="mc-button adv-cat-btn" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('biomes')">Biome Tuning</button>
+                <button class="mc-button adv-cat-btn" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('caves')">Caves &amp; Underground</button>
+                <button class="mc-button adv-cat-btn" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('nature')">Structures &amp; Nature</button>
+                <button class="mc-button adv-cat-btn" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('mobs')">Mobs &amp; Gameplay</button>
+                <button class="mc-button adv-cat-btn" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('nether')">Nether Settings</button>
+            </div>
+
+            <!-- TERRAIN SETTINGS -->
+            <div id="adv-terrain" class="adv-category" style="display:none;">
+                <div class="mc-separator"></div>
+                <div style="color:#fff; font-size:13px; margin-bottom:8px; text-shadow:1px 1px 0 #222;">— Terrain —</div>
+
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Sea Level</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-sealevel" type="range" min="40" max="80" value="62" oninput="updateSliderVal(this, 'val-sealevel')">
+                        <div class="mc-slider-val" id="val-sealevel">62</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Terrain Height</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-terrainheight" type="range" min="30" max="120" value="80" oninput="updateSliderVal(this, 'val-terrainheight')">
+                        <div class="mc-slider-val" id="val-terrainheight">80</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Terrain Smoothness</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-smoothness" type="range" min="50" max="300" value="150" oninput="updateSliderVal(this, 'val-smoothness')">
+                        <div class="mc-slider-val" id="val-smoothness">150</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Mountain Volatility</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-volatility" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-volatility')">
+                        <div class="mc-slider-val" id="val-volatility">100%</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Biome Scale</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-biomescale" type="range" min="50" max="600" value="300" oninput="updateSliderVal(this, 'val-biomescale')">
+                        <div class="mc-slider-val" id="val-biomescale">300</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Temperature Climate (Cold ↔ Hot)</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-temp" type="range" min="-100" max="100" value="0" oninput="updateSliderVal(this, 'val-temp')">
+                        <div class="mc-slider-val" id="val-temp">0</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Humidity Climate (Dry ↔ Wet)</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-humid" type="range" min="-100" max="100" value="0" oninput="updateSliderVal(this, 'val-humid')">
+                        <div class="mc-slider-val" id="val-humid">0</div>
+                    </div>
                 </div>
             </div>
 
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Terrain Height</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-terrainheight" type="range" min="30" max="120" value="80" oninput="updateSliderVal(this, 'val-terrainheight')">
-                    <div class="mc-slider-val" id="val-terrainheight">80</div>
+            <!-- BIOME TUNING (per-biome overrides) -->
+            <div id="adv-biomes" class="adv-category" style="display:none;">
+                <div class="mc-separator"></div>
+                <div style="color:#fff; font-size:13px; margin-bottom:8px; text-shadow:1px 1px 0 #222;">— Per-Biome Tuning —</div>
+                <div style="color:#999; font-size:10px; margin-bottom:10px;">Adjust terrain height, variation, and tree density for each biome. 100% = default.</div>
+                <div id="biome-tuning-container"></div>
+            </div>
+
+            <!-- CAVES & UNDERGROUND -->
+            <div id="adv-caves" class="adv-category" style="display:none;">
+                <div class="mc-separator"></div>
+                <div style="color:#fff; font-size:13px; margin-bottom:8px; text-shadow:1px 1px 0 #222;">— Caves &amp; Underground —</div>
+
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Generate Caves</div>
+                    <button class="mc-button" style="width: 100%; height: 32px;" id="opt-caves" onclick="toggleOption('caves')">ON</button>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Cave Density</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-cavedensity" type="range" min="0" max="100" value="50" oninput="updateSliderVal(this, 'val-cavedensity')">
+                        <div class="mc-slider-val" id="val-cavedensity">50%</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Cave Size (tunnel width)</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-cavesize" type="range" min="25" max="200" value="100" oninput="updateSliderVal(this, 'val-cavesize')">
+                        <div class="mc-slider-val" id="val-cavesize">100%</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Cave Min Depth (Y)</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-caveminy" type="range" min="1" max="40" value="2" oninput="updateSliderVal(this, 'val-caveminy')">
+                        <div class="mc-slider-val" id="val-caveminy">2</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Lava Pool Depth (caves below this Y fill with lava)</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-cavelavay" type="range" min="0" max="20" value="6" oninput="updateSliderVal(this, 'val-cavelavay')">
+                        <div class="mc-slider-val" id="val-cavelavay">6</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Generate Lava Lakes (surface)</div>
+                    <button class="mc-button" style="width: 100%; height: 32px;" id="opt-lava" onclick="toggleOption('lava')">ON</button>
+                </div>
+                <div class="mc-separator"></div>
+                <div style="color:#ddd; font-size:12px; margin-bottom:6px; text-shadow:1px 1px 0 #222;">Ravines</div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Ravine Frequency</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-ravinefreq" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-ravinefreq')">
+                        <div class="mc-slider-val" id="val-ravinefreq">100%</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Ravine Depth</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-ravinedepth" type="range" min="50" max="200" value="100" oninput="updateSliderVal(this, 'val-ravinedepth')">
+                        <div class="mc-slider-val" id="val-ravinedepth">100%</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Ravine Width</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-ravinewidth" type="range" min="25" max="200" value="100" oninput="updateSliderVal(this, 'val-ravinewidth')">
+                        <div class="mc-slider-val" id="val-ravinewidth">100%</div>
+                    </div>
+                </div>
+                <div class="mc-separator"></div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Ore Abundance</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-oreabundance" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-oreabundance')">
+                        <div class="mc-slider-val" id="val-oreabundance">100%</div>
+                    </div>
                 </div>
             </div>
 
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Cave Density</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-cavedensity" type="range" min="0" max="100" value="50" oninput="updateSliderVal(this, 'val-cavedensity')">
-                    <div class="mc-slider-val" id="val-cavedensity">50%</div>
+            <!-- STRUCTURES & NATURE -->
+            <div id="adv-nature" class="adv-category" style="display:none;">
+                <div class="mc-separator"></div>
+                <div style="color:#fff; font-size:13px; margin-bottom:8px; text-shadow:1px 1px 0 #222;">— Structures &amp; Nature —</div>
+
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Generate Structures (Villages, Dungeons, Ponds)</div>
+                    <button class="mc-button" style="width: 100%; height: 32px;" id="opt-structures" onclick="toggleOption('structures')">ON</button>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Tree Density</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-treedensity" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-treedensity')">
+                        <div class="mc-slider-val" id="val-treedensity">100%</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Foliage Density (grass, flowers, ferns)</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-foliage" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-foliage')">
+                        <div class="mc-slider-val" id="val-foliage">100%</div>
+                    </div>
                 </div>
             </div>
 
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Tree Density</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-treedensity" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-treedensity')">
-                    <div class="mc-slider-val" id="val-treedensity">100%</div>
+            <!-- MOBS & GAMEPLAY -->
+            <div id="adv-mobs" class="adv-category" style="display:none;">
+                <div class="mc-separator"></div>
+                <div style="color:#fff; font-size:13px; margin-bottom:8px; text-shadow:1px 1px 0 #222;">— Mobs &amp; Gameplay —</div>
+
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Hostile Mob Spawning</div>
+                    <button class="mc-button" style="width: 100%; height: 32px;" id="opt-hostilespawns" onclick="toggleOption('hostilespawns')">ON</button>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Hostile Mob Cap</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-hostilecap" type="range" min="0" max="80" value="32" oninput="updateSliderVal(this, 'val-hostilecap')">
+                        <div class="mc-slider-val" id="val-hostilecap">32</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Hostile Spawn Rate</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-hostilerate" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-hostilerate')">
+                        <div class="mc-slider-val" id="val-hostilerate">100%</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Minimum Spawn Distance (blocks from player)</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-spawndist" type="range" min="16" max="64" value="32" oninput="updateSliderVal(this, 'val-spawndist')">
+                        <div class="mc-slider-val" id="val-spawndist">32</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Experience (XP) System</div>
+                    <button class="mc-button" style="width: 100%; height: 32px;" id="opt-xpenabled" onclick="toggleOption('xpenabled')">ON</button>
                 </div>
             </div>
 
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Ore Abundance</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-oreabundance" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-oreabundance')">
-                    <div class="mc-slider-val" id="val-oreabundance">100%</div>
+            <!-- NETHER SETTINGS -->
+            <div id="adv-nether" class="adv-category" style="display:none;">
+                <div class="mc-separator"></div>
+                <div style="color:#fff; font-size:13px; margin-bottom:8px; text-shadow:1px 1px 0 #222;">— Nether —</div>
+
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Nether Lava Level</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-nether-lava" type="range" min="1" max="60" value="31" oninput="updateSliderVal(this, 'val-nether-lava')">
+                        <div class="mc-slider-val" id="val-nether-lava">31</div>
+                    </div>
                 </div>
-            </div>
-
-            <div class="mc-separator"></div>
-
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Generate Structures (Trees, Ponds, Cacti)</div>
-                <button class="mc-button" style="width: 100%; height: 32px;" id="opt-structures" onclick="toggleOption('structures')">ON</button>
-            </div>
-
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Generate Caves</div>
-                <button class="mc-button" style="width: 100%; height: 32px;" id="opt-caves" onclick="toggleOption('caves')">ON</button>
-            </div>
-
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Generate Lava Lakes</div>
-                <button class="mc-button" style="width: 100%; height: 32px;" id="opt-lava" onclick="toggleOption('lava')">ON</button>
-            </div>
-
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Biome Scale</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-biomescale" type="range" min="50" max="600" value="300" oninput="updateSliderVal(this, 'val-biomescale')">
-                    <div class="mc-slider-val" id="val-biomescale">300</div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Nether Openness</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-nether-openness" type="range" min="25" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-openness')">
+                        <div class="mc-slider-val" id="val-nether-openness">100%</div>
+                    </div>
                 </div>
-            </div>
-
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Terrain Smoothness</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-smoothness" type="range" min="50" max="300" value="150" oninput="updateSliderVal(this, 'val-smoothness')">
-                    <div class="mc-slider-val" id="val-smoothness">150</div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Glowstone Density</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-nether-glow" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-glow')">
+                        <div class="mc-slider-val" id="val-nether-glow">100%</div>
+                    </div>
                 </div>
-            </div>
-            
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Mountain Volatility</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-volatility" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-volatility')">
-                    <div class="mc-slider-val" id="val-volatility">100%</div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Nether Fire Patches</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-nether-fire" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-fire')">
+                        <div class="mc-slider-val" id="val-nether-fire">100%</div>
+                    </div>
                 </div>
-            </div>
-
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Temperature Climate (Cold to Hot)</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-temp" type="range" min="-100" max="100" value="0" oninput="updateSliderVal(this, 'val-temp')">
-                    <div class="mc-slider-val" id="val-temp">0</div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Soul Sand Density</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-nether-soulsand" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-soulsand')">
+                        <div class="mc-slider-val" id="val-nether-soulsand">100%</div>
+                    </div>
                 </div>
-            </div>
-
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Humidity Climate (Dry to Wet)</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-humid" type="range" min="-100" max="100" value="0" oninput="updateSliderVal(this, 'val-humid')">
-                    <div class="mc-slider-val" id="val-humid">0</div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Lava Falls</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-nether-lavafalls" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-lavafalls')">
+                        <div class="mc-slider-val" id="val-nether-lavafalls">100%</div>
+                    </div>
                 </div>
-            </div>
-
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Foliage Density</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-foliage" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-foliage')">
-                    <div class="mc-slider-val" id="val-foliage">100%</div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Gravel Shores</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-nether-gravel" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-gravel')">
+                        <div class="mc-slider-val" id="val-nether-gravel">100%</div>
+                    </div>
                 </div>
-            </div>
-
-            <div style="margin: 16px 0 8px 0; color: #aaa; text-align: center; font-size: 18px; letter-spacing: 1px;">— Nether Settings —</div>
-
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Nether Lava Level</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-nether-lava" type="range" min="1" max="60" value="31" oninput="updateSliderVal(this, 'val-nether-lava')">
-                    <div class="mc-slider-val" id="val-nether-lava">31</div>
-                </div>
-            </div>
-
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Nether Openness</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-nether-openness" type="range" min="25" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-openness')">
-                    <div class="mc-slider-val" id="val-nether-openness">100%</div>
-                </div>
-            </div>
-
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Glowstone Density</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-nether-glow" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-glow')">
-                    <div class="mc-slider-val" id="val-nether-glow">100%</div>
-                </div>
-            </div>
-
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Nether Fire Patches</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-nether-fire" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-fire')">
-                    <div class="mc-slider-val" id="val-nether-fire">100%</div>
-                </div>
-            </div>
-
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Soul Sand Density</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-nether-soulsand" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-soulsand')">
-                    <div class="mc-slider-val" id="val-nether-soulsand">100%</div>
-                </div>
-            </div>
-
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Lava Falls</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-nether-lavafalls" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-lavafalls')">
-                    <div class="mc-slider-val" id="val-nether-lavafalls">100%</div>
-                </div>
-            </div>
-
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Gravel Shores</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-nether-gravel" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-gravel')">
-                    <div class="mc-slider-val" id="val-nether-gravel">100%</div>
-                </div>
-            </div>
-
-            <div class="mc-setting-group">
-                <div class="mc-setting-label">Quartz Ore Abundance</div>
-                <div class="mc-slider-row">
-                    <input class="mc-slider" id="sl-nether-quartz" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-quartz')">
-                    <div class="mc-slider-val" id="val-nether-quartz">100%</div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Quartz Ore Abundance</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-nether-quartz" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-nether-quartz')">
+                        <div class="mc-slider-val" id="val-nether-quartz">100%</div>
+                    </div>
                 </div>
             </div>
 
         </div>
         <div style="height: 10px;"></div>
-        <div class="btn-grid">
-            <button class="mc-button" onclick="startWorldCreation()">Create New World</button>
-            <button class="mc-button" onclick="showMainMenu()">Cancel</button>
+        <div class="btn-grid" style="width:440px; max-width:85vw;">
+            <button class="mc-button" onclick="hideAdvancedSettings()">Done</button>
         </div>
         <div style="height: 16px;"></div>
     </div>

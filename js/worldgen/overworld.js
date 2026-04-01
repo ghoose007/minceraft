@@ -275,21 +275,25 @@ function _generateNormalChunk(cx, cz) {
     
     // PHASE 3: Caves
     if (GEN_CAVES) {
+        const caveSizeMult = (typeof GEN_CAVE_SIZE !== 'undefined' ? GEN_CAVE_SIZE : 100) / 100;
+        const caveMinY = (typeof GEN_CAVE_MIN_Y !== 'undefined') ? GEN_CAVE_MIN_Y : 2;
+        const caveLavaY = (typeof GEN_CAVE_LAVA_Y !== 'undefined') ? GEN_CAVE_LAVA_Y : 6;
         for (let lx = 0; lx < CHUNK_SIZE; lx++) {
             for (let lz = 0; lz < CHUNK_SIZE; lz++) {
                 const x = startX + lx;
                 const z = startZ + lz;
                 const surfaceY = getHighestBlock(x, z);
-                for (let y = 2; y <= surfaceY; y++) {
+                for (let y = caveMinY; y <= surfaceY; y++) {
                     const blockId = getVoxel(x, y, z) & 0xFF;
                     if (blockId !== 3 && blockId !== 2 && blockId !== 1 && blockId !== 15 && blockId !== 19 && blockId !== 5 && blockId !== 39) continue;
                     
                     // --- DYNAMIC CAVE WIDENING (NARROWED) ---
-                    // Less extreme horizontal stretching
                     let scaleY = 30;
                     if (y < 40) scaleY += (40 - y) * 0.5; 
                     
-                    const n1 = _wgCavePrimary.fbm3D(x / 40, y / scaleY, z / 40, 2, 0.5, 2.0);
+                    // Apply cave size multiplier — smaller value = tighter tunnels
+                    const caveScale = 40 / caveSizeMult;
+                    const n1 = _wgCavePrimary.fbm3D(x / caveScale, y / scaleY, z / caveScale, 2, 0.5, 2.0);
                     
                     let threshold = 0.04; 
                     
@@ -314,11 +318,192 @@ function _generateNormalChunk(cx, cz) {
                         }
                         
                         // --- NEW: ORGANIC LAVA POOLING ---
-                        // Instead of a global flood, caves naturally pool with lava below Y=6
-                        if (y <= 6) {
+                        if (y <= caveLavaY) {
                             setVoxel(x, y, z, 27, 4, 0, 1); // Place Lava Source
                         } else {
                             setVoxel(x, y, z, 0); // Place Air
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // PHASE 3.5: Ravines
+    if (GEN_CAVES) {
+        const ravineFreq = (typeof GEN_RAVINE_FREQUENCY !== 'undefined' ? GEN_RAVINE_FREQUENCY : 100) / 100;
+        const ravineDepthMult = (typeof GEN_RAVINE_DEPTH !== 'undefined' ? GEN_RAVINE_DEPTH : 100) / 100;
+        const ravineWideMult = (typeof GEN_RAVINE_WIDTH !== 'undefined' ? GEN_RAVINE_WIDTH : 100) / 100;
+        const caveLavaY = (typeof GEN_CAVE_LAVA_Y !== 'undefined') ? GEN_CAVE_LAVA_Y : 6;
+        
+        const checkRadius = 10;
+        for (let rcx = cx - checkRadius; rcx <= cx + checkRadius; rcx++) {
+            for (let rcz = cz - checkRadius; rcz <= cz + checkRadius; rcz++) {
+                const rRng = _chunkSeededRandom(rcx * 3 + 7919, rcz * 3 + 6271);
+                if (rRng() > 0.02 * ravineFreq) continue;
+                
+                const origX = rcx * CHUNK_SIZE - halfW + Math.floor(rRng() * CHUNK_SIZE);
+                const origZ = rcz * CHUNK_SIZE - halfD + Math.floor(rRng() * CHUNK_SIZE);
+                const origSurfY = getHighestBlock(origX, origZ);
+                if (origSurfY < GEN_SEA_LEVEL + 2) continue;
+                
+                const angle = rRng() * Math.PI * 2;
+                const length = 80 + Math.floor(rRng() * 80);
+                const ravineDepth = Math.floor((20 + rRng() * 20) * ravineDepthMult);
+                const baseTopWidth = (2.5 + rRng() * 2.5) * ravineWideMult;
+                const baseBottomWidth = (0.5 + rRng() * 1.0) * ravineWideMult;
+                // Perpendicular width is narrower — gives elongated cross-section along travel direction
+                const perpWidthRatio = 0.6 + rRng() * 0.3; // 60-90% of main width
+                
+                let pathX = origX, pathZ = origZ;
+                const dirX = Math.cos(angle);
+                const dirZ = Math.sin(angle);
+                // Perpendicular direction for cross-section width
+                const perpX = -dirZ;
+                const perpZ = dirX;
+                let wobbleAngle = 0;
+                
+                // Pre-walk to collect path points for smooth tapering
+                const pathPoints = [];
+                let tmpX = origX, tmpZ = origZ, tmpWob = 0;
+                for (let step = 0; step < length; step++) {
+                    tmpWob += (rRng() - 0.5) * 0.15;
+                    tmpX += dirX + Math.cos(tmpWob) * 0.3;
+                    tmpZ += dirZ + Math.sin(tmpWob) * 0.3;
+                    pathPoints.push({ x: tmpX, z: tmpZ });
+                }
+                
+                // Carve along path
+                for (let step = 0; step < length; step++) {
+                    const pt = pathPoints[step];
+                    const ix = Math.floor(pt.x);
+                    const iz = Math.floor(pt.z);
+                    
+                    // Smooth taper: cubic ease at ends for natural blending (no flat walls)
+                    let endT = 1.0;
+                    const fadeLen = 20;
+                    if (step < fadeLen) {
+                        const t = step / fadeLen;
+                        endT = t * t * (3 - 2 * t); // smoothstep
+                    } else if (step > length - fadeLen) {
+                        const t = (length - step) / fadeLen;
+                        endT = t * t * (3 - 2 * t);
+                    }
+                    
+                    const surfY = getHighestBlock(ix, iz);
+                    if (surfY < 10) continue;
+                    
+                    const carveTopY = surfY - 1;
+                    const carveBottomY = Math.max(2, surfY - Math.floor(ravineDepth * endT));
+                    if (carveTopY <= carveBottomY) continue;
+                    
+                    // Max width at this step
+                    const stepTopW = baseTopWidth * endT;
+                    const stepBottomW = baseBottomWidth * endT;
+                    const maxRadius = Math.ceil(stepTopW) + 1;
+                    
+                    for (let cy = carveBottomY; cy <= carveTopY; cy++) {
+                        // Width interpolates from bottom to top
+                        const vt = (cy - carveBottomY) / Math.max(1, carveTopY - carveBottomY);
+                        const mainW = stepBottomW + (stepTopW - stepBottomW) * vt;
+                        const perpW = mainW * perpWidthRatio;
+                        
+                        if (mainW < 0.3) continue;
+                        
+                        // Carve an elliptical cross-section
+                        for (let dx = -maxRadius; dx <= maxRadius; dx++) {
+                            for (let dz = -maxRadius; dz <= maxRadius; dz++) {
+                                // Project dx,dz onto the ravine's main and perp axes
+                                const alongMain = dx * perpX + dz * perpZ; // distance along perpendicular
+                                const alongPerp = dx * dirX + dz * dirZ;  // distance along travel direction
+                                
+                                // Elliptical distance check
+                                const distSq = (alongMain * alongMain) / (mainW * mainW + 0.01) +
+                                               (alongPerp * alongPerp) / (perpW * perpW + 0.01);
+                                if (distSq > 1.0) continue;
+                                
+                                const wx = ix + dx;
+                                const wz = iz + dz;
+                                
+                                // Check if within this chunk
+                                const lx = wx - startX;
+                                const lz = wz - startZ;
+                                if (lx < 0 || lx >= CHUNK_SIZE || lz < 0 || lz >= CHUNK_SIZE) continue;
+                                
+                                const blockId = getVoxel(wx, cy, wz) & 0xFF;
+                                if (blockId === 0 || blockId === 4 || blockId === 27 || blockId === 18) continue;
+                                if (isFluidBlock(blockId)) continue;
+                                
+                                // Don't carve near water
+                                if (cy <= GEN_SEA_LEVEL + 1) {
+                                    let touchesWater = false;
+                                    for (const [nx, ny, nz] of [[1,0,0],[-1,0,0],[0,1,0],[0,0,1],[0,0,-1]]) {
+                                        if ((getVoxel(wx+nx, cy+ny, wz+nz) & 0xFF) === 4) { touchesWater = true; break; }
+                                    }
+                                    if (touchesWater) continue;
+                                }
+                                
+                                if (cy <= caveLavaY) {
+                                    setVoxel(wx, cy, wz, 27, 4, 0, 1);
+                                } else {
+                                    setVoxel(wx, cy, wz, 0);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Surface blending: fix the rim where ravine meets terrain surface
+                    // Use biome-appropriate materials (grass+dirt, sand+sandstone, snow, etc.)
+                    for (let dx = -maxRadius - 1; dx <= maxRadius + 1; dx++) {
+                        for (let dz = -maxRadius - 1; dz <= maxRadius + 1; dz++) {
+                            const wx = ix + dx;
+                            const wz = iz + dz;
+                            const lx = wx - startX;
+                            const lz = wz - startZ;
+                            if (lx < 0 || lx >= CHUNK_SIZE || lz < 0 || lz >= CHUNK_SIZE) continue;
+                            
+                            const colSurfY = getHighestBlock(wx, wz);
+                            if (colSurfY < GEN_SEA_LEVEL - 2) continue;
+                            
+                            const topBid = getVoxel(wx, colSurfY, wz) & 0xFF;
+                            const aboveId = getVoxel(wx, colSurfY + 1, wz) & 0xFF;
+                            if (aboveId !== 0) continue; // Only fix blocks exposed to air
+                            
+                            // Only fix raw stone/dirt that was exposed by the ravine carve
+                            if (topBid !== 3 && topBid !== 2) continue;
+                            
+                            // Get biome at this position
+                            const bIdx2 = (wx - startX) + (wz - startZ) * CHUNK_SIZE;
+                            var rimBiome = 'plains';
+                            if (bIdx2 >= 0 && bIdx2 < CHUNK_SIZE * CHUNK_SIZE) {
+                                rimBiome = BIOME_NAMES[biomeData.biomes[bIdx2]] || 'plains';
+                            }
+                            
+                            // Apply biome-appropriate surface layers
+                            if (rimBiome === 'desert') {
+                                // Sand on top, sandstone below
+                                setVoxel(wx, colSurfY, wz, 15); // Sand
+                                if ((getVoxel(wx, colSurfY - 1, wz) & 0xFF) === 3) {
+                                    setVoxel(wx, colSurfY - 1, wz, 19); // Sandstone
+                                }
+                                if ((getVoxel(wx, colSurfY - 2, wz) & 0xFF) === 3) {
+                                    setVoxel(wx, colSurfY - 2, wz, 19); // Sandstone
+                                }
+                            } else if (rimBiome === 'tundra') {
+                                setVoxel(wx, colSurfY, wz, 39); // Snow block
+                                if ((getVoxel(wx, colSurfY - 1, wz) & 0xFF) === 3) {
+                                    setVoxel(wx, colSurfY - 1, wz, 2); // Dirt
+                                }
+                            } else {
+                                // Grass biomes: grass on top, dirt below
+                                setVoxel(wx, colSurfY, wz, 1); // Grass
+                                if ((getVoxel(wx, colSurfY - 1, wz) & 0xFF) === 3) {
+                                    setVoxel(wx, colSurfY - 1, wz, 2); // Dirt
+                                }
+                                if ((getVoxel(wx, colSurfY - 2, wz) & 0xFF) === 3) {
+                                    setVoxel(wx, colSurfY - 2, wz, 2); // Dirt
+                                }
+                            }
                         }
                     }
                 }
@@ -412,6 +597,11 @@ function _generateNormalChunk(cx, cz) {
                 else if (biome === 'extreme_hills') treeChance = 0.003;
                 
                 treeChance *= treeScale;
+                
+                // Apply per-biome tree density override
+                if (typeof GEN_BIOME_OVERRIDES !== 'undefined' && GEN_BIOME_OVERRIDES[biome]) {
+                    treeChance *= (GEN_BIOME_OVERRIDES[biome].treeDensity / 100);
+                }
                 
                 if (seededRandom() < treeChance) {
                     if (biome === 'desert' && surfId === 15) {
@@ -714,7 +904,11 @@ function _generateNormalChunk(cx, cz) {
                 }
                 
                 // Foliage
-                const folMult = GEN_FOLIAGE_DENSITY / 100.0;
+                let folMult = GEN_FOLIAGE_DENSITY / 100.0;
+                // Apply per-biome foliage density override
+                if (typeof GEN_BIOME_OVERRIDES !== 'undefined' && GEN_BIOME_OVERRIDES[biome]) {
+                    folMult *= (GEN_BIOME_OVERRIDES[biome].foliageDensity / 100);
+                }
                 if ((getVoxel(x, y+1, z) & 0xFF) === 0) {
                     const r = seededRandom();
                     

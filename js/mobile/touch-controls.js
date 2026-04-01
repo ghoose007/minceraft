@@ -1551,7 +1551,8 @@ function _tickMobileUI() {
     if (hudBars) hudBars.style.display = isInUI ? 'none' : '';
     const xpBar = document.getElementById('xp-bar-container');
     if (xpBar) {
-        const hideXP = isInUI || (typeof gameMode !== 'undefined' && gameMode === 'creative');
+        const hideXP = isInUI || (typeof gameMode !== 'undefined' && gameMode === 'creative') ||
+                       (typeof GEN_XP_ENABLED !== 'undefined' && !GEN_XP_ENABLED);
         xpBar.style.display = hideXP ? 'none' : '';
     }
 

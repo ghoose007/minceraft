@@ -73,6 +73,7 @@ const lilypadFaces = [
 // Keyed by numeric hash for fast lookup during mesh building
 const _biomeTintCache = new Map();
 const _biomeFoliageTintCache = new Map();
+const _biomeWaterTintCache = new Map();
 
 function getSmoothedBiomeTint(bx, bz) {
     const cacheKey = ((bx + 32768) << 16) | (bz + 32768);
@@ -121,6 +122,31 @@ function getSmoothedFoliageTint(bx, bz) {
     }
     const result = count > 0 ? [r/count, g/count, b/count] : [1,1,1];
     _biomeFoliageTintCache.set(cacheKey, result);
+    return result;
+}
+
+function getSmoothedWaterTint(bx, bz) {
+    const cacheKey = ((bx + 32768) << 16) | (bz + 32768);
+    const cached = _biomeWaterTintCache.get(cacheKey);
+    if (cached) return cached;
+    
+    let r = 0, g = 0, b = 0, count = 0;
+    const halfW = WORLD_WIDTH / 2;
+    const halfD = WORLD_DEPTH / 2;
+    for (let dx = -2; dx <= 2; dx++) {
+        for (let dz = -2; dz <= 2; dz++) {
+            const ix = bx + dx + halfW;
+            const iz = bz + dz + halfD;
+            if (ix >= 0 && ix < WORLD_WIDTH && iz >= 0 && iz < WORLD_DEPTH) {
+                const biome = biomeMap[ix + iz * WORLD_WIDTH];
+                const color = (typeof BIOME_WATER_COLORS !== 'undefined' && BIOME_WATER_COLORS[biome]) ? BIOME_WATER_COLORS[biome] : [0.247, 0.463, 0.894];
+                r += color[0]; g += color[1]; b += color[2];
+                count++;
+            }
+        }
+    }
+    const result = count > 0 ? [r/count, g/count, b/count] : [0.247, 0.463, 0.894];
+    _biomeWaterTintCache.set(cacheKey, result);
     return result;
 }
 
