@@ -233,6 +233,12 @@ async function saveWorld(slot) {
             caveSize: GEN_CAVE_SIZE,
             caveMinY: GEN_CAVE_MIN_Y,
             caveLavaY: GEN_CAVE_LAVA_Y,
+            // Tunnel settings
+            tunnelFrequency: GEN_TUNNEL_FREQUENCY,
+            tunnelLength: GEN_TUNNEL_LENGTH,
+            tunnelRadius: GEN_TUNNEL_RADIUS,
+            tunnelMaxY: GEN_TUNNEL_MAX_Y,
+            tunnelBranch: GEN_TUNNEL_BRANCH,
             // Ravine settings
             ravineFrequency: GEN_RAVINE_FREQUENCY,
             ravineDepth: GEN_RAVINE_DEPTH,
@@ -367,9 +373,15 @@ async function loadWorldFromSlot(slot) {
         GEN_HUMID_OFFSET = data.genParams.humidOffset || 0;
         GEN_FOLIAGE_DENSITY = data.genParams.foliageDensity || 100;
         // Advanced cave settings (fallback to defaults for old saves)
-        GEN_CAVE_SIZE = data.genParams.caveSize || 100;
+        GEN_CAVE_SIZE = data.genParams.caveSize || 120;
         GEN_CAVE_MIN_Y = data.genParams.caveMinY !== undefined ? data.genParams.caveMinY : 2;
         GEN_CAVE_LAVA_Y = data.genParams.caveLavaY !== undefined ? data.genParams.caveLavaY : 6;
+        // Tunnel settings (fallback to defaults for old saves)
+        GEN_TUNNEL_FREQUENCY = data.genParams.tunnelFrequency || 200;
+        GEN_TUNNEL_LENGTH = data.genParams.tunnelLength || 100;
+        GEN_TUNNEL_RADIUS = data.genParams.tunnelRadius || 120;
+        GEN_TUNNEL_MAX_Y = data.genParams.tunnelMaxY || 80;
+        GEN_TUNNEL_BRANCH = data.genParams.tunnelBranch !== undefined ? data.genParams.tunnelBranch : 70;
         // Ravine settings (fallback to defaults for old saves)
         GEN_RAVINE_FREQUENCY = data.genParams.ravineFrequency || 100;
         GEN_RAVINE_DEPTH = data.genParams.ravineDepth || 100;
@@ -490,6 +502,14 @@ async function renderWorldList() {
         }
         
         container.appendChild(slot);
+    }
+    
+    // Convert world list text to bitmap font
+    if (window.mcFont && window.mcFont.isReady()) {
+        var names = container.querySelectorAll('.world-slot-name');
+        for (var wi = 0; wi < names.length; wi++) window.mcFont.convertEl(names[wi]);
+        var details = container.querySelectorAll('.world-slot-details');
+        for (var di = 0; di < details.length; di++) window.mcFont.convertEl(details[di], null, 1);
     }
 }
 

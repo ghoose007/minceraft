@@ -128,7 +128,7 @@ if (!document.getElementById('mc-3d-styles')) {
             pointer-events: none;
         }
 
-        /* Health Bar: Anchored to the left side above the XP bar (which is above hotbar) */
+        /* Health Bar: Left side above XP bar, only spans left half of hotbar */
         #health-bar {
             position: fixed;
             bottom: 56px;
@@ -136,6 +136,8 @@ if (!document.getElementById('mc-3d-styles')) {
             display: flex;
             flex-direction: row;
             z-index: 101;
+            max-width: 160px;
+            overflow: hidden;
         }
 
         /* Armor Bar: Same position as health but 20px higher */
@@ -146,6 +148,8 @@ if (!document.getElementById('mc-3d-styles')) {
             display: flex;
             flex-direction: row;
             z-index: 101;
+            max-width: 160px;
+            overflow: hidden;
         }
 
         .mc-screen {
@@ -277,7 +281,7 @@ function updateDurabilityBar(slotEl, item) {
         '    width: auto !important;',
         '    white-space: nowrap !important;',
         '    pointer-events: none !important;',
-        '    background: rgba(0,0,0,0.3) !important;',
+        '    background: none !important;',
         '    padding: 1px 5px !important;',
         '}',
         /* html overflow hidden stops shake edge bleed */
@@ -367,7 +371,7 @@ function createIconElement(id) {
     
     // Terrain Items (Sticks, Saplings, Food, Seeds 128, Wheat 129, Nether Brick 142, Gold Ingot 143, Quartz 153)
     if ((parsedId >= 112 && parsedId <= 123) || parsedId === 128 || parsedId === 129 || parsedId === 134 || parsedId === 135 || parsedId === 137 || parsedId === 142 || parsedId === 143 || parsedId === 151 || parsedId === 153 || parsedId === 165 || parsedId === 186 || parsedId === 187 || parsedId === 188
-        || parsedId === 197 || parsedId === 198 || parsedId === 199) {
+        || parsedId === 197 || parsedId === 198 || parsedId === 199 || parsedId === 202 || parsedId === 205 || parsedId === 206) {
         const data = BLOCK_DATA[parsedId] || TOOL_DATA[parsedId];
         if (data) {
             const atlasIdx = data.atlasIdx;
@@ -432,6 +436,32 @@ function createIconElement(id) {
                 ctx2.drawImage(img, sx, sy+7, 6, 3, 0, 7*S, 6*S, 3*S);
                 // Lower rail right (x=10-16, y=7-10)
                 ctx2.drawImage(img, sx+10, sy+7, 6, 3, 10*S, 7*S, 6*S, 3*S);
+            };
+            icon.appendChild(canvas);
+        } else if (parsedId === 203) {
+            // Wood Button: small button shape canvas icon
+            const canvas = document.createElement('canvas');
+            canvas.width = 32; canvas.height = 32;
+            canvas.style.cssText = 'image-rendering: pixelated; width: 32px; height: 32px; pointer-events: none;';
+            const ctx2 = canvas.getContext('2d');
+            const img = new Image();
+            img.src = 'textures/terrain.png?v=' + ASSET_VERSION;
+            img.onload = () => {
+                const tIdx = 32; // Wood plank texture
+                const tcol = tIdx % 16, trow = Math.floor(tIdx / 16);
+                const sx = tcol * 16, sy = trow * 16;
+                const S = 2;
+                // Draw a small button (6x4 pixels centered, 2px deep)
+                // Front face: 6x4 from texture at position (5,6)
+                ctx2.drawImage(img, sx+5, sy+6, 6, 4, 5*S, 6*S, 6*S, 4*S);
+                // Top edge: 6x2
+                ctx2.drawImage(img, sx+5, sy+4, 6, 2, 5*S, 4*S, 6*S, 2*S);
+                // Side edge: 2x4
+                ctx2.drawImage(img, sx+3, sy+6, 2, 4, 3*S, 6*S, 2*S, 4*S);
+                // Darken side for depth
+                ctx2.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx2.fillRect(3*S, 6*S, 2*S, 4*S);
+                ctx2.fillRect(5*S, 4*S, 6*S, 2*S);
             };
             icon.appendChild(canvas);
         } else {
@@ -670,6 +700,9 @@ function selectSlot(index) {
         let name = (BLOCK_DATA[currentBuildBlock] || (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[currentBuildBlock]))?.name || 'Unknown';
         if (name !== 'Unknown') {
             el.textContent = name; el.style.opacity = '1';
+            if (window.mcFont && window.mcFont.isReady()) {
+                el.innerHTML = ''; var ac = window.mcFont.makeCanvas(name, 2, {color:'#ffffff'}); if (ac) { ac.style.margin='0 auto'; el.appendChild(ac); }
+            }
             clearTimeout(actionTextTimeout); actionTextTimeout = setTimeout(() => el.style.opacity = '0', 2000);
         } else el.style.opacity = '0';
     } else el.style.opacity = '0';
@@ -682,6 +715,9 @@ function bindHoverEvents(element, blockId) {
         if (window.cursorItem) return;
         let name = (BLOCK_DATA[blockId] || (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[blockId]))?.name || 'Unknown';
         tooltip.textContent = name;
+        if (window.mcFont && window.mcFont.isReady()) {
+            tooltip.innerHTML = ''; var tc = window.mcFont.makeCanvas(name, 2, {color:'#ffffff'}); if (tc) tooltip.appendChild(tc);
+        }
         tooltip.classList.remove('hidden');
     });
     element.addEventListener('mouseleave', () => { tooltip.classList.add('hidden'); });
@@ -702,6 +738,13 @@ window.updateCursorItemUI = function(e) {
         draggedIcon.parentNode.replaceChild(newIcon, draggedIcon);
         
         document.getElementById('dragged-item-count').textContent = window.cursorItem.count > 1 ? window.cursorItem.count : '';
+        // Immediately convert to MC font — don't rely on the debounced MutationObserver
+        // which can't keep up during continuous mousemove
+        const _dragCount = document.getElementById('dragged-item-count');
+        if (_dragCount && _dragCount.textContent.trim() && window.mcFont && window.mcFont.isReady()) {
+            _dragCount.removeAttribute('data-mc-text'); // Force re-convert
+            window.mcFont.convertEl(_dragCount);
+        }
         
         // Render durability if tool
         updateDurabilityBar(el, window.cursorItem);

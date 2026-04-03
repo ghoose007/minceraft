@@ -1134,6 +1134,18 @@ function _handleTap(screenX, screenY) {
     if (interactId === 69) { uiState = 'CHEST'; if (typeof openChest === 'function') openChest(target.hit[0], target.hit[1], target.hit[2]); return; }
     if (interactId === 93) { uiState = 'CHEST'; if (typeof openChest === 'function') openChest(target.hit[0], target.hit[1], target.hit[2]); return; }
     if (interactId === 201) { uiState = 'ENCHANTING'; if (typeof openEnchantingTable === 'function') openEnchantingTable(target.hit[0], target.hit[1], target.hit[2]); return; }
+    
+    // --- Button press ---
+    if (interactId === 203) {
+        if (typeof window.pressButton === 'function') window.pressButton(target.hit[0], target.hit[1], target.hit[2]);
+        return;
+    }
+
+    // --- Lever toggle ---
+    if (interactId === 205) {
+        if (typeof window.toggleLever === 'function') window.toggleLever(target.hit[0], target.hit[1], target.hit[2]);
+        return;
+    }
 
     // --- Door toggle ---
     if (interactId === 149) {
@@ -1202,6 +1214,77 @@ function _handleTap(screenX, screenY) {
         const targetId = getVoxel(target.hit[0], target.hit[1], target.hit[2]) & 0xFF;
         const targetVal = getVoxel(target.hit[0], target.hit[1], target.hit[2]);
 
+        // --- REDSTONE DUST PLACEMENT (block 202) ---
+        if (currentBuildBlock === 202) {
+            if (target.normal[1] !== 1) return; // Only on top face
+            const [dx, dy, dz] = [target.hit[0] + target.normal[0], target.hit[1] + target.normal[1], target.hit[2] + target.normal[2]];
+            const belowId = getVoxel(dx, dy - 1, dz) & 0xFF;
+            if (!canSupport(belowId)) return;
+            const existId = getVoxel(dx, dy, dz) & 0xFF;
+            if (existId !== 0) return;
+            setVoxel(dx, dy, dz, 202, 0);
+            pendingBlockUpdates.push({x: dx, y: dy, z: dz});
+            if (typeof window.onRedstoneBlockChanged === 'function') window.onRedstoneBlockChanged(dx, dy, dz);
+            if (typeof window._soundPlaceBlock === 'function') window._soundPlaceBlock(3, dx, dy, dz);
+            if (gameMode === 'survival' && inventory[activeSlot]) {
+                inventory[activeSlot].count--;
+                if (inventory[activeSlot].count <= 0) { inventory[activeSlot].id = 0; inventory[activeSlot].count = 0; }
+                if (typeof buildUI === 'function') buildUI();
+                if (typeof selectSlot === 'function') selectSlot(activeSlot);
+            }
+            return;
+        }
+
+        // --- WOOD BUTTON PLACEMENT (203) ---
+        if (currentBuildBlock === 203) {
+            if (target.normal[1] !== 0) return; // Side faces only
+            const attachId = getVoxel(target.hit[0], target.hit[1], target.hit[2]) & 0xFF;
+            if (!canSupport(attachId)) return;
+            const [dx, dy, dz] = [target.hit[0] + target.normal[0], target.hit[1] + target.normal[1], target.hit[2] + target.normal[2]];
+            const existId = getVoxel(dx, dy, dz) & 0xFF;
+            if (existId !== 0) return;
+            let btnDir = 0;
+            if (target.normal[2] === 1) btnDir = 2;
+            else if (target.normal[0] === 1) btnDir = 3;
+            else if (target.normal[2] === -1) btnDir = 0;
+            else if (target.normal[0] === -1) btnDir = 1;
+            setVoxel(dx, dy, dz, 203, btnDir);
+            pendingBlockUpdates.push({x: dx, y: dy, z: dz});
+            if (typeof window._soundPlaceBlock === 'function') window._soundPlaceBlock(13, dx, dy, dz);
+            if (gameMode === 'survival' && inventory[activeSlot]) {
+                inventory[activeSlot].count--;
+                if (inventory[activeSlot].count <= 0) { inventory[activeSlot].id = 0; inventory[activeSlot].count = 0; }
+                if (typeof buildUI === 'function') buildUI();
+                if (typeof selectSlot === 'function') selectSlot(activeSlot);
+            }
+            return;
+        }
+
+        // --- LEVER PLACEMENT (205) ---
+        if (currentBuildBlock === 205) {
+            if (target.normal[1] !== 0) return;
+            const attachId = getVoxel(target.hit[0], target.hit[1], target.hit[2]) & 0xFF;
+            if (!canSupport(attachId)) return;
+            const [dx, dy, dz] = [target.hit[0] + target.normal[0], target.hit[1] + target.normal[1], target.hit[2] + target.normal[2]];
+            const existId = getVoxel(dx, dy, dz) & 0xFF;
+            if (existId !== 0) return;
+            let levDir = 0;
+            if (target.normal[2] === 1) levDir = 2;
+            else if (target.normal[0] === 1) levDir = 3;
+            else if (target.normal[2] === -1) levDir = 0;
+            else if (target.normal[0] === -1) levDir = 1;
+            setVoxel(dx, dy, dz, 205, levDir);
+            pendingBlockUpdates.push({x: dx, y: dy, z: dz});
+            if (typeof window._soundPlaceBlock === 'function') window._soundPlaceBlock(205, dx, dy, dz);
+            if (gameMode === 'survival' && inventory[activeSlot]) {
+                inventory[activeSlot].count--;
+                if (inventory[activeSlot].count <= 0) { inventory[activeSlot].id = 0; inventory[activeSlot].count = 0; }
+                if (typeof buildUI === 'function') buildUI();
+                if (typeof selectSlot === 'function') selectSlot(activeSlot);
+            }
+            return;
+        }
+
         // --- SLAB DOUBLING ---
         if (typeof isSlabBlock === 'function' && isSlabBlock(currentBuildBlock) && currentBuildBlock === targetId) {
             const existingIsTop = (targetVal >> 8) & 0x1;
@@ -1246,7 +1329,7 @@ function _handleTap(screenX, screenY) {
         if (typeof canPlaceBlock === 'function' && !canPlaceBlock(currentBuildBlock, dx, dy, dz, target.normal)) return;
 
         let placeLevel = 0;
-        if (currentBuildBlock === 17) {
+        if (currentBuildBlock === 17 || currentBuildBlock === 206) {
             // Torch
             if (target.normal[1] === 1) placeLevel = 0;
             else if (target.normal[0] === 1) placeLevel = 1;

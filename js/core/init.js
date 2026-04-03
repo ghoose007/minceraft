@@ -24,7 +24,7 @@ function _showClickToPlay() {
     const text = document.createElement('div');
     text.textContent = 'Tap to Play';
     text.style.cssText = `
-        font-family: 'Minecraft', 'Silkscreen', monospace, sans-serif;
+        font-family: 'Minecraft', 'MinecraftBitmap', monospace, sans-serif;
         font-size: 36px;
         color: white;
         text-shadow: 3px 3px 0px #3f3f3f;
@@ -1053,12 +1053,30 @@ window.getTargetedMob = function() {
                 return;
             }
 
+            // ---> WOOD BUTTON INTERACTION <---
+            if (interactTargetId === 203 && uiState === 'PLAYING') {
+                if (typeof window.pressButton === 'function') {
+                    window.pressButton(target.hit[0], target.hit[1], target.hit[2]);
+                }
+                swingAnimation = 1.0;
+                return;
+            }
+
+            // ---> LEVER INTERACTION (toggle) <---
+            if (interactTargetId === 205 && uiState === 'PLAYING') {
+                if (typeof window.toggleLever === 'function') {
+                    window.toggleLever(target.hit[0], target.hit[1], target.hit[2]);
+                }
+                swingAnimation = 1.0;
+                return;
+            }
+
             if (currentBuildBlock === 0) return;
             
             // Block placement of tools/items — only allow actual placeable blocks and saplings
             if (currentBuildBlock >= 100) {
                 // These are placeable despite being >= 100
-                const placeableHighIds = [116, 117, 118, 128, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158, 190, 191, 192, 193, 194, 195, 196, 200, 201];
+                const placeableHighIds = [116, 117, 118, 128, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158, 190, 191, 192, 193, 194, 195, 196, 200, 201, 202, 203, 205, 206, 207, 208];
                 if (!placeableHighIds.includes(currentBuildBlock)) return;
             }
 
@@ -1068,6 +1086,19 @@ window.getTargetedMob = function() {
             
             const targetVal = getVoxel(target.hit[0], target.hit[1], target.hit[2]);
             const targetId = targetVal & 0xFF;
+            
+            // Check if placement position is already occupied by a non-air, non-fluid block
+            // (except for special cases like snow stacking, slab doubling, etc.)
+            const existingId = getVoxel(px, py, pz) & 0xFF;
+            if (existingId !== 0 && existingId !== 4 && existingId !== 27) {
+                // Allow slab doubling, snow stacking - these are handled below
+                // But block anything else from being placed here
+                if (currentBuildBlock !== 40 || existingId !== 40) { // snow stacking exception
+                    if (!isSlabBlock(currentBuildBlock) || !isSlabBlock(existingId)) { // slab doubling exception
+                        return;
+                    }
+                }
+            }
             
             if (currentBuildBlock === 40 && targetId === 40) {
                 const curLayers = Math.max(1, Math.min(8, (targetVal >> 8) & 0xF));
@@ -1230,7 +1261,7 @@ window.getTargetedMob = function() {
             }
             
             let placeLevel = 0;
-            if (currentBuildBlock === 17) {
+            if (currentBuildBlock === 17 || currentBuildBlock === 206) {
                 if (target.normal[1] === 1) placeLevel = 0;
                 else if (target.normal[0] === 1) placeLevel = 1;
                 else if (target.normal[0] === -1) placeLevel = 2;
@@ -1386,6 +1417,85 @@ window.getTargetedMob = function() {
                 // Encode: bits 8-9 = dir, bit 10 = open(0), bit 11 = isTop
                 placeLevel = tdDir | (0 << 2) | (isTop << 3);
             }
+            // Wood Button (203) → place on side face of block
+            else if (currentBuildBlock === 203) {
+                if (target.normal[1] !== 0) return; // Side faces only
+                // Check that the block we're attaching to is solid
+                const attachId = getVoxel(target.hit[0], target.hit[1], target.hit[2]) & 0xFF;
+                if (!canSupport(attachId)) return;
+                // Direction: button attaches to the face TOWARD the wall (opposite of normal)
+                // normal [0,0,1] → button at -Z face of air block (dir 2)
+                // normal [1,0,0] → button at -X face of air block (dir 3)
+                // normal [0,0,-1] → button at +Z face of air block (dir 0)
+                // normal [-1,0,0] → button at +X face of air block (dir 1)
+                let btnDir = 0;
+                if (target.normal[2] === 1) btnDir = 2;
+                else if (target.normal[0] === 1) btnDir = 3;
+                else if (target.normal[2] === -1) btnDir = 0;
+                else if (target.normal[0] === -1) btnDir = 1;
+                placeLevel = btnDir;
+            }
+            // Lever (205) → place on side face of block
+            else if (currentBuildBlock === 205) {
+                if (target.normal[1] !== 0) return;
+                const lattachId = getVoxel(target.hit[0], target.hit[1], target.hit[2]) & 0xFF;
+                if (!canSupport(lattachId)) return;
+                let levDir = 0;
+                if (target.normal[2] === 1) levDir = 2;
+                else if (target.normal[0] === 1) levDir = 3;
+                else if (target.normal[2] === -1) levDir = 0;
+                else if (target.normal[0] === -1) levDir = 1;
+                placeLevel = levDir; // off state (bit 10 = 0)
+            }
+            // Redstone Dust (202) → place flat on top of solid block
+            else if (currentBuildBlock === 202) {
+                if (target.normal[1] !== 1) return; // Only on top face
+                const belowId = getVoxel(px, py - 1, pz) & 0xFF;
+                if (!canSupport(belowId)) return;
+                setVoxel(px, py, pz, 202, 0);
+                pendingBlockUpdates.push({x: px, y: py, z: pz});
+                if (typeof window.onRedstoneBlockChanged === 'function') window.onRedstoneBlockChanged(px, py, pz);
+                if (typeof window._soundPlaceBlock === 'function') window._soundPlaceBlock(currentBuildBlock, px, py, pz);
+                if (typeof gameMode !== 'undefined' && gameMode === 'survival' && inventory[activeSlot]) {
+                    inventory[activeSlot].count--;
+                    if (inventory[activeSlot].count <= 0) { inventory[activeSlot].id = 0; inventory[activeSlot].count = 0; }
+                    if (typeof buildUI === 'function') buildUI();
+                    if (typeof selectSlot === 'function') selectSlot(activeSlot);
+                }
+                queueNeighbors(px, py, pz);
+                triggerNeighborUpdates(px, py, pz);
+                swingAnimation = 1.0;
+                return;
+            }
+            // Piston (207/208) → face toward player (opposite of look direction)
+            else if (currentBuildBlock === 207 || currentBuildBlock === 208) {
+                const camDir = new THREE.Vector3(0, 0, -1);
+                camDir.applyQuaternion(camera.quaternion);
+                const ax = Math.abs(camDir.x), ay = Math.abs(camDir.y), az = Math.abs(camDir.z);
+                let pistonDir;
+                if (ay > ax && ay > az) {
+                    pistonDir = camDir.y > 0 ? 0 : 1; // looking up -> piston faces down, looking down -> faces up
+                } else if (ax > az) {
+                    pistonDir = camDir.x > 0 ? 4 : 5; // looking east -> faces west, etc
+                } else {
+                    pistonDir = camDir.z > 0 ? 2 : 3; // looking south -> faces north, etc
+                }
+                setVoxel(px, py, pz, currentBuildBlock, pistonDir, 0, 0);
+                pendingBlockUpdates.push({x: px, y: py, z: pz});
+                // Check if piston should immediately extend (if powered)
+                if (typeof window.onRedstoneBlockChanged === 'function') window.onRedstoneBlockChanged(px, py, pz);
+                if (typeof window._soundPlaceBlock === 'function') window._soundPlaceBlock(currentBuildBlock, px, py, pz);
+                if (typeof gameMode !== 'undefined' && gameMode === 'survival' && inventory[activeSlot]) {
+                    inventory[activeSlot].count--;
+                    if (inventory[activeSlot].count <= 0) { inventory[activeSlot].id = 0; inventory[activeSlot].count = 0; }
+                    if (typeof buildUI === 'function') buildUI();
+                    if (typeof selectSlot === 'function') selectSlot(activeSlot);
+                }
+                queueNeighbors(px, py, pz);
+                triggerNeighborUpdates(px, py, pz);
+                swingAnimation = 1.0;
+                return;
+            }
             
             const margin = 0.05; 
             const pMinX = player.x - PLAYER_WIDTH/2 + margin, pMaxX = player.x + PLAYER_WIDTH/2 - margin;
@@ -1400,7 +1510,7 @@ window.getTargetedMob = function() {
                               (pMinY < bMaxY && pMaxY > bMinY) &&
                               (pMinZ < bMaxZ && pMaxZ > bMinZ);
                               
-            if (!intersect || currentBuildBlock === 17 || currentBuildBlock === 116 || currentBuildBlock === 117 || currentBuildBlock === 118 || currentBuildBlock === 137) {
+            if (!intersect || currentBuildBlock === 17 || currentBuildBlock === 116 || currentBuildBlock === 117 || currentBuildBlock === 118 || currentBuildBlock === 137 || currentBuildBlock === 202 || currentBuildBlock === 203 || currentBuildBlock === 205 || currentBuildBlock === 206) {
                 if (currentBuildBlock === 4) {
                     setVoxel(px, py, pz, 4, 8, 0, 1); 
                     updateWaterQueue.add(getVoxelIndex(px, py, pz));
@@ -1449,6 +1559,11 @@ window.getTargetedMob = function() {
                 queueNeighbors(px, py, pz);
                 checkGravity(px, py, pz); 
                 triggerNeighborUpdates(px, py, pz);
+                
+                // Trigger redstone update when placing redstone torch
+                if (currentBuildBlock === 206 && typeof window.onRedstoneBlockChanged === 'function') {
+                    window.onRedstoneBlockChanged(px, py, pz);
+                }
                 
                 pendingBlockUpdates.push({x: px, y: py, z: pz});
             }

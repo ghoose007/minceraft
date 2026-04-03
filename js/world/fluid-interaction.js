@@ -61,7 +61,7 @@ function checkFluidInteraction(x, y, z) {
     return false;
 }
 
-const MAX_LIGHT_QUEUE = 8000000;
+const MAX_LIGHT_QUEUE = 2000000;
 const sunQueueX = new Int16Array(MAX_LIGHT_QUEUE);
 const sunQueueY = new Int16Array(MAX_LIGHT_QUEUE);
 const sunQueueZ = new Int16Array(MAX_LIGHT_QUEUE);

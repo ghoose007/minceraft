@@ -134,7 +134,7 @@ function toggleOption(key) {
 function updateSliderVal(slider, valId) {
     var el = document.getElementById(valId);
     if (!el) return;
-    if (valId.includes('density') || valId.includes('abundance') || valId.includes('volatility') || valId.includes('foliage') || valId.includes('rate') || valId.includes('openness') || valId.includes('glow') || valId.includes('fire') || valId.includes('soulsand') || valId.includes('lavafalls') || valId.includes('gravel') || valId.includes('quartz') || valId.includes('cavesize') || valId.includes('hostilerate') || valId.includes('biome-height') || valId.includes('biome-var') || valId.includes('biome-tree') || valId.includes('biome-foliage') || valId.includes('ravinefreq') || valId.includes('ravinedepth') || valId.includes('ravinewidth')) {
+    if (valId.includes('density') || valId.includes('abundance') || valId.includes('volatility') || valId.includes('foliage') || valId.includes('rate') || valId.includes('openness') || valId.includes('glow') || valId.includes('fire') || valId.includes('soulsand') || valId.includes('lavafalls') || valId.includes('gravel') || valId.includes('quartz') || valId.includes('cavesize') || valId.includes('hostilerate') || valId.includes('biome-height') || valId.includes('biome-var') || valId.includes('biome-tree') || valId.includes('biome-foliage') || valId.includes('ravinefreq') || valId.includes('ravinedepth') || valId.includes('ravinewidth') || valId.includes('tunnelfreq') || valId.includes('tunnellen') || valId.includes('tunnelradius') || valId.includes('tunnelbranch')) {
         el.textContent = slider.value + '%';
     } else {
         el.textContent = slider.value;
@@ -288,10 +288,17 @@ let GEN_TEMP_OFFSET = 0;
 let GEN_HUMID_OFFSET = 0;
 let GEN_FOLIAGE_DENSITY = 100;
 
-// Cave tuning (NEW)
-let GEN_CAVE_SIZE = 100;
+// Cave tuning
+let GEN_CAVE_SIZE = 120;
 let GEN_CAVE_MIN_Y = 2;
 let GEN_CAVE_LAVA_Y = 6;
+
+// Cave tunnel settings
+let GEN_TUNNEL_FREQUENCY = 200; // how many tunnel worms spawn per chunk region
+let GEN_TUNNEL_LENGTH = 100;    // how long each worm carves
+let GEN_TUNNEL_RADIUS = 120;    // radius multiplier for tunnel cross-section
+let GEN_TUNNEL_MAX_Y = 80;      // highest Y a tunnel can start at
+let GEN_TUNNEL_BRANCH = 70;     // chance of branching (0-100)
 
 // Ravine tuning (NEW)
 let GEN_RAVINE_FREQUENCY = 100;
@@ -380,9 +387,16 @@ async function startWorldCreation() {
     GEN_FOLIAGE_DENSITY = _readSlider('sl-foliage', 100);
 
     // Cave tuning
-    GEN_CAVE_SIZE = _readSlider('sl-cavesize', 100);
+    GEN_CAVE_SIZE = _readSlider('sl-cavesize', 120);
     GEN_CAVE_MIN_Y = _readSlider('sl-caveminy', 2);
     GEN_CAVE_LAVA_Y = _readSlider('sl-cavelavay', 6);
+
+    // Cave tunnel tuning
+    GEN_TUNNEL_FREQUENCY = _readSlider('sl-tunnelfreq', 200);
+    GEN_TUNNEL_LENGTH = _readSlider('sl-tunnellen', 100);
+    GEN_TUNNEL_RADIUS = _readSlider('sl-tunnelradius', 120);
+    GEN_TUNNEL_MAX_Y = _readSlider('sl-tunnelmaxy', 80);
+    GEN_TUNNEL_BRANCH = _readSlider('sl-tunnelbranch', 70);
 
     // Ravine tuning
     GEN_RAVINE_FREQUENCY = _readSlider('sl-ravinefreq', 100);

@@ -45,7 +45,7 @@ const BLOCK_DATA = {
     43: { name: 'Birch Leaves', atlasIdx: 46, hardness: 0.2 }, 
     44: { name: 'Birch Planks', atlasIdx: 48, hardness: 2.0 },
     48: { name: 'Mossy Cobblestone', atlasIdx: 81, hardness: 2.0 }, 
-    49: { name: 'Redstone Ore', atlasIdx: 49, hardness: 3.0 },
+    49: { name: 'Redstone Ore', atlasIdx: 49, hardness: 3.0, dropId: 202 },
     50: { name: 'Lapis Lazuli Ore', atlasIdx: 50, hardness: 3.0, dropId: 199 },
     51: { name: 'Pumpkin', atlasIdx: { top: 51, bottom: 51, side: 52 }, hardness: 1.0 },
     52: { name: 'Sugarcane', atlasIdx: 53, hardness: 0.0 },
@@ -115,7 +115,13 @@ const BLOCK_DATA = {
     157: { name: 'Smooth Stone Slab', atlasIdx: { top: 143, bottom: 143, side: 144 }, hardness: 1.5, type: 'slab', parentTex: 143 },
     158: { name: 'Iron Bars', atlasIdx: 145, hardness: 5.0, dropId: 158 },
     200: { name: 'Bookshelf', atlasIdx: { top: 32, bottom: 32, side: 154 }, hardness: 1.5 },
-    201: { name: 'Enchanting Table', atlasIdx: { top: 158, bottom: 156, side: 157 }, hardness: 5.0 }
+    201: { name: 'Enchanting Table', atlasIdx: { top: 158, bottom: 156, side: 157 }, hardness: 5.0 },
+    202: { name: 'Redstone Dust', atlasIdx: 159, hardness: 0.0, dropId: 202 },
+    203: { name: 'Wood Button', atlasIdx: 32, hardness: 0.5, dropId: 203 },
+    205: { name: 'Lever', atlasIdx: 162, hardness: 0.5, dropId: 205 },
+    206: { name: 'Redstone Torch', atlasIdx: 163, hardness: 0.0, dropId: 206, lightLevel: 7 },
+    207: { name: 'Piston', atlasIdx: { top: 168, bottom: 165, side: 167 }, hardness: 1.5, dropId: 207 },
+    208: { name: 'Sticky Piston', atlasIdx: { top: 169, bottom: 165, side: 167 }, hardness: 1.5, dropId: 208 }
 };
 
 const blockRequirements = {

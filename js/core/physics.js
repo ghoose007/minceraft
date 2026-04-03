@@ -1,6 +1,7 @@
 // --- 4. PHYSICS & COLLISION ---
+const _rayDir = new THREE.Vector3(); // Reusable — avoid allocation per frame
 function raycastVoxel() {
-    const dir = new THREE.Vector3();
+    const dir = _rayDir;
     
     let ox, oy, oz;
     if (typeof cameraMode !== 'undefined' && cameraMode !== 0) {
@@ -121,6 +122,18 @@ function raycastVoxel() {
                             hit = true; break;
                         }
                     }
+                    // Check piston head in next block
+                    if (!hit && (id === 207 || id === 208) && typeof getPistonHeadCollision === 'function') {
+                        const phc = getPistonHeadCollision(id, val, x, y, z);
+                        if (phc) {
+                            const plx = (ox + dir.x * t) - phc.bx;
+                            const ply = (oy + dir.y * t) - phc.by;
+                            const plz = (oz + dir.z * t) - phc.bz;
+                            if (plx >= phc.bounds.minX && plx <= phc.bounds.maxX && ply >= phc.bounds.minY && ply <= phc.bounds.maxY && plz >= phc.bounds.minZ && plz <= phc.bounds.maxZ) {
+                                hit = true; break;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -173,7 +186,7 @@ function sweepAxis(axis, dist, pos, height) {
                     const val = getVoxel(bx, by, bz);
                     const id = val & 0xFF;
                     // Exclude fluids, torches, roses, crops, vines, and tall grass from physical body collision
-                    if (id !== 0 && !isFluidBlock(id) && id !== 17 && id !== 23 && id !== 64 && id !== 66 && id !== 90 && !isCrossBlock(id)) {
+                    if (id !== 0 && !isFluidBlock(id) && id !== 17 && id !== 206 && id !== 23 && id !== 64 && id !== 66 && id !== 90 && !isCrossBlock(id)) {
                         const b = getBlockBounds(id, val, bx, by, bz);
                         const blockAABB = {
                             minX: bx + b.minX, maxX: bx + b.maxX,
@@ -197,6 +210,17 @@ function sweepAxis(axis, dist, pos, height) {
                                     collided = true;
                                     break;
                                 }
+                            }
+                        }
+                        // Extended piston: head+arm occupy next block space
+                        if (!collided && (id === 207 || id === 208) && ((val >> 11) & 0x1)) {
+                            const pdir = (val >> 8) & 0x7;
+                            const pdvs = [[0,-1,0],[0,1,0],[0,0,-1],[0,0,1],[-1,0,0],[1,0,0]];
+                            const pdv = pdvs[pdir];
+                            const hbx = bx+pdv[0], hby = by+pdv[1], hbz = bz+pdv[2];
+                            const headAABB = { minX:hbx, maxX:hbx+1, minY:hby, maxY:hby+1, minZ:hbz, maxZ:hbz+1 };
+                            if (checkAABB(playerAABB, headAABB)) {
+                                collided = true; break;
                             }
                         }
                     }
@@ -230,10 +254,10 @@ function checkFluidLevel(px, py, pz, height) {
         for (let bz = minZ; bz <= maxZ; bz++) {
             for (let by = Math.floor(py); by <= Math.floor(eyeY); by++) {
                 const id = getVoxel(bx, by, bz) & 0xFF;
-                if (id === 4) {
+                if (id === BLOCK_IDS.WATER) {
                     inWater = true;
                     waterLevel = Math.max(waterLevel, by + 0.8); 
-                } else if (id === 27) {
+                } else if (id === BLOCK_IDS.LAVA) {
                     inLava = true;
                 }
             }
@@ -267,7 +291,7 @@ function movePlayer(dt) {
     const playerCenterZ = Math.floor(player.z);
     let onVine = false;
     for (let checkY = playerFeetY; checkY <= playerBodyY; checkY++) {
-        if ((getVoxel(playerCenterX, checkY, playerCenterZ) & 0xFF) === 66) { onVine = true; break; }
+        if ((getVoxel(playerCenterX, checkY, playerCenterZ) & 0xFF) === BLOCK_IDS.VINE) { onVine = true; break; }
     }
 
     // Track highest point for fall damage
@@ -291,7 +315,7 @@ function movePlayer(dt) {
     // Soul Sand slowdown: check block under player's feet
     if (!player.flying) {
         const feetBlockId = getVoxel(Math.floor(player.x), Math.floor(player.y - 0.1), Math.floor(player.z)) & 0xFF;
-        if (feetBlockId === 92) {
+        if (feetBlockId === BLOCK_IDS.SOUL_SAND) {
             speed *= 0.4; // MC soul sand is roughly 60% slower
         }
     }
@@ -303,8 +327,8 @@ function movePlayer(dt) {
     let _iceSlip = 0;
     if (!player.flying && player.onGround) {
         const iceCheckId = getVoxel(Math.floor(player.x), Math.floor(player.y - 0.1), Math.floor(player.z)) & 0xFF;
-        if (iceCheckId === 95) _iceSlip = 0.98;        // Ice
-        else if (iceCheckId === 138) _iceSlip = 0.989;  // Packed Ice
+        if (iceCheckId === BLOCK_IDS.ICE) _iceSlip = 0.98;        // Ice
+        else if (iceCheckId === BLOCK_IDS.PACKED_ICE) _iceSlip = 0.989;  // Packed Ice
     }
 
     const yaw = player.yaw;
@@ -553,7 +577,7 @@ function movePlayer(dt) {
         for (const cpx of checkXs) {
             for (const cpz of checkZs) {
                 for (let checkY = Math.floor(player.y); checkY <= Math.floor(player.y + player.height); checkY++) {
-                    if ((getVoxel(cpx, checkY, cpz) & 0xFF) === 90) {
+                    if ((getVoxel(cpx, checkY, cpz) & 0xFF) === BLOCK_IDS.NETHER_PORTAL) {
                         inPortal = true;
                         break outer;
                     }

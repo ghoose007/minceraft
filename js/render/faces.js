@@ -192,7 +192,7 @@ function pushFaceUnlit(x, y, z, face, positions, normals, uvs, colors, biomeTint
     const c0 = face.corners[0], c1 = face.corners[1], c2 = face.corners[2], c3 = face.corners[3];
     const isPlant = blockId === 16 || blockId === 23 || blockId === 24 || blockId === 26 || blockId === 42 || blockId === 116 || blockId === 117 || blockId === 118 || blockId === 137;
     const isCactus = blockId === 20;
-    const isTorch = blockId === 17; 
+    const isTorch = blockId === 17 || blockId === 206; 
 
     const buildQuad = (tIndex, bTint, faceTint) => {
         let uScale = 1, vScale = 1, uOffset = 0, vOffset = 0;
@@ -214,7 +214,7 @@ function pushFaceUnlit(x, y, z, face, positions, normals, uvs, colors, biomeTint
                 u = 0.4375 + u * 0.125;
                 if (face.dir[1] === 1) v = 0.5 + v * 0.125;         
                 else if (face.dir[1] === -1) v = v * 0.125;         
-                else v = v * 0.625;                                 
+                else v = v * 0.625;
             } else {
                 u = u === 0 ? 0.01 : (u === 1 ? 0.99 : u);
                 v = v === 0 ? 0.01 : (v === 1 ? 0.99 : v);
@@ -394,7 +394,8 @@ function pushFace(x, y, z, face, positions, normals, uvs, colors, biomeTints, bl
         if (isCrossBlock(blockId) || blockId === 64 || blockId === 17 || blockId === 27) {
             sunL = getSunLight(x, y, z);
             torchL = getTorchLight(x, y, z);
-            if (blockId === 17 || blockId === 27) torchL = 14; 
+            if (blockId === 17 || blockId === 27) torchL = 14;
+            if (blockId === 206) torchL = 7;
         } else if (!settingSmoothLighting) {
             // Fast Lighting: If recessed, sample our own block's light (0 offset) instead of the neighbor
             const nx = x + (isRecessed ? 0 : face.dir[0]);
@@ -434,7 +435,7 @@ function pushFace(x, y, z, face, positions, normals, uvs, colors, biomeTints, bl
     
     const isPlant = blockId === 16 || blockId === 23 || blockId === 24 || blockId === 116 || blockId === 117 || blockId === 118;
     const isCactus = blockId === 20;
-    const isTorch = blockId === 17; 
+    const isTorch = blockId === 17 || blockId === 206; 
 
     const buildQuad = (tIndex, bColor, faceOffsetDist) => {
         let uScale = 1, vScale = 1, uOffset = 0, vOffset = 0;
@@ -531,7 +532,7 @@ function pushFace(x, y, z, face, positions, normals, uvs, colors, biomeTints, bl
                 u = 0.4375 + u * 0.125;
                 if (face.dir[1] === 1) v = 0.5 + v * 0.125;         
                 else if (face.dir[1] === -1) v = v * 0.125;         
-                else v = v * 0.625;                                 
+                else v = v * 0.625;
             } else {
                 u = u === 0 ? eps : (u === 1 ? 1 - eps : u);
             }

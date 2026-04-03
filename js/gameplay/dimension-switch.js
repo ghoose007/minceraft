@@ -168,7 +168,11 @@ window.switchDimension = async function() {
     const loadingScreen = document.getElementById('loading-screen');
     loadingScreen.classList.remove('hidden');
     loadingScreen.style.zoom = '1';
-    document.getElementById('loading-world-name').textContent = currentDimension === 'overworld' ? 'Entering the Nether...' : 'Returning to Overworld...';
+    var dimText = currentDimension === 'overworld' ? 'Entering the Nether...' : 'Returning to Overworld...';
+    document.getElementById('loading-world-name').textContent = dimText;
+    if (window.mcFont && window.mcFont.isReady()) {
+        window.mcFont.updateEl(document.getElementById('loading-world-name'), dimText);
+    }
     if (typeof drawDirtBg === 'function') drawDirtBg('dirt-bg-3');
     document.getElementById('pause-menu').classList.add('hidden');
     

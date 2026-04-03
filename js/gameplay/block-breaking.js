@@ -70,6 +70,15 @@ window.spawnBlockDrops = function(targetId, x, y, z, val) {
         }
     }
 
+    // Redstone Ore: drops 4-5 redstone dust (MC-accurate)
+    if (targetId === 49) {
+        dropId = 0;
+        const count = 4 + Math.floor(Math.random() * 2); // 4-5
+        for (let i = 0; i < count; i++) {
+            window.spawnDroppedItem(x + 0.5, y + 0.5, z + 0.5, 202);
+        }
+    }
+
     if (dropId !== 0) {
         window.spawnDroppedItem(x + 0.5, y + 0.5, z + 0.5, dropId);
     }
@@ -127,6 +136,59 @@ window.breakBlock = function(x, y, z, canHarvest = true) {
     checkGravity(x, y + 1, z); 
     pendingBlockUpdates.push({x, y, z});
     triggerNeighborUpdates(x, y, z);
+    
+    // Redstone update when dust, button, lever, or piston component is broken
+    if ((targetId === 202 || targetId === 203 || targetId === 205 || targetId === 206 || targetId === 207 || targetId === 208) && typeof window.onRedstoneBlockChanged === 'function') {
+        window.onRedstoneBlockChanged(x, y, z);
+    }
+
+    
+    // Check neighbors for attached blocks that lost support (levers, buttons, redstone dust)
+    // and break them too
+    var _needsRedstoneUpdate = false;
+    var _nbrs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+    for (var ni = 0; ni < _nbrs.length; ni++) {
+        var nx = x + _nbrs[ni][0], ny = y + _nbrs[ni][1], nz = z + _nbrs[ni][2];
+        var nval = getVoxel(nx, ny, nz);
+        var nid = nval & 0xFF;
+        if (nid === 202 || nid === 203 || nid === 205 || nid === 206) {
+            if (typeof checkSupport === 'function' && !checkSupport(nx, ny, nz)) {
+                if (typeof spawnParticles === 'function') spawnParticles(nx, ny, nz, nid);
+                setVoxel(nx, ny, nz, 0);
+                pendingBlockUpdates.push({x: nx, y: ny, z: nz});
+                queueNeighbors(nx, ny, nz);
+                if (typeof window.spawnDroppedItem === 'function') {
+                    var dropId2 = (BLOCK_DATA[nid] && BLOCK_DATA[nid].dropId) ? BLOCK_DATA[nid].dropId : nid;
+                    window.spawnDroppedItem(nx + 0.5, ny + 0.5, nz + 0.5, dropId2);
+                }
+                _needsRedstoneUpdate = true;
+            } else if (nid === 202) {
+                // Dust is still supported but an adjacent block changed — recheck power
+                _needsRedstoneUpdate = true;
+            }
+        }
+    }
+    // Trigger redstone update AFTER all attached blocks have been removed
+    if (_needsRedstoneUpdate && typeof window.onRedstoneBlockChanged === 'function') {
+        window.onRedstoneBlockChanged(x, y, z);
+        // Also force update from each neighbor position to catch all connected dust
+        for (var ui = 0; ui < _nbrs.length; ui++) {
+            window.onRedstoneBlockChanged(x + _nbrs[ui][0], y + _nbrs[ui][1], z + _nbrs[ui][2]);
+        }
+    }
+    
+    // Also: if ANY broken block was adjacent to redstone dust, the broken block
+    // could have been a strongly-powered block — trigger update
+    if (!_needsRedstoneUpdate && typeof window.onRedstoneBlockChanged === 'function') {
+        for (var ri = 0; ri < _nbrs.length; ri++) {
+            var rnid = getVoxel(x + _nbrs[ri][0], y + _nbrs[ri][1], z + _nbrs[ri][2]) & 0xFF;
+            if (rnid === 202) {
+                window.onRedstoneBlockChanged(x, y, z);
+                break;
+            }
+        }
+    }
+    
     swingAnimation = 1.0;
 
     if (canHarvest) {

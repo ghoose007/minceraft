@@ -441,6 +441,12 @@ function updateXPBarUI() {
     if (levelText) {
         if (playerLevel > 0) {
             levelText.textContent = playerLevel.toString();
+            // Also render with mcFont if available
+            if (window.mcFont && window.mcFont.isReady()) {
+                levelText.innerHTML = '';
+                var c = window.mcFont.makeCanvas(playerLevel.toString(), 2, {color:'#80FF32', shadowColor:'#2d3d12'});
+                if (c) { c.style.margin = '0 auto'; levelText.appendChild(c); }
+            }
         } else {
             levelText.textContent = '';
         }

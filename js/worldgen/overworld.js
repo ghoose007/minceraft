@@ -273,57 +273,192 @@ function _generateNormalChunk(cx, cz) {
         }
     }
     
-    // PHASE 3: Caves
+    // PHASE 3: Cave Tunnels (Worm Carver)
+    // Each chunk region has a chance to spawn cave systems. Worms start a few blocks
+    // below surface, then descend. They carve only within the current chunk but the
+    // worm path is simulated across chunk boundaries for seamless caves.
+    // Key design: worms never call getHighestBlock for cross-chunk coordinates.
+    // Instead, the entry Y is used as the surface reference, and worms only carve
+    // blocks that are solid stone-type (so they naturally stop at air/surface).
     if (GEN_CAVES) {
-        const caveSizeMult = (typeof GEN_CAVE_SIZE !== 'undefined' ? GEN_CAVE_SIZE : 100) / 100;
         const caveMinY = (typeof GEN_CAVE_MIN_Y !== 'undefined') ? GEN_CAVE_MIN_Y : 2;
         const caveLavaY = (typeof GEN_CAVE_LAVA_Y !== 'undefined') ? GEN_CAVE_LAVA_Y : 6;
-        for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-            for (let lz = 0; lz < CHUNK_SIZE; lz++) {
-                const x = startX + lx;
-                const z = startZ + lz;
-                const surfaceY = getHighestBlock(x, z);
-                for (let y = caveMinY; y <= surfaceY; y++) {
-                    const blockId = getVoxel(x, y, z) & 0xFF;
-                    if (blockId !== 3 && blockId !== 2 && blockId !== 1 && blockId !== 15 && blockId !== 19 && blockId !== 5 && blockId !== 39) continue;
-                    
-                    // --- DYNAMIC CAVE WIDENING (NARROWED) ---
-                    let scaleY = 30;
-                    if (y < 40) scaleY += (40 - y) * 0.5; 
-                    
-                    // Apply cave size multiplier — smaller value = tighter tunnels
-                    const caveScale = 40 / caveSizeMult;
-                    const n1 = _wgCavePrimary.fbm3D(x / caveScale, y / scaleY, z / caveScale, 2, 0.5, 2.0);
-                    
-                    let threshold = 0.04; 
-                    
-                    // Narrowed the massive caverns by cutting the multiplier in half
-                    if (y < 55) {
-                        const depthFactor = Math.max(0, Math.min(1, (55 - y) / 50)); 
-                        threshold += (depthFactor * 0.08); // Dropped from 0.15 to 0.08
-                    }
-                    
-                    threshold *= _wgCaveDensityMult;
-                    
-                    const distToSurface = surfaceY - y;
-                    if (distToSurface < 15) threshold *= (distToSurface / 15);
-                    
-                    if (Math.abs(n1) < threshold) {
-                        if (y <= GEN_SEA_LEVEL + 2) {
-                            let touchesWater = false;
-                            for (const [dx, dy, dz] of [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]) {
-                                if ((getVoxel(x+dx, y+dy, z+dz) & 0xFF) === 4) { touchesWater = true; break; }
+        const tunnelFreqMult = (typeof GEN_TUNNEL_FREQUENCY !== 'undefined' ? GEN_TUNNEL_FREQUENCY : 100) / 100;
+        const tunnelLenMult = (typeof GEN_TUNNEL_LENGTH !== 'undefined' ? GEN_TUNNEL_LENGTH : 100) / 100;
+        const tunnelRadMult = (typeof GEN_TUNNEL_RADIUS !== 'undefined' ? GEN_TUNNEL_RADIUS : 100) / 100;
+        const tunnelMaxY = (typeof GEN_TUNNEL_MAX_Y !== 'undefined') ? GEN_TUNNEL_MAX_Y : 80;
+        const tunnelBranchChance = (typeof GEN_TUNNEL_BRANCH !== 'undefined' ? GEN_TUNNEL_BRANCH : 50) / 100;
+        const caveSizeMult = (typeof GEN_CAVE_SIZE !== 'undefined' ? GEN_CAVE_SIZE : 100) / 100;
+        
+        // The chunk boundaries for carving — only carve blocks inside this chunk
+        const chunkMinX = startX;
+        const chunkMaxX = startX + CHUNK_SIZE - 1;
+        const chunkMinZ = startZ;
+        const chunkMaxZ = startZ + CHUNK_SIZE - 1;
+        
+        // Carve a worm tunnel. The worm path is fully simulated (even outside this chunk)
+        // but only blocks within [chunkMinX..chunkMaxX, chunkMinZ..chunkMaxZ] are carved.
+        function _carveWorm(rng, startWX, startWY, startWZ, maxSteps, baseRadius, startYaw, startPitch, depth) {
+            let wx = startWX, wy = startWY, wz = startWZ;
+            let yaw = startYaw, pitch = startPitch;
+            const rad = baseRadius * tunnelRadMult;
+            
+            for (let step = 0; step < maxSteps; step++) {
+                const t = step / maxSteps;
+                
+                // Taper smoothly at both ends
+                let taper = 1.0;
+                if (t < 0.08) taper = t / 0.08;
+                else if (t > 0.9) taper = (1.0 - t) / 0.1;
+                taper = Math.max(0, Math.min(1, taper));
+                
+                // Room wobble: periodic widening for natural variation
+                const roomWobble = 1.0 + Math.sin(step * 0.12) * 0.4 * caveSizeMult;
+                const r = Math.max(0.6, rad * taper * roomWobble);
+                
+                // Wobble direction
+                yaw += (rng() - 0.5) * 0.5;
+                pitch += (rng() - 0.5) * 0.35;
+                pitch = Math.max(-1.2, Math.min(0.6, pitch));
+                
+                // Advance position
+                wx += Math.cos(yaw) * Math.cos(pitch);
+                wy += Math.sin(pitch);
+                wz += Math.sin(yaw) * Math.cos(pitch);
+                
+                // Clamp Y
+                if (wy < caveMinY + 1) { pitch = Math.abs(pitch) * 0.3; wy = caveMinY + 1; }
+                if (wy > tunnelMaxY) { pitch = -Math.abs(pitch) * 0.5; wy = tunnelMaxY; }
+                
+                // Branch check — always consume RNG for determinism even if we skip carving
+                const branchRoll = rng();
+                const branchShouldSpawn = (depth < 2 && step > 8 && step < maxSteps - 8 && branchRoll < tunnelBranchChance * 0.025);
+                
+                // Quick bounding-box check: is any part of this sphere near our chunk?
+                const cix = Math.floor(wx);
+                const ciy = Math.floor(wy);
+                const ciz = Math.floor(wz);
+                const ri = Math.ceil(r) + 1;
+                
+                const sphereInChunk = (cix + ri >= chunkMinX && cix - ri <= chunkMaxX &&
+                                       ciz + ri >= chunkMinZ && ciz - ri <= chunkMaxZ);
+                
+                if (sphereInChunk) {
+                    // Carve sphere — only blocks inside this chunk
+                    const rSq = r * r;
+                    for (let dx = -ri; dx <= ri; dx++) {
+                        for (let dy = -ri; dy <= ri; dy++) {
+                            for (let dz = -ri; dz <= ri; dz++) {
+                                const distSq = dx * dx + dy * dy * 1.4 + dz * dz;
+                                if (distSq > rSq) continue;
+                                
+                                const bx = cix + dx;
+                                const by = ciy + dy;
+                                const bz = ciz + dz;
+                                
+                                if (bx < chunkMinX || bx > chunkMaxX || bz < chunkMinZ || bz > chunkMaxZ) continue;
+                                if (by < caveMinY || by >= WORLD_HEIGHT - 1) continue;
+                                
+                                const blockId = getVoxel(bx, by, bz) & 0xFF;
+                                // Only carve stone-type blocks (and dirt/grass for surface exposure)
+                                if (blockId !== 3 && blockId !== 2 && blockId !== 1 && blockId !== 15 &&
+                                    blockId !== 19 && blockId !== 5 && blockId !== 39) continue;
+                                
+                                // Don't carve the very top 1 block to preserve the grass layer,
+                                // but allow carving everything below — hillsides/slopes will
+                                // naturally expose cave entrances where terrain is uneven.
+                                const surfY = getHighestBlock(bx, bz);
+                                if (by >= surfY) continue;
+                                
+                                // Don't carve near ocean/river water
+                                if (by <= GEN_SEA_LEVEL + 2) {
+                                    let touchesWater = false;
+                                    for (const [nx, ny, nz] of [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]) {
+                                        if ((getVoxel(bx+nx, by+ny, bz+nz) & 0xFF) === 4) { touchesWater = true; break; }
+                                    }
+                                    if (touchesWater) continue;
+                                }
+                                
+                                if (by <= caveLavaY) {
+                                    setVoxel(bx, by, bz, 27, 4, 0, 1);
+                                } else {
+                                    setVoxel(bx, by, bz, 0);
+                                }
                             }
-                            if (touchesWater) continue;
-                        }
-                        
-                        // --- NEW: ORGANIC LAVA POOLING ---
-                        if (y <= caveLavaY) {
-                            setVoxel(x, y, z, 27, 4, 0, 1); // Place Lava Source
-                        } else {
-                            setVoxel(x, y, z, 0); // Place Air
                         }
                     }
+                }
+                
+                // Spawn branch (after carving so RNG state is consistent)
+                if (branchShouldSpawn) {
+                    const branchLen = Math.floor(maxSteps * (0.25 + rng() * 0.35));
+                    const branchYaw = yaw + (rng() - 0.5) * 2.8;
+                    const branchPitch = pitch + (rng() - 0.5) * 0.6;
+                    const branchRad = rad * (0.5 + rng() * 0.4) / tunnelRadMult;
+                    _carveWorm(rng, wx, wy, wz, branchLen, branchRad, branchYaw, branchPitch, depth + 1);
+                }
+            }
+        }
+        
+        // For each nearby chunk region, deterministically decide if it spawns caves,
+        // then simulate the full worm paths and carve only within our chunk.
+        const wormReach = 8;
+        for (let rcx = cx - wormReach; rcx <= cx + wormReach; rcx++) {
+            for (let rcz = cz - wormReach; rcz <= cz + wormReach; rcz++) {
+                const rng = _chunkSeededRandom(rcx * 5 + 4219, rcz * 5 + 8731);
+                
+                // ~1 in 6 chunks spawns a cave system
+                if (rng() > (1.0 / 6.0) * tunnelFreqMult) continue;
+                
+                // 1-3 worms per system
+                const numWorms = 1 + Math.floor(rng() * 2.5);
+                
+                for (let w = 0; w < numWorms; w++) {
+                    // Pick origin X/Z in the source chunk
+                    const ox = rcx * CHUNK_SIZE - halfW + Math.floor(rng() * CHUNK_SIZE);
+                    const oz = rcz * CHUNK_SIZE - halfD + Math.floor(rng() * CHUNK_SIZE);
+                    
+                    // Estimate surface Y: use elevation noise (same noise as terrain gen)
+                    // This works for any coordinate without needing the chunk to be generated.
+                    const bScale = _wgBiomeScale || 300;
+                    const elev = _wgPerlinElevation.fbm(ox / (bScale * 1.2), oz / (bScale * 1.2), 4);
+                    const approxSurfY = Math.floor(GEN_SEA_LEVEL + elev * 30 * _wgTerrainMult);
+                    
+                    if (approxSurfY < 15) {
+                        // Consume RNG to stay deterministic
+                        rng(); rng(); rng(); rng(); rng();
+                        continue;
+                    }
+                    
+                    // Entry point: mix of shallow and deep starts.
+                    // Some worms start just 1-3 blocks below surface (surface-breaking caves)
+                    // Others start deeper (traditional underground caves)
+                    const depthRoll = rng();
+                    let oy;
+                    if (depthRoll < 0.35) {
+                        // Shallow start — these are the ones that break the surface on slopes
+                        oy = Math.max(caveMinY + 5, approxSurfY - 1 - Math.floor(rng() * 4));
+                    } else {
+                        // Deep start — traditional underground caves
+                        oy = Math.max(caveMinY + 5, approxSurfY - 5 - Math.floor(rng() * 15));
+                    }
+                    
+                    const wormLength = Math.floor((50 + rng() * 100) * tunnelLenMult);
+                    const wormRadius = 1.2 + rng() * 1.8;
+                    const wormYaw = rng() * Math.PI * 2;
+                    // Mix of downward, horizontal, and slightly upward initial pitches
+                    // This allows some tunnels to carve along the surface or rise into hillsides
+                    const pitchRoll = rng();
+                    let wormPitch;
+                    if (pitchRoll < 0.3) {
+                        wormPitch = -0.05 + rng() * 0.15;   // Nearly horizontal / slightly up
+                    } else if (pitchRoll < 0.6) {
+                        wormPitch = -(0.1 + rng() * 0.3);   // Gentle descent
+                    } else {
+                        wormPitch = -(0.3 + rng() * 0.6);   // Steep descent (original)
+                    }
+                    
+                    _carveWorm(rng, ox, oy, oz, wormLength, wormRadius, wormYaw, wormPitch, 0);
                 }
             }
         }

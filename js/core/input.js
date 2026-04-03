@@ -262,7 +262,7 @@
             // Block placement of tools/items — only allow actual placeable blocks and saplings
             if (currentBuildBlock >= 100) {
                 // These are placeable despite being >= 100
-                const placeableHighIds = [116, 117, 118, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158, 200, 201];
+                const placeableHighIds = [116, 117, 118, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158, 200, 201, 202, 203];
                 if (!placeableHighIds.includes(currentBuildBlock)) return;
             }
 
@@ -273,6 +273,15 @@
             const targetVal = getVoxel(target.hit[0], target.hit[1], target.hit[2]);
             const targetId = targetVal & 0xFF;
             
+            // --- BUTTON INTERACTION ---
+            if (targetId === 203) {
+                if (typeof window.pressButton === 'function') {
+                    window.pressButton(target.hit[0], target.hit[1], target.hit[2]);
+                }
+                swingAnimation = 1.0;
+                return;
+            }
+
             if (currentBuildBlock === 40 && targetId === 40) {
                 const curLayers = Math.max(1, Math.min(8, (targetVal >> 8) & 0xF));
                 if (curLayers < 8) {
@@ -470,6 +479,44 @@
                     placeLevel = 1;
                 }
             }
+            // Wood Button (203) → place on side face of block
+            else if (currentBuildBlock === 203) {
+                // Only place on side faces (not top/bottom)
+                if (target.normal[1] !== 0) return; // Can't place on top or bottom
+                // Direction: which face the button attaches to
+                // normal points away from the block the button goes on
+                // dir 0 = button on +Z face of block (normal is [0,0,1])
+                // dir 1 = button on +X face (normal [1,0,0])
+                // dir 2 = button on -Z face (normal [0,0,-1])
+                // dir 3 = button on -X face (normal [-1,0,0])
+                let btnDir = 0;
+                if (target.normal[2] === 1) btnDir = 0;
+                else if (target.normal[0] === 1) btnDir = 1;
+                else if (target.normal[2] === -1) btnDir = 2;
+                else if (target.normal[0] === -1) btnDir = 3;
+                placeLevel = btnDir;
+            }
+            // Redstone Dust (202) → place flat on top of solid block
+            else if (currentBuildBlock === 202) {
+                // Must be placed on top of a solid block
+                if (target.normal[1] !== 1) return; // Only on top face
+                const belowId = getVoxel(px, py - 1, pz) & 0xFF;
+                if (belowId === 0 || isFluidBlock(belowId) || isCrossBlock(belowId)) return;
+                setVoxel(px, py, pz, 202, 0); // Place with power 0
+                pendingBlockUpdates.push({x: px, y: py, z: pz});
+                if (typeof window.onRedstoneBlockChanged === 'function') window.onRedstoneBlockChanged(px, py, pz);
+                if (typeof window._soundPlaceBlock === 'function') window._soundPlaceBlock(202, px, py, pz);
+                if (typeof gameMode !== 'undefined' && gameMode === 'survival' && inventory[activeSlot]) {
+                    inventory[activeSlot].count--;
+                    if (inventory[activeSlot].count <= 0) { inventory[activeSlot].id = 0; inventory[activeSlot].count = 0; }
+                    if (typeof buildUI === 'function') buildUI();
+                    if (typeof selectSlot === 'function') selectSlot(activeSlot);
+                }
+                queueNeighbors(px, py, pz);
+                triggerNeighborUpdates(px, py, pz);
+                swingAnimation = 1.0;
+                return;
+            }
             // Door item (151) → place door block (149) as 2-block-tall structure
             else if (currentBuildBlock === 151) {
                 // Check space for both bottom and top
@@ -596,6 +643,11 @@
                 queueNeighbors(px, py, pz);
                 checkGravity(px, py, pz); 
                 triggerNeighborUpdates(px, py, pz);
+                
+                // Redstone update when placing button near redstone
+                if (currentBuildBlock === 203 && typeof window.onRedstoneBlockChanged === 'function') {
+                    window.onRedstoneBlockChanged(px, py, pz);
+                }
                 
                 pendingBlockUpdates.push({x: px, y: py, z: pz});
             }

@@ -78,6 +78,7 @@ function clearChunkStorage() {
 
 // --- RENDERING STATE ---
 let settingGraphicsFancy = true;
+let settingGraphicsFabulous = false;  // Fabulous! shader-quality graphics
 let settingSmoothLighting = true;
 let settingViewBobbing = true;
 let currentGUIScaleIndex = 3;

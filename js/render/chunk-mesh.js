@@ -2,18 +2,54 @@
 // CHUNK MESH BUILDER
 // ==========================================
 
+// --- Persistent reusable arrays for buildChunkMesh (avoids ~32 array allocations per chunk rebuild) ---
+const _cm_firePos = [], _cm_fireNrm = [], _cm_fireUv = [], _cm_fireCol = [], _cm_fireBt = [];
+const _cm_portalPos = [], _cm_portalNrm = [], _cm_portalUv = [], _cm_portalCol = [], _cm_portalBt = [];
+const _cm_solidPos = [], _cm_solidNrm = [], _cm_solidUv = [], _cm_solidCol = [], _cm_solidBt = [];
+const _cm_glassPos = [], _cm_glassNrm = [], _cm_glassUv = [], _cm_glassCol = [], _cm_glassBt = [];
+const _cm_waterPos = [], _cm_waterNrm = [], _cm_waterUv = [], _cm_waterCol = [], _cm_waterBt = [], _cm_waterFt = [], _cm_waterFd = [];
+const _cm_lavaPos = [], _cm_lavaNrm = [], _cm_lavaUv = [], _cm_lavaCol = [], _cm_lavaFt = [], _cm_lavaFd = [];
+
 function buildChunkMesh(cx, cz) {
     // Clear per-chunk biome tint cache for fresh data
     _biomeTintCache.clear();
     _biomeFoliageTintCache.clear();
     _biomeWaterTintCache.clear();
 
-    const firePositions = [], fireNormals = [], fireUvs = [], fireColors = [], fireBiomeTints = [];
-    const portalPositions = [], portalNormals = [], portalUvs = [], portalColors = [], portalBiomeTints = [];
-    const solidPositions = [], solidNormals = [], solidUvs = [], solidColors = [], solidBiomeTints = [];
-    const glassPositions = [], glassNormals = [], glassUvs = [], glassColors = [], glassBiomeTints = [];
-    const waterPositions = [], waterNormals = [], waterUvs = [], waterColors = [], waterBiomeTints = [], waterFluidTypes = [], waterFlowDirs = [];
-    const lavaPositions = [], lavaNormals = [], lavaUvs = [], lavaColors = [], lavaFluidTypes = [], lavaFlowDirs = [];
+    // Reuse arrays by clearing length (avoids GC from allocating ~30 arrays per rebuild)
+    const firePositions = _cm_firePos; firePositions.length = 0;
+    const fireNormals = _cm_fireNrm; fireNormals.length = 0;
+    const fireUvs = _cm_fireUv; fireUvs.length = 0;
+    const fireColors = _cm_fireCol; fireColors.length = 0;
+    const fireBiomeTints = _cm_fireBt; fireBiomeTints.length = 0;
+    const portalPositions = _cm_portalPos; portalPositions.length = 0;
+    const portalNormals = _cm_portalNrm; portalNormals.length = 0;
+    const portalUvs = _cm_portalUv; portalUvs.length = 0;
+    const portalColors = _cm_portalCol; portalColors.length = 0;
+    const portalBiomeTints = _cm_portalBt; portalBiomeTints.length = 0;
+    const solidPositions = _cm_solidPos; solidPositions.length = 0;
+    const solidNormals = _cm_solidNrm; solidNormals.length = 0;
+    const solidUvs = _cm_solidUv; solidUvs.length = 0;
+    const solidColors = _cm_solidCol; solidColors.length = 0;
+    const solidBiomeTints = _cm_solidBt; solidBiomeTints.length = 0;
+    const glassPositions = _cm_glassPos; glassPositions.length = 0;
+    const glassNormals = _cm_glassNrm; glassNormals.length = 0;
+    const glassUvs = _cm_glassUv; glassUvs.length = 0;
+    const glassColors = _cm_glassCol; glassColors.length = 0;
+    const glassBiomeTints = _cm_glassBt; glassBiomeTints.length = 0;
+    const waterPositions = _cm_waterPos; waterPositions.length = 0;
+    const waterNormals = _cm_waterNrm; waterNormals.length = 0;
+    const waterUvs = _cm_waterUv; waterUvs.length = 0;
+    const waterColors = _cm_waterCol; waterColors.length = 0;
+    const waterBiomeTints = _cm_waterBt; waterBiomeTints.length = 0;
+    const waterFluidTypes = _cm_waterFt; waterFluidTypes.length = 0;
+    const waterFlowDirs = _cm_waterFd; waterFlowDirs.length = 0;
+    const lavaPositions = _cm_lavaPos; lavaPositions.length = 0;
+    const lavaNormals = _cm_lavaNrm; lavaNormals.length = 0;
+    const lavaUvs = _cm_lavaUv; lavaUvs.length = 0;
+    const lavaColors = _cm_lavaCol; lavaColors.length = 0;
+    const lavaFluidTypes = _cm_lavaFt; lavaFluidTypes.length = 0;
+    const lavaFlowDirs = _cm_lavaFd; lavaFlowDirs.length = 0;
 
     const startX = cx * CHUNK_SIZE, startZ = cz * CHUNK_SIZE;
 
@@ -858,11 +894,779 @@ function buildChunkMesh(cx, cz) {
                     continue;
                 }
 
-                if (id === 17) {
+                if (id === 17 && !(id === 206)) {
                     const torchLevel = (val >> 8) & 0xF;
                     for (let face of blockFaces) {
                         pushFace(x, y, z, face, solidPositions, solidNormals, solidUvs, solidColors, solidBiomeTints, id, null, { torchLevel: torchLevel }, val);
                     }
+                    continue;
+                }
+                
+                // --- REDSTONE TORCH CUSTOM RENDERING (ID 206) ---
+                if (id === 206) {
+                    const torchLevel = (val >> 8) & 0xF;
+                    const rsOn = !((val >> 12) & 0x1);
+                    const aidx = rsOn ? 163 : 164;
+                    const agx = aidx % 16, agy = Math.floor(aidx / 16);
+                    
+                    const _sl = getSunLight(x, y, z) / 15.0;
+                    const _tl = Math.max(getTorchLight(x, y, z), 7) / 15.0;
+                    
+                    // Atlas UV helpers for this tile
+                    const TU = (px) => (agx + px / 16) / 16;
+                    const TV = (py) => 1 - (agy + py / 16) / 16;
+                    
+                    // Torch center - rotation in RQ handles wall tilt
+                    let tcx = x + 0.5, tcy = y, tcz = z + 0.5;
+                    
+                    // Pixel-to-world mapping for this torch:
+                    // Texture row R -> world Y = tcy + 0.625 * (15 - R) / 10
+                    // Texture col C -> offset from center = (C - 8) / 16 (but adjusted for mesh scale)
+                    
+                    // The redstone torch texture content:
+                    // Cols 6-9 (4px wide), rows 5-15 (11px tall)
+                    // But cols 7-8 are the stick, cols 6 and 9 are the flame glow
+                    
+                    // We render 4 planes (2 cross-plane pairs), each sampling the full 4x11 content
+                    // Each plane is 4px wide = 4/16 = 0.25 block
+                    // But pushed inward 1px on each side = starts at col 7 position, not col 6
+                    // So geometry is 2px wide (cols 7-8 positions) but UV shows cols 6-9
+                    
+                    // Actually - 4 separate planes, each at the right position:
+                    // The mesh is 2px wide geometry centered on the torch
+                    // The UV maps 4px of texture (cols 6-9) onto this 2px mesh
+                    // This compresses slightly but shows all flame pixels
+                    
+                    // NO - user said don't scale. Use 4 planes that align on pixels.
+                    // Plane 1: col 6-7 strip (1px wide), at position -2px to -1px from center
+                    // Plane 2: col 7-8 strip (1px wide), at position -1px to 0 from center  
+                    // Plane 3: col 8-9 strip (1px wide), at position 0 to +1px from center
+                    // Plane 4: col 9-10 strip (1px wide), at position +1px to +2px from center
+                    // Wait that's back to 4px wide total.
+                    
+                    // The user wants: 4px UV on geometry that is pushed 1px inward on each side
+                    // = 2px geometry but positioned correctly. 
+                    // 
+                    // Actually let me re-read: "MOVE THE FACES THEMSELVES INWARD BY 2PX"
+                    // from the 4px version. So the 4px cross-planes each move 1px toward the
+                    // OTHER cross-plane. But cross-planes intersect at center...
+                    //
+                    // I think the answer is: render 4 SEPARATE face planes (not cross-planes).
+                    // Two face planes for the Z-normal pair, two for the X-normal pair.
+                    // Each is a flat quad, 4px wide, showing the 4x11 texture.
+                    // Position each plane 1px INWARD from where a normal 4px cross would be.
+                    // Normal cross: Z-plane at z=tcz, X-plane at x=tcx
+                    // Inward by 1px: Z-planes at tcz +/- 1/16, X-planes at tcx +/- 1/16
+                    
+                    const hw = 2/16; // half of 4px = 2px
+                    const inset = 1/16; // push inward by 1px
+                    
+                    // Y positions from row mapping
+                    const yBot = tcy; // row 15
+                    const yTop = tcy + 0.625; // row 5 area
+                    // Side UV: cols 6-10, rows 5-16
+                    const su0 = TU(6), su1 = TU(10);
+                    const sv0 = TV(5); // top (row 5 = high in texture = low V in atlas... wait)
+                    // TV(py) = 1 - (agy + py/16)/16
+                    // row 5: TV(5) is HIGHER atlas V than TV(15)
+                    // In atlas: lower row number = higher on image = lower V? No...
+                    // atlas V=0 is TOP of image. tile row 0 is top of tile.
+                    // TV(0) = 1 - agy/16 = high V (bottom of atlas space)
+                    // TV(16) = 1 - (agy+1)/16 = lower V (higher in atlas)
+                    // So TV(5) > TV(15). TV(5) = bottom vertex V, TV(15) = top vertex V? No...
+                    // The torch renders bottom-up: yBot=tcy at row 15, yTop=tcy+0.625 at row 5
+                    // So vertex at yBot should have UV of row 15, vertex at yTop should have UV of row 5
+                    const svBot = TV(16); // row 15-16 bottom of tile
+                    const svTop = TV(5);  // row 5 top of content
+                    
+                    // Top face: 2x2px at cols 7-8, rows 6-7  
+                    // Move up by 1px from default: rows 6-7 instead of 7-8
+                    // Actually "move up" = show higher content. Top face shows the very tip.
+                    // Regular torch top face: v = 0.5 + v*0.125 = rows 8-10 area
+                    // User wants it 1px up = rows 7-9? Let me just use rows 6-8 (the flame center)
+                    const tu0 = TU(7), tu1 = TU(9);
+                    const tv0 = TV(6), tv1 = TV(8);
+                    
+                    // Helper for double-sided quad with optional rotation
+                    const RQ = (ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz,
+                               u0,v0, u1,v1, u2,v2, u3,v3, nx,ny,nz) => {
+                        // Apply wall tilt rotation if torch is on a wall
+                        const rot = (vx, vy, vz) => {
+                            let rx = vx - tcx, ry = vy - tcy, rz = vz - tcz;
+                            if (torchLevel === 1) { // -X wall
+                                const angle = -0.4;
+                                const ny2 = rx * Math.sin(angle) + ry * Math.cos(angle);
+                                const nx2 = rx * Math.cos(angle) - ry * Math.sin(angle);
+                                return [tcx + nx2 - 0.43, tcy + ny2 + 0.22, vz];
+                            } else if (torchLevel === 2) { // +X wall
+                                const angle = 0.4;
+                                const ny2 = rx * Math.sin(angle) + ry * Math.cos(angle);
+                                const nx2 = rx * Math.cos(angle) - ry * Math.sin(angle);
+                                return [tcx + nx2 + 0.43, tcy + ny2 + 0.22, vz];
+                            } else if (torchLevel === 3) { // -Z wall
+                                const angle = -0.4;
+                                const ny2 = rz * Math.sin(angle) + ry * Math.cos(angle);
+                                const nz2 = rz * Math.cos(angle) - ry * Math.sin(angle);
+                                return [vx, tcy + ny2 + 0.22, tcz + nz2 - 0.43];
+                            } else if (torchLevel === 4) { // +Z wall
+                                const angle = 0.4;
+                                const ny2 = rz * Math.sin(angle) + ry * Math.cos(angle);
+                                const nz2 = rz * Math.cos(angle) - ry * Math.sin(angle);
+                                return [vx, tcy + ny2 + 0.22, tcz + nz2 + 0.43];
+                            }
+                            return [vx, vy, vz];
+                        };
+                        const a = rot(ax,ay,az), b = rot(bx,by,bz), c = rot(cx,cy,cz), d = rot(dx,dy,dz);
+                        solidPositions.push(a[0],a[1],a[2], b[0],b[1],b[2], c[0],c[1],c[2], a[0],a[1],a[2], c[0],c[1],c[2], d[0],d[1],d[2]);
+                        solidUvs.push(u0,v0, u1,v1, u2,v2, u0,v0, u2,v2, u3,v3);
+                        for(let i=0;i<6;i++){solidColors.push(_sl,_tl,1.0);solidBiomeTints.push(1,1,1);solidNormals.push(nx,ny,nz);}
+                        // Back face
+                        solidPositions.push(d[0],d[1],d[2], c[0],c[1],c[2], b[0],b[1],b[2], d[0],d[1],d[2], b[0],b[1],b[2], a[0],a[1],a[2]);
+                        solidUvs.push(u3,v3, u2,v2, u1,v1, u3,v3, u1,v1, u0,v0);
+                        for(let i=0;i<6;i++){solidColors.push(_sl,_tl,1.0);solidBiomeTints.push(1,1,1);solidNormals.push(-nx,-ny,-nz);}
+                    };
+                    
+                    // Build geometry at origin (tcx, tcy, tcz) - rotation handles wall offset
+                    // Remove the pre-offset since rotation handles it
+                    tcx = x + 0.5; tcy = y; tcz = z + 0.5;
+                    
+                    // 4 side planes (each 4px wide, 11px tall)
+                    RQ(tcx-hw, yBot, tcz-inset,  tcx+hw, yBot, tcz-inset,  tcx+hw, yTop, tcz-inset,  tcx-hw, yTop, tcz-inset,
+                       su0,svBot, su1,svBot, su1,svTop, su0,svTop, 0,0,-1);
+                    RQ(tcx+hw, yBot, tcz+inset,  tcx-hw, yBot, tcz+inset,  tcx-hw, yTop, tcz+inset,  tcx+hw, yTop, tcz+inset,
+                       su0,svBot, su1,svBot, su1,svTop, su0,svTop, 0,0,1);
+                    RQ(tcx-inset, yBot, tcz+hw,  tcx-inset, yBot, tcz-hw,  tcx-inset, yTop, tcz-hw,  tcx-inset, yTop, tcz+hw,
+                       su0,svBot, su1,svBot, su1,svTop, su0,svTop, -1,0,0);
+                    RQ(tcx+inset, yBot, tcz-hw,  tcx+inset, yBot, tcz+hw,  tcx+inset, yTop, tcz+hw,  tcx+inset, yTop, tcz-hw,
+                       su0,svBot, su1,svBot, su1,svTop, su0,svTop, 1,0,0);
+                    
+                    // Top face: 2x2px
+                    const topY = yTop - 0.0625 + 0.001;
+                    const thw = 1/16;
+                    RQ(tcx-thw, topY, tcz-thw,  tcx+thw, topY, tcz-thw,  tcx+thw, topY, tcz+thw,  tcx-thw, topY, tcz+thw,
+                       tu0,tv0, tu1,tv0, tu1,tv1, tu0,tv1, 0,1,0);
+                    
+                    // Bottom face: 2x2px (cols 7-8, rows 14-16)
+                    const botY = yBot - 0.001;
+                    const bu0 = TU(7), bu1 = TU(9);
+                    const bv0 = TV(14), bv1 = TV(16);
+                    RQ(tcx-thw, botY, tcz+thw,  tcx+thw, botY, tcz+thw,  tcx+thw, botY, tcz-thw,  tcx-thw, botY, tcz-thw,
+                       bu0,bv0, bu1,bv0, bu1,bv1, bu0,bv1, 0,-1,0);
+                    
+                    continue;
+                }
+
+                // --- PISTON RENDERING (IDs 207, 208) ---
+                if (id === 207 || id === 208) {
+                    const pistonDir = (val >> 8) & 0x7;
+                    const isExtended = (val >> 11) & 0x1;
+                    const isSticky = (id === 208);
+                    const dvs = [[0,-1,0],[0,1,0],[0,0,-1],[0,0,1],[-1,0,0],[1,0,0]];
+                    const dv = dvs[pistonDir] || [0,1,0];
+                    
+                    if (!isExtended) {
+                        // RETRACTED: Full block. Front/back use pushFace, sides rendered manually for UV rotation.
+                        for (let face of blockFaces) {
+                            const fd = face.dir;
+                            const nx2 = x+fd[0], ny2 = y+fd[1], nz2 = z+fd[2];
+                            const nId2 = getVoxel(nx2,ny2,nz2) & 0xFF;
+                            if (nId2 !== 0 && !isBlockTransparent(nId2)) continue;
+                            const isFront = (fd[0]===dv[0] && fd[1]===dv[1] && fd[2]===dv[2]);
+                            const isBack = (fd[0]===-dv[0] && fd[1]===-dv[1] && fd[2]===-dv[2]);
+                            
+                            if (isFront || isBack) {
+                                // Front/back: use pushFace (no rotation needed)
+                                let tex = isFront ? (isSticky ? 169 : 168) : 165;
+                                pushFace(x, y, z, face, solidPositions, solidNormals, solidUvs, solidColors, solidBiomeTints, id, null, {customTex: tex}, val);
+                            } else {
+                                // Side face: rotate UV so wooden strip (top of texture) faces piston direction
+                                const tgx = 167%16, tgy = Math.floor(167/16);
+                                const tu0=tgx/16, tv0=1-(tgy+1)/16, tu1=(tgx+1)/16, tv1=1-tgy/16;
+                                
+                                const flx=x+fd[0], fly=y+fd[1], flz=z+fd[2];
+                                const fsl=getSunLight(flx,fly,flz)/15.0;
+                                const ftl=getTorchLight(flx,fly,flz)/15.0;
+                                const fsh=(fd[1]===1)?1.0:(fd[1]===-1)?0.6:(fd[0]!==0)?0.7:0.8;
+                                
+                                // Determine UV rotation based on piston direction relative to this face
+                                // The "top" of the texture (v=v1) should map to the edge closest to the piston face
+                                // face.corners: [{pos, uv}x4] - uv[0]=u, uv[1]=v where v=1 is top, v=0 is bottom
+                                
+                                // For a side face, we need to figure out which corner edge is toward the piston dir
+                                // The piston direction projects onto this face plane
+                                const corners = face.corners;
+                                
+                                // Default UVs from the face corners
+                                let uvs = corners.map(cn => [
+                                    tu0 + cn.uv[0] * (tu1-tu0),
+                                    tv0 + cn.uv[1] * (tv1-tv0)
+                                ]);
+                                
+                                // Check if piston direction aligns with the "up" direction of this face's UV
+                                // For vertical faces (fd[1]=0): uv[1]=1 maps to y=1 (top of block)
+                                // If piston faces up (dv[1]=1): top of texture should be at top -> no rotation
+                                // If piston faces down (dv[1]=-1): top of texture at bottom -> flip V
+                                // If piston faces horizontally: top of texture should be toward piston face
+                                
+                                // For Y-axis faces (top/bottom of block being used as "side"):
+                                // these shouldn't normally be sides of a piston, but handle anyway
+                                
+                                // Rotate UV so wooden strip (top of texture) faces piston direction
+                                if (dv[1] === 1) {
+                                    // Piston faces up: strip at top of vertical faces (default), no change needed
+                                } else if (dv[1] === -1) {
+                                    if (fd[1] === 0) {
+                                        // Vertical side: flip V so strip faces down
+                                        uvs = corners.map(cn => [
+                                            tu0 + cn.uv[0] * (tu1-tu0),
+                                            tv0 + (1-cn.uv[1]) * (tv1-tv0)
+                                        ]);
+                                    }
+                                    // Top/bottom faces don't need rotation for up/down pistons
+                                } else {
+                                    // Horizontal piston: rotate UVs based on face orientation
+                                    if (fd[1] === 0) {
+                                        // Vertical side face: rotate 90° so strip faces piston dir
+                                        uvs = corners.map(cn => {
+                                            // Distance along piston axis (0=back, 1=front), always positive
+                                            let pDist = cn.pos[0]*dv[0] + cn.pos[1]*dv[1] + cn.pos[2]*dv[2];
+                                            if (dv[0]<0||dv[1]<0||dv[2]<0) pDist = 1 + pDist; // fix for negative dirs
+                                            let otherVal = 0;
+                                            for (let a = 0; a < 3; a++) {
+                                                if (fd[a] !== 0 || dv[a] !== 0) continue;
+                                                otherVal = cn.pos[a];
+                                            }
+                                            return [tu0 + otherVal*(tu1-tu0), tv0 + pDist*(tv1-tv0)];
+                                        });
+                                    } else {
+                                        // Top or bottom face of horizontal piston
+                                        uvs = corners.map(cn => {
+                                            let pDist = cn.pos[0]*dv[0] + cn.pos[1]*dv[1] + cn.pos[2]*dv[2];
+                                            if (dv[0]<0||dv[1]<0||dv[2]<0) pDist = 1 + pDist;
+                                            let otherVal = 0;
+                                            for (let a = 0; a < 3; a++) {
+                                                if (a === 1) continue;
+                                                if (dv[a] !== 0) continue;
+                                                otherVal = cn.pos[a];
+                                            }
+                                            return [tu0 + otherVal*(tu1-tu0), tv0 + pDist*(tv1-tv0)];
+                                        });
+                                    }
+                                }
+                                
+                                // Push vertices
+                                const mc = corners;
+                                solidPositions.push(
+                                    x+mc[0].pos[0],y+mc[0].pos[1],z+mc[0].pos[2],
+                                    x+mc[1].pos[0],y+mc[1].pos[1],z+mc[1].pos[2],
+                                    x+mc[2].pos[0],y+mc[2].pos[1],z+mc[2].pos[2],
+                                    x+mc[0].pos[0],y+mc[0].pos[1],z+mc[0].pos[2],
+                                    x+mc[2].pos[0],y+mc[2].pos[1],z+mc[2].pos[2],
+                                    x+mc[3].pos[0],y+mc[3].pos[1],z+mc[3].pos[2]);
+                                for (let ci of [0,1,2,0,2,3]) solidUvs.push(uvs[ci][0], uvs[ci][1]);
+                                for(let fi=0;fi<6;fi++){solidColors.push(fsl*fsh,ftl*fsh,fsh);solidBiomeTints.push(1,1,1);solidNormals.push(fd[0],fd[1],fd[2]);}
+                            }
+                        }
+                    } else {
+                        // EXTENDED: 12px base + arm + head
+                        // Base uses modified blockFaces for proper lighting
+                        const BF = 12/16;
+                        
+                        // Render base (12/16 shortened block)
+                        for (let face of blockFaces) {
+                            const fd = face.dir;
+                            const isFront = (fd[0]===dv[0] && fd[1]===dv[1] && fd[2]===dv[2]);
+                            const isBack = (fd[0]===-dv[0] && fd[1]===-dv[1] && fd[2]===-dv[2]);
+                            
+                            if (isFront) continue; // front face drawn separately as inside face
+                            
+                            if (!isBack) {
+                                const nx2 = x+fd[0], ny2 = y+fd[1], nz2 = z+fd[2];
+                                const nId2 = getVoxel(nx2,ny2,nz2) & 0xFF;
+                                if (nId2 !== 0 && !isBlockTransparent(nId2)) continue;
+                            }
+                            
+                            let tex = isBack ? 165 : 167;
+                            
+                            // Modify corners to shrink in piston direction
+                            const modCorners = face.corners.map(cn => {
+                                let p = [cn.pos[0], cn.pos[1], cn.pos[2]];
+                                if (dv[0]===1) p[0] = Math.min(p[0], BF);
+                                else if (dv[0]===-1) p[0] = Math.max(p[0], 1-BF);
+                                if (dv[1]===1) p[1] = Math.min(p[1], BF);
+                                else if (dv[1]===-1) p[1] = Math.max(p[1], 1-BF);
+                                if (dv[2]===1) p[2] = Math.min(p[2], BF);
+                                else if (dv[2]===-1) p[2] = Math.max(p[2], 1-BF);
+                                return { pos: p, uv: cn.uv };
+                            });
+                            
+                            const tgx = tex%16, tgy = Math.floor(tex/16);
+                            const tu0=tgx/16, tv0=1-(tgy+1)/16, tu1=(tgx+1)/16, tv1=1-tgy/16;
+                            const flx=x+fd[0], fly=y+fd[1], flz=z+fd[2];
+                            const sl2 = getSunLight(flx,fly,flz)/15.0;
+                            const tl2 = getTorchLight(flx,fly,flz)/15.0;
+                            const sh2 = (fd[1]===1)?1.0:(fd[1]===-1)?0.6:(fd[0]!==0)?0.7:0.8;
+                            
+                            const mc = modCorners;
+                            solidPositions.push(
+                                x+mc[0].pos[0],y+mc[0].pos[1],z+mc[0].pos[2],
+                                x+mc[1].pos[0],y+mc[1].pos[1],z+mc[1].pos[2],
+                                x+mc[2].pos[0],y+mc[2].pos[1],z+mc[2].pos[2],
+                                x+mc[0].pos[0],y+mc[0].pos[1],z+mc[0].pos[2],
+                                x+mc[2].pos[0],y+mc[2].pos[1],z+mc[2].pos[2],
+                                x+mc[3].pos[0],y+mc[3].pos[1],z+mc[3].pos[2]);
+                            
+                            if (!isBack) {
+                                // Side: scale UV to 12/16
+                                const sv12 = tv0 + (tv1-tv0)*12/16;
+                                for (let ci of [0,1,2,0,2,3]) {
+                                    solidUvs.push(tu0+mc[ci].uv[0]*(tu1-tu0), tv0+mc[ci].uv[1]*(sv12-tv0));
+                                }
+                            } else {
+                                for (let ci of [0,1,2,0,2,3]) {
+                                    solidUvs.push(tu0+mc[ci].uv[0]*(tu1-tu0), tv0+mc[ci].uv[1]*(tv1-tv0));
+                                }
+                            }
+                            for(let fi=0;fi<6;fi++){solidColors.push(sl2*sh2,tl2*sh2,sh2);solidBiomeTints.push(1,1,1);solidNormals.push(fd[0],fd[1],fd[2]);}
+                        }
+                        
+                        // Inside face (166) at 12/16
+                        for (let face of blockFaces) {
+                            if (face.dir[0]!==dv[0]||face.dir[1]!==dv[1]||face.dir[2]!==dv[2]) continue;
+                            const mc2 = face.corners.map(cn => {
+                                let p = [cn.pos[0], cn.pos[1], cn.pos[2]];
+                                if (dv[0]===1) p[0]=BF; else if (dv[0]===-1) p[0]=1-BF;
+                                if (dv[1]===1) p[1]=BF; else if (dv[1]===-1) p[1]=1-BF;
+                                if (dv[2]===1) p[2]=BF; else if (dv[2]===-1) p[2]=1-BF;
+                                return { pos: p, uv: cn.uv };
+                            });
+                            const igx=166%16, igy=Math.floor(166/16);
+                            const iu0=igx/16, iv0=1-(igy+1)/16, iu1=(igx+1)/16, iv1=1-igy/16;
+                            const ilx=x+dv[0], ily=y+dv[1], ilz=z+dv[2];
+                            const sl3=getSunLight(ilx,ily,ilz)/15.0;
+                            const tl3=getTorchLight(ilx,ily,ilz)/15.0;
+                            const sh3=(dv[1]===1)?1.0:(dv[1]===-1)?0.6:(dv[0]!==0)?0.7:0.8;
+                            solidPositions.push(
+                                x+mc2[0].pos[0],y+mc2[0].pos[1],z+mc2[0].pos[2],
+                                x+mc2[1].pos[0],y+mc2[1].pos[1],z+mc2[1].pos[2],
+                                x+mc2[2].pos[0],y+mc2[2].pos[1],z+mc2[2].pos[2],
+                                x+mc2[0].pos[0],y+mc2[0].pos[1],z+mc2[0].pos[2],
+                                x+mc2[2].pos[0],y+mc2[2].pos[1],z+mc2[2].pos[2],
+                                x+mc2[3].pos[0],y+mc2[3].pos[1],z+mc2[3].pos[2]);
+                            for(let ci of [0,1,2,0,2,3]) solidUvs.push(iu0+mc2[ci].uv[0]*(iu1-iu0), iv0+mc2[ci].uv[1]*(iv1-iv0));
+                            for(let fi=0;fi<6;fi++){solidColors.push(sl3*sh3,tl3*sh3,sh3);solidBiomeTints.push(1,1,1);solidNormals.push(dv[0],dv[1],dv[2]);}
+                            break;
+                        }
+                        
+                        // === ARM + HEAD ===
+                        {
+                            const lx2=x+dv[0], ly2=y+dv[1], lz2=z+dv[2];
+                            const sl4=Math.max(getSunLight(x,y,z),getSunLight(lx2,ly2,lz2))/15.0;
+                            const tl4=Math.max(getTorchLight(x,y,z),getTorchLight(lx2,ly2,lz2))/15.0;
+                            
+                            const faceTex = isSticky ? 169 : 168;
+                            const fgx=faceTex%16,fgy=Math.floor(faceTex/16);
+                            const fu0=fgx/16,fv0=1-(fgy+1)/16,fu1=(fgx+1)/16,fv1=1-fgy/16;
+                            const sgx=167%16,sgy=Math.floor(167/16);
+                            const su0=sgx/16,sv0=1-(sgy+1)/16,su1=(sgx+1)/16,sv1=1-sgy/16;
+                            const s4v0=sv1-(sv1-sv0)*4/16;
+                            const rU0=su0,rU1=su1,rV0=sv1-(sv1-sv0)*4/16,rV1=sv1;
+                            
+                            const PQ2 = (p0,p1,p2,p3, u0,v0,u1,v1,u2,v2,u3,v3, nx,ny,nz) => {
+                                const sh=(ny===1)?1.0:(ny===-1)?0.6:(nx!==0)?0.7:0.8;
+                                if (_flipWinding) {
+                                    // Reverse winding for negative-direction pistons
+                                    solidPositions.push(p3[0],p3[1],p3[2],p2[0],p2[1],p2[2],p1[0],p1[1],p1[2],
+                                                       p3[0],p3[1],p3[2],p1[0],p1[1],p1[2],p0[0],p0[1],p0[2]);
+                                    solidUvs.push(u3,v3,u2,v2,u1,v1,u3,v3,u1,v1,u0,v0);
+                                } else {
+                                    solidPositions.push(p0[0],p0[1],p0[2],p1[0],p1[1],p1[2],p2[0],p2[1],p2[2],
+                                                       p0[0],p0[1],p0[2],p2[0],p2[1],p2[2],p3[0],p3[1],p3[2]);
+                                    solidUvs.push(u0,v0,u1,v1,u2,v2,u0,v0,u2,v2,u3,v3);
+                                }
+                                for(let i=0;i<6;i++){solidColors.push(sl4*sh,tl4*sh,sh);solidBiomeTints.push(1,1,1);solidNormals.push(nx,ny,nz);}
+                            };
+                            
+                            // Position helper: along=piston axis, p1/p2=perpendicular [0..1]
+                            const _flipWinding = (pistonDir === 0 || pistonDir === 3 || pistonDir === 5);
+                            const W = (along, p1v, p2v) => {
+                                if (dv[0]===1)  return [x+along, y+p1v, z+p2v];
+                                if (dv[0]===-1) return [x+1-along, y+p1v, z+p2v];
+                                if (dv[1]===1)  return [x+p1v, y+along, z+p2v];
+                                if (dv[1]===-1) return [x+p1v, y+1-along, z+p2v];
+                                if (dv[2]===1)  return [x+p1v, y+p2v, z+along];
+                                return [x+p1v, y+p2v, z+1-along];
+                            };
+                            
+                            // World-space normals for perpendicular axes
+                            let nP1p,nP1n,nP2p,nP2n;
+                            if (Math.abs(dv[0])===1) {nP1p=[0,1,0];nP1n=[0,-1,0];nP2p=[0,0,1];nP2n=[0,0,-1];}
+                            else if (Math.abs(dv[1])===1) {nP1p=[1,0,0];nP1n=[-1,0,0];nP2p=[0,0,1];nP2n=[0,0,-1];}
+                            else {nP1p=[1,0,0];nP1n=[-1,0,0];nP2p=[0,1,0];nP2n=[0,-1,0];}
+                            const nFwd=dv, nBwd=[-dv[0],-dv[1],-dv[2]];
+                            
+                            const rr=2/16, rc=0.5;
+                            const AE=BF+1.0, HF=AE+4/16;
+                            
+                            // ARM: 4 rect faces
+                            PQ2(W(BF,rc-rr,rc-rr),W(BF,rc-rr,rc+rr),W(AE,rc-rr,rc+rr),W(AE,rc-rr,rc-rr),
+                                rU0,rV0,rU0,rV1,rU1,rV1,rU1,rV0, nP1n[0],nP1n[1],nP1n[2]);
+                            PQ2(W(BF,rc+rr,rc+rr),W(BF,rc+rr,rc-rr),W(AE,rc+rr,rc-rr),W(AE,rc+rr,rc+rr),
+                                rU0,rV0,rU0,rV1,rU1,rV1,rU1,rV0, nP1p[0],nP1p[1],nP1p[2]);
+                            PQ2(W(BF,rc+rr,rc-rr),W(BF,rc-rr,rc-rr),W(AE,rc-rr,rc-rr),W(AE,rc+rr,rc-rr),
+                                rU0,rV0,rU0,rV1,rU1,rV1,rU1,rV0, nP2n[0],nP2n[1],nP2n[2]);
+                            PQ2(W(BF,rc-rr,rc+rr),W(BF,rc+rr,rc+rr),W(AE,rc+rr,rc+rr),W(AE,rc-rr,rc+rr),
+                                rU0,rV0,rU0,rV1,rU1,rV1,rU1,rV0, nP2p[0],nP2p[1],nP2p[2]);
+                            
+                            // HEAD: front (piston face)
+                            PQ2(W(HF,0,0),W(HF,0,1),W(HF,1,1),W(HF,1,0),
+                                fu0,fv0,fu0,fv1,fu1,fv1,fu1,fv0, nFwd[0],nFwd[1],nFwd[2]);
+                            // HEAD: back (piston face)
+                            PQ2(W(AE,1,0),W(AE,1,1),W(AE,0,1),W(AE,0,0),
+                                fu0,fv0,fu0,fv1,fu1,fv1,fu1,fv0, nBwd[0],nBwd[1],nBwd[2]);
+                            // HEAD: 4 sides (u=width 16px, v=thickness top 4/16 of texture)
+                            PQ2(W(AE,0,0),W(AE,0,1),W(HF,0,1),W(HF,0,0),
+                                su0,s4v0,su1,s4v0,su1,sv1,su0,sv1, nP1n[0],nP1n[1],nP1n[2]);
+                            PQ2(W(HF,1,0),W(HF,1,1),W(AE,1,1),W(AE,1,0),
+                                su0,s4v0,su1,s4v0,su1,sv1,su0,sv1, nP1p[0],nP1p[1],nP1p[2]);
+                            PQ2(W(AE,1,0),W(AE,0,0),W(HF,0,0),W(HF,1,0),
+                                su0,s4v0,su1,s4v0,su1,sv1,su0,sv1, nP2n[0],nP2n[1],nP2n[2]);
+                            PQ2(W(AE,0,1),W(AE,1,1),W(HF,1,1),W(HF,0,1),
+                                su0,s4v0,su1,s4v0,su1,sv1,su0,sv1, nP2p[0],nP2p[1],nP2p[2]);
+                        }
+                    }
+                    
+                    continue;
+                }
+
+                // --- REDSTONE DUST RENDERING (ID 202) ---
+                if (id === 202) {
+                    const power = (val >> 8) & 0xF;
+                    const tintR = 0.3 + (power / 15) * 0.7;
+                    const tintG = 0.0;
+                    const tintB = 0.0;
+                    
+                    const sl = getSunLight(x, y, z) / 15.0;
+                    const tl = getTorchLight(x, y, z) / 15.0;
+                    
+                    // Helper to push a tinted quad
+                    const RQ = (ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz,
+                               au,av, bu,bv, cu,cv, du,dv, nx,ny,nz, shade) => {
+                        solidPositions.push(ax,ay,az, bx,by,bz, cx,cy,cz, ax,ay,az, cx,cy,cz, dx,dy,dz);
+                        solidUvs.push(au,av, bu,bv, cu,cv, au,av, cu,cv, du,dv);
+                        for(let i=0;i<6;i++) {
+                            solidColors.push(sl*shade, tl*shade, shade);
+                            solidBiomeTints.push(tintR, tintG, tintB);
+                            solidNormals.push(nx,ny,nz);
+                        }
+                    };
+                    
+                    // Check horizontal connections (same level)
+                    const isRSAt = (nx, ny, nz) => (getVoxel(nx, ny, nz) & 0xFF) === 202;
+                    const isSolid = (nx, ny, nz) => { const nid = getVoxel(nx, ny, nz) & 0xFF; return nid !== 0 && !isFluidBlock(nid) && !isCrossBlock(nid) && nid !== 202 && nid !== 203 && !isBlockTransparent(nid); };
+                    
+                    // Horizontal connections
+                    let connXP = isRSAt(x+1, y, z) || (getVoxel(x+1, y, z) & 0xFF) === 203;
+                    let connXN = isRSAt(x-1, y, z) || (getVoxel(x-1, y, z) & 0xFF) === 203;
+                    let connZP = isRSAt(x, y, z+1) || (getVoxel(x, y, z+1) & 0xFF) === 203;
+                    let connZN = isRSAt(x, y, z-1) || (getVoxel(x, y, z-1) & 0xFF) === 203;
+                    
+                    // Vertical connections: dust goes UP a block
+                    // If neighbor is solid and there's dust on top of it, connect up
+                    const upXP = isSolid(x+1, y, z) && isRSAt(x+1, y+1, z);
+                    const upXN = isSolid(x-1, y, z) && isRSAt(x-1, y+1, z);
+                    const upZP = isSolid(x, y, z+1) && isRSAt(x, y+1, z+1);
+                    const upZN = isSolid(x, y, z-1) && isRSAt(x, y+1, z-1);
+                    
+                    // Vertical connections: dust goes DOWN a block
+                    // If neighbor is air and there's dust one level down, connect down
+                    const dnXP = !isSolid(x+1, y, z) && isRSAt(x+1, y-1, z);
+                    const dnXN = !isSolid(x-1, y, z) && isRSAt(x-1, y-1, z);
+                    const dnZP = !isSolid(x, y, z+1) && isRSAt(x, y+1-2, z+1);
+                    const dnZN = !isSolid(x, y, z-1) && isRSAt(x, y+1-2, z-1);
+                    
+                    // Include vertical in connection count
+                    if (upXP || dnXP) connXP = true;
+                    if (upXN || dnXN) connXN = true;
+                    if (upZP || dnZP) connZP = true;
+                    if (upZN || dnZN) connZN = true;
+                    
+                    const connCount = (connXP?1:0) + (connXN?1:0) + (connZP?1:0) + (connZN?1:0);
+                    
+                    // Choose texture: line for 2 opposing connections, cross/dot otherwise
+                    const isLine = connCount === 2 && ((connXP && connXN) || (connZP && connZN));
+                    const texIdx = isLine ? 161 : 160;
+                    const gx = texIdx % 16, gy = Math.floor(texIdx / 16);
+                    const e = 0.005;
+                    const u0 = (gx + e) / 16, u1 = (gx + 1 - e) / 16;
+                    const v0 = 1 - (gy + 1 - e) / 16, v1 = 1 - (gy + e) / 16;
+                    
+                    // Flat top quad
+                    const dustY = y + 1/16 + 0.001;
+                    if (isLine && connZP && connZN) {
+                        RQ(x,dustY,z, x,dustY,z+1, x+1,dustY,z+1, x+1,dustY,z,
+                           u0,v0, u1,v0, u1,v1, u0,v1, 0,1,0, 1.0);
+                    } else {
+                        RQ(x,dustY,z, x,dustY,z+1, x+1,dustY,z+1, x+1,dustY,z,
+                           u0,v0, u0,v1, u1,v1, u1,v0, 0,1,0, 1.0);
+                    }
+                    
+                    // Vertical side textures: draw redstone line texture on the side face going up
+                    // Use the line texture (161) for vertical runs
+                    const vtx = 161;
+                    const vgx = vtx % 16, vgy = Math.floor(vtx / 16);
+                    const vu0 = (vgx + e) / 16, vu1 = (vgx + 1 - e) / 16;
+                    const vv0 = 1 - (vgy + 1 - e) / 16, vv1 = 1 - (vgy + e) / 16;
+                    
+                    if (upXP) { // Redstone goes up on +X face
+                        const wx = x + 1 - 0.001;
+                        RQ(wx,y,z, wx,y,z+1, wx,y+1,z+1, wx,y+1,z,
+                           vu0,vv0, vu0,vv1, vu1,vv1, vu1,vv0, -1,0,0, 0.8);
+                    }
+                    if (upXN) { // Redstone goes up on -X face
+                        const wx = x + 0.001;
+                        RQ(wx,y,z+1, wx,y,z, wx,y+1,z, wx,y+1,z+1,
+                           vu0,vv0, vu0,vv1, vu1,vv1, vu1,vv0, 1,0,0, 0.8);
+                    }
+                    if (upZP) { // Redstone goes up on +Z face
+                        const wz = z + 1 - 0.001;
+                        RQ(x+1,y,wz, x,y,wz, x,y+1,wz, x+1,y+1,wz,
+                           vu0,vv0, vu0,vv1, vu1,vv1, vu1,vv0, 0,0,-1, 0.6);
+                    }
+                    if (upZN) { // Redstone goes up on -Z face
+                        const wz = z + 0.001;
+                        RQ(x,y,wz, x+1,y,wz, x+1,y+1,wz, x,y+1,wz,
+                           vu0,vv0, vu0,vv1, vu1,vv1, vu1,vv0, 0,0,1, 0.6);
+                    }
+                    
+                    continue;
+                }
+
+                // --- WOOD BUTTON RENDERING (ID 203) ---
+                if (id === 203) {
+                    const bdir = (val >> 8) & 0x3;
+                    const pressed = (val >> 10) & 0x1;
+                    const dp = pressed ? 1/16 : 2/16;
+                    const dpPx = pressed ? 1 : 2;
+                    
+                    const texIdx = 32;
+                    const tgx = texIdx % 16, tgy = Math.floor(texIdx / 16);
+                    const U = (px) => (tgx + px/16) / 16;
+                    const V = (py) => 1 - (tgy + py/16) / 16;
+                    
+                    const bsl = getSunLight(x, y, z) / 15.0;
+                    const btl = getTorchLight(x, y, z) / 15.0;
+                    
+                    const BQ = (ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz,
+                               au,av, bu,bv, cu,cv, du,dv, nx,ny,nz) => {
+                        let sh = 1.0;
+                        if (ny === -1) sh = 0.5; else if (nx !== 0) sh = 0.8; else if (nz !== 0) sh = 0.6;
+                        solidPositions.push(ax,ay,az, bx,by,bz, cx,cy,cz, ax,ay,az, cx,cy,cz, dx,dy,dz);
+                        solidUvs.push(au,av, bu,bv, cu,cv, au,av, cu,cv, du,dv);
+                        for(let i=0;i<6;i++) { solidColors.push(bsl*sh,btl*sh,sh); solidBiomeTints.push(1,1,1); solidNormals.push(nx,ny,nz); }
+                    };
+                    
+                    // Compute box corners
+                    let bx0, bx1, by0, by1, bz0, bz1;
+                    by0 = y + 6/16; by1 = y + 10/16;
+                    if (bdir === 0) { bx0 = x+5/16; bx1 = x+11/16; bz0 = z+1-dp; bz1 = z+1; }
+                    else if (bdir === 1) { bx0 = x+1-dp; bx1 = x+1; bz0 = z+5/16; bz1 = z+11/16; }
+                    else if (bdir === 2) { bx0 = x+5/16; bx1 = x+11/16; bz0 = z; bz1 = z+dp; }
+                    else { bx0 = x; bx1 = x+dp; bz0 = z+5/16; bz1 = z+11/16; }
+                    
+                    // UVs: front face = 6x4 pixels, top/bottom = 6xdepth, sides = depthx4
+                    const ff0 = U(5), ff1 = U(11), fg0 = V(6), fg1 = V(10);
+                    const tf0 = U(5), tf1 = U(11), tg0 = V(6), tg1 = V(6+dpPx);
+                    const sf0 = U(5), sf1 = U(5+dpPx), sg0 = V(6), sg1 = V(10);
+                    
+                    // Which faces are "front" (6x4) vs "side" (depthx4) vs "top" (6xdepth)?
+                    const isFrontX = (bdir === 1 || bdir === 3); // front faces are +X/-X
+                    const isFrontZ = (bdir === 0 || bdir === 2); // front faces are +Z/-Z
+                    
+                    // Winding from blockFaces (proven correct):
+                    // +X: (x1,y1,z1),(x1,y0,z1),(x1,y0,z0),(x1,y1,z0)
+                    BQ(bx1,by1,bz1, bx1,by0,bz1, bx1,by0,bz0, bx1,by1,bz0,
+                       isFrontX?ff0:sf0, isFrontX?fg0:sg0, isFrontX?ff0:sf0, isFrontX?fg1:sg1, isFrontX?ff1:sf1, isFrontX?fg1:sg1, isFrontX?ff1:sf1, isFrontX?fg0:sg0, 1,0,0);
+                    // -X: (x0,y1,z0),(x0,y0,z0),(x0,y0,z1),(x0,y1,z1)
+                    BQ(bx0,by1,bz0, bx0,by0,bz0, bx0,by0,bz1, bx0,by1,bz1,
+                       isFrontX?ff0:sf0, isFrontX?fg0:sg0, isFrontX?ff0:sf0, isFrontX?fg1:sg1, isFrontX?ff1:sf1, isFrontX?fg1:sg1, isFrontX?ff1:sf1, isFrontX?fg0:sg0, -1,0,0);
+                    // +Y: (x0,y1,z0),(x0,y1,z1),(x1,y1,z1),(x1,y1,z0)
+                    BQ(bx0,by1,bz0, bx0,by1,bz1, bx1,by1,bz1, bx1,by1,bz0,
+                       tf0,tg0, tf0,tg1, tf1,tg1, tf1,tg0, 0,1,0);
+                    // -Y: (x0,y0,z1),(x0,y0,z0),(x1,y0,z0),(x1,y0,z1)
+                    BQ(bx0,by0,bz1, bx0,by0,bz0, bx1,by0,bz0, bx1,by0,bz1,
+                       tf0,tg0, tf0,tg1, tf1,tg1, tf1,tg0, 0,-1,0);
+                    // +Z: (x0,y1,z1),(x0,y0,z1),(x1,y0,z1),(x1,y1,z1)
+                    BQ(bx0,by1,bz1, bx0,by0,bz1, bx1,by0,bz1, bx1,by1,bz1,
+                       isFrontZ?ff0:sf0, isFrontZ?fg0:sg0, isFrontZ?ff0:sf0, isFrontZ?fg1:sg1, isFrontZ?ff1:sf1, isFrontZ?fg1:sg1, isFrontZ?ff1:sf1, isFrontZ?fg0:sg0, 0,0,1);
+                    // -Z: (x1,y1,z0),(x1,y0,z0),(x0,y0,z0),(x0,y1,z0)
+                    BQ(bx1,by1,bz0, bx1,by0,bz0, bx0,by0,bz0, bx0,by1,bz0,
+                       isFrontZ?ff0:sf0, isFrontZ?fg0:sg0, isFrontZ?ff0:sf0, isFrontZ?fg1:sg1, isFrontZ?ff1:sf1, isFrontZ?fg1:sg1, isFrontZ?ff1:sf1, isFrontZ?fg0:sg0, 0,0,-1);
+                    
+                    continue;
+                }
+
+                // --- LEVER RENDERING (ID 205) ---
+                if (id === 205) {
+                    const ldir = (val >> 8) & 0x3;
+                    const leverOn = (val >> 10) & 0x1;
+                    
+                    const lsl = getSunLight(x, y, z) / 15.0;
+                    const ltl = getTorchLight(x, y, z) / 15.0;
+                    
+                    const LQ = (ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz,
+                               au,av, bu,bv, cu,cv, du,dv, nx,ny,nz) => {
+                        let sh = 1.0;
+                        if (ny === -1) sh = 0.5; else if (nx !== 0) sh = 0.8; else if (nz !== 0) sh = 0.6;
+                        solidPositions.push(ax,ay,az, bx,by,bz, cx,cy,cz, ax,ay,az, cx,cy,cz, dx,dy,dz);
+                        solidUvs.push(au,av, bu,bv, cu,cv, au,av, cu,cv, du,dv);
+                        for(let i=0;i<6;i++) { solidColors.push(lsl*sh,ltl*sh,sh); solidBiomeTints.push(1,1,1); solidNormals.push(nx,ny,nz); }
+                    };
+                    
+                    // Cobblestone UV helper (atlas 36)
+                    const cgx = 36 % 16, cgy = Math.floor(36 / 16);
+                    const CU = (px) => (cgx + px/16) / 16;
+                    const CV = (py) => 1 - (cgy + py/16) / 16;
+                    
+                    // --- BASE PLATE ---
+                    // MC lever base: 4px wide x 6px tall x 2px deep, centered on wall face
+                    let bx0, bx1, by0b, by1b, bz0, bz1;
+                    by0b = y + 5/16; by1b = y + 11/16; // 6px tall centered
+                    if (ldir === 0) { bx0=x+6/16; bx1=x+10/16; bz0=z+1-2/16; bz1=z+1; }
+                    else if (ldir === 1) { bx0=x+1-2/16; bx1=x+1; bz0=z+6/16; bz1=z+10/16; }
+                    else if (ldir === 2) { bx0=x+6/16; bx1=x+10/16; bz0=z; bz1=z+2/16; }
+                    else { bx0=x; bx1=x+2/16; bz0=z+6/16; bz1=z+10/16; }
+                    
+                    // UV pixel crops from cobblestone (atlas 36):
+                    // Wide=4px, Tall=6px, Depth=2px
+                    const cw0=CU(6),cw1=CU(10);   // 4px wide
+                    const ch0=CV(5),ch1=CV(11);    // 6px tall
+                    const cd0=CU(7),cd1=CU(9);    // 2px depth
+                    const ct0=CV(7),ct1=CV(9);     // 2px depth for top/bottom
+                    
+                    if (ldir === 0 || ldir === 2) {
+                        // +-Z walls: X=wide(4), Y=tall(6), Z=depth(2)
+                        LQ(bx1,by1b,bz1, bx1,by0b,bz1, bx1,by0b,bz0, bx1,by1b,bz0, cd0,ch0, cd0,ch1, cd1,ch1, cd1,ch0, 1,0,0);
+                        LQ(bx0,by1b,bz0, bx0,by0b,bz0, bx0,by0b,bz1, bx0,by1b,bz1, cd0,ch0, cd0,ch1, cd1,ch1, cd1,ch0, -1,0,0);
+                        LQ(bx0,by1b,bz0, bx0,by1b,bz1, bx1,by1b,bz1, bx1,by1b,bz0, cw0,ct0, cw0,ct1, cw1,ct1, cw1,ct0, 0,1,0);
+                        LQ(bx0,by0b,bz1, bx0,by0b,bz0, bx1,by0b,bz0, bx1,by0b,bz1, cw0,ct0, cw0,ct1, cw1,ct1, cw1,ct0, 0,-1,0);
+                        LQ(bx0,by1b,bz1, bx0,by0b,bz1, bx1,by0b,bz1, bx1,by1b,bz1, cw0,ch0, cw0,ch1, cw1,ch1, cw1,ch0, 0,0,1);
+                        LQ(bx1,by1b,bz0, bx1,by0b,bz0, bx0,by0b,bz0, bx0,by1b,bz0, cw0,ch0, cw0,ch1, cw1,ch1, cw1,ch0, 0,0,-1);
+                    } else {
+                        // +-X walls: Z=wide(4), Y=tall(6), X=depth(2)
+                        LQ(bx1,by1b,bz1, bx1,by0b,bz1, bx1,by0b,bz0, bx1,by1b,bz0, cw0,ch0, cw0,ch1, cw1,ch1, cw1,ch0, 1,0,0);
+                        LQ(bx0,by1b,bz0, bx0,by0b,bz0, bx0,by0b,bz1, bx0,by1b,bz1, cw0,ch0, cw0,ch1, cw1,ch1, cw1,ch0, -1,0,0);
+                        // +Y top: CCW viewed from above = (x0,z1)->(x1,z1)->(x1,z0)->(x0,z0)
+                        LQ(bx0,by1b,bz1, bx1,by1b,bz1, bx1,by1b,bz0, bx0,by1b,bz0, ct0,cw1, ct1,cw1, ct1,cw0, ct0,cw0, 0,1,0);
+                        // -Y bottom: CCW viewed from below = (x0,z0)->(x1,z0)->(x1,z1)->(x0,z1)
+                        LQ(bx0,by0b,bz0, bx1,by0b,bz0, bx1,by0b,bz1, bx0,by0b,bz1, ct0,cw0, ct1,cw0, ct1,cw1, ct0,cw1, 0,-1,0);
+                        LQ(bx0,by1b,bz1, bx0,by0b,bz1, bx1,by0b,bz1, bx1,by1b,bz1, cd0,ch0, cd0,ch1, cd1,ch1, cd1,ch0, 0,0,1);
+                        LQ(bx1,by1b,bz0, bx1,by0b,bz0, bx0,by0b,bz0, bx0,by1b,bz0, cd0,ch0, cd0,ch1, cd1,ch1, cd1,ch0, 0,0,-1);
+                    }
+                    
+                    // --- LEVER STICK ---
+                    // Pivot: on the outer surface of base, recessed 1px into plate for joint look
+                    let pcx = (bx0 + bx1) / 2;
+                    const pcy = (by0b + by1b) / 2;
+                    let pcz = (bz0 + bz1) / 2;
+                    if (ldir === 0) pcz = bz0 + 1/16;
+                    else if (ldir === 1) pcx = bx0 + 1/16;
+                    else if (ldir === 2) pcz = bz1 - 1/16;
+                    else pcx = bx1 - 1/16;
+                    
+                    // Stick: 2x2x7 pixels
+                    const stLen = 6/16;
+                    const tAng = 0.85; // ~49 degrees
+                    const cT = Math.cos(tAng), sT = Math.sin(tAng);
+                    
+                    // Tip offset: vertical + horizontal tilt
+                    // Horizontal always goes OUTWARD from wall (same direction both states)
+                    // Vertical goes UP when off, DOWN when on
+                    let hx = 0, hz = 0;
+                    const hy = leverOn ? -(cT * stLen) : (cT * stLen);
+                    const hOut = sT * stLen;
+                    // Always tilt outward (away from wall)
+                    if (ldir === 0) hz = -hOut;      // +Z wall → outward is -Z
+                    else if (ldir === 1) hx = -hOut;  // +X wall → outward is -X
+                    else if (ldir === 2) hz = hOut;    // -Z wall → outward is +Z
+                    else hx = hOut;                     // -X wall → outward is +X
+                    
+                    const tipX = pcx + hx, tipY = pcy + hy, tipZ = pcz + hz;
+                    const sw = 0.75/16; // slightly thinner handle
+                    
+                    // Lever texture UVs (atlas 162): stick at pixels 7-8, rows 6-16
+                    const sgx = 162 % 16, sgy = Math.floor(162 / 16);
+                    const SU = (px) => (sgx + px/16) / 16;
+                    const SV = (py) => 1 - (sgy + py/16) / 16;
+                    // Side: 2x7 pixels from lever texture
+                    const su0=SU(7),su1=SU(9),sv0=SV(6),sv1=SV(13); // 2x7 pixels
+                    // Cap: 2x2 tip
+                    const cu0=SU(7),cu1=SU(9),cv0=SV(6),cv1=SV(8);
+                    
+                    // Build the stick as a proper oriented rectangular prism
+                    // Compute the stick axis vector and two perpendicular vectors
+                    const axX = tipX - pcx, axY = tipY - pcy, axZ = tipZ - pcz;
+                    
+                    // We need two vectors perpendicular to the stick axis
+                    // For a wall lever, the stick tilts in one plane, so we can use
+                    // world-Y cross stick-axis for one perp, then cross again for the other
+                    // Perp1: always along the "width" of the lever (the axis the stick doesn't tilt in)
+                    let p1x, p1y, p1z;
+                    if (ldir === 0 || ldir === 2) {
+                        // Stick tilts in YZ plane, perp1 is along X
+                        p1x = sw; p1y = 0; p1z = 0;
+                    } else {
+                        // Stick tilts in YX plane, perp1 is along Z
+                        p1x = 0; p1y = 0; p1z = sw;
+                    }
+                    
+                    // Perp2: perpendicular to both axis and perp1
+                    // cross(axis, perp1) normalized and scaled by sw
+                    let c2x = axY * p1z - axZ * p1y;
+                    let c2y = axZ * p1x - axX * p1z;
+                    let c2z = axX * p1y - axY * p1x;
+                    const c2len = Math.sqrt(c2x*c2x + c2y*c2y + c2z*c2z);
+                    if (c2len > 0.001) { c2x = c2x/c2len*sw; c2y = c2y/c2len*sw; c2z = c2z/c2len*sw; }
+                    
+                    // 8 corners of the stick prism
+                    // Bottom face (at pivot): 4 corners = pivot ± perp1 ± perp2
+                    const b0x=pcx-p1x-c2x, b0y=pcy-p1y-c2y, b0z=pcz-p1z-c2z;
+                    const b1x=pcx+p1x-c2x, b1y=pcy+p1y-c2y, b1z=pcz+p1z-c2z;
+                    const b2x=pcx+p1x+c2x, b2y=pcy+p1y+c2y, b2z=pcz+p1z+c2z;
+                    const b3x=pcx-p1x+c2x, b3y=pcy-p1y+c2y, b3z=pcz-p1z+c2z;
+                    // Top face (at tip): same offsets from tip
+                    const t0x=tipX-p1x-c2x, t0y=tipY-p1y-c2y, t0z=tipZ-p1z-c2z;
+                    const t1x=tipX+p1x-c2x, t1y=tipY+p1y-c2y, t1z=tipZ+p1z-c2z;
+                    const t2x=tipX+p1x+c2x, t2y=tipY+p1y+c2y, t2z=tipZ+p1z+c2z;
+                    const t3x=tipX-p1x+c2x, t3y=tipY-p1y+c2y, t3z=tipZ-p1z+c2z;
+                    
+                    // 4 side faces (double-sided for safety)
+                    // Face along +perp1 direction
+                    LQ(b1x,b1y,b1z, b2x,b2y,b2z, t2x,t2y,t2z, t1x,t1y,t1z,
+                       su0,sv1, su1,sv1, su1,sv0, su0,sv0, p1x,p1y,p1z);
+                    LQ(t1x,t1y,t1z, t2x,t2y,t2z, b2x,b2y,b2z, b1x,b1y,b1z,
+                       su0,sv0, su1,sv0, su1,sv1, su0,sv1, -p1x,-p1y,-p1z);
+                    // Face along -perp1
+                    LQ(b3x,b3y,b3z, b0x,b0y,b0z, t0x,t0y,t0z, t3x,t3y,t3z,
+                       su0,sv1, su1,sv1, su1,sv0, su0,sv0, -p1x,-p1y,-p1z);
+                    LQ(t3x,t3y,t3z, t0x,t0y,t0z, b0x,b0y,b0z, b3x,b3y,b3z,
+                       su0,sv0, su1,sv0, su1,sv1, su0,sv1, p1x,p1y,p1z);
+                    // Face along +perp2
+                    LQ(b2x,b2y,b2z, b3x,b3y,b3z, t3x,t3y,t3z, t2x,t2y,t2z,
+                       su0,sv1, su1,sv1, su1,sv0, su0,sv0, c2x,c2y,c2z);
+                    LQ(t2x,t2y,t2z, t3x,t3y,t3z, b3x,b3y,b3z, b2x,b2y,b2z,
+                       su0,sv0, su1,sv0, su1,sv1, su0,sv1, -c2x,-c2y,-c2z);
+                    // Face along -perp2
+                    LQ(b0x,b0y,b0z, b1x,b1y,b1z, t1x,t1y,t1z, t0x,t0y,t0z,
+                       su0,sv1, su1,sv1, su1,sv0, su0,sv0, -c2x,-c2y,-c2z);
+                    LQ(t0x,t0y,t0z, t1x,t1y,t1z, b1x,b1y,b1z, b0x,b0y,b0z,
+                       su0,sv0, su1,sv0, su1,sv1, su0,sv1, c2x,c2y,c2z);
+                    // Tip cap (perpendicular to stick axis, double-sided)
+                    LQ(t0x,t0y,t0z, t3x,t3y,t3z, t2x,t2y,t2z, t1x,t1y,t1z,
+                       cu0,cv0, cu0,cv1, cu1,cv1, cu1,cv0, axX,axY,axZ);
+                    LQ(t1x,t1y,t1z, t2x,t2y,t2z, t3x,t3y,t3z, t0x,t0y,t0z,
+                       cu0,cv0, cu0,cv1, cu1,cv1, cu1,cv0, -axX,-axY,-axZ);
+                    
                     continue;
                 }
 
@@ -935,7 +1739,9 @@ function buildChunkMesh(cx, cz) {
                         if (id === 20 && nId === 20 && face.dir[1] !== 0) {
                             draw = false;
                         }
-                        else if (nId === 0 || nId === 4 || nId === 27 || isCrossBlock(nId) || isSnowLayer(nId) || nId === 20 || nId === 17 || nId === 54 || nId === 64 || nId === 66 || nId === 67 || nId === 68 || nId === 158 || nId === 90 || isSlabBlock(nId) || isStairBlock(nId) || isFenceBlock(nId) || nId === 149 || nId === 150) draw = true; 
+                        else if (nId === 0 || nId === 4 || nId === 27 || isCrossBlock(nId) || isSnowLayer(nId) || nId === 20 || nId === 17 || nId === 54 || nId === 64 || nId === 66 || nId === 67 || nId === 68 || nId === 158 || nId === 90 || isSlabBlock(nId) || isStairBlock(nId) || isFenceBlock(nId) || nId === 149 || nId === 150 || nId === 202 || nId === 203 || nId === 205 || nId === 206) draw = true; 
+                        // Extended pistons are partially transparent (arm+head don't fill the block)
+                        else if ((nId === 207 || nId === 208) && ((nVal >> 11) & 0x1)) draw = true;
                         
                         else if (isLeafBlock(nId) && !isLeafBlock(id)) draw = settingGraphicsFancy; 
                         else if (isLeafBlock(id) && isLeafBlock(nId)) draw = settingGraphicsFancy; 

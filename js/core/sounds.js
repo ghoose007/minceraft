@@ -151,7 +151,10 @@
             { key: 'arrow_0', file: 'arrow_0.ogg' },
             { key: 'arrow_1', file: 'arrow_1.ogg' },
             { key: 'arrow_2', file: 'arrow_2.ogg' },
-            { key: 'arrow_3', file: 'arrow_3.ogg' }
+            { key: 'arrow_3', file: 'arrow_3.ogg' },
+            { key: 'wood_button', file: 'wood_button.ogg' },
+            { key: 'piston_push', file: 'piston_push.ogg' },
+            { key: 'piston_pull', file: 'piston_pull.ogg' }
         ];
         for (const s of extraSounds) {
             try {
@@ -201,10 +204,10 @@
     }
 
     _setCategory([1, 65, 64, 14, 22, 43, 97, 116, 117, 118, 137, 66, 16, 24, 23, 53, 52, 67, 26, 42], 0);
-    _setCategory([13, 21, 41, 96, 29, 30, 44, 98, 58, 69, 93, 51, 70, 71, 72, 77, 80, 81, 82, 94, 144, 145, 146, 147, 149, 150, 17, 200], 1);
+    _setCategory([13, 21, 41, 96, 29, 30, 44, 98, 58, 69, 93, 51, 70, 71, 72, 77, 80, 81, 82, 94, 144, 145, 146, 147, 149, 150, 17, 200, 203, 206], 1);
     _setCategory([3, 33, 32, 10, 11, 12, 48, 6, 7, 8, 9, 49, 50, 88, 31, 28, 87, 59, 91,
                   73, 74, 75, 76, 83, 84, 85, 86, 54, 60, 38, 68, 95, 90,
-                  99, 138, 139, 140, 141, 148, 152, 154, 155, 156, 19, 157, 158, 201], 2);
+                  99, 138, 139, 140, 141, 148, 152, 154, 155, 156, 19, 157, 158, 201, 202, 205, 207, 208], 2);
     _setCategory([2, 5, 92, 61, 62, 63], 3);
     _setCategory([39, 40], 4);
     _setCategory([34, 35, 36, 37, 20], 5);
@@ -800,6 +803,7 @@
     };
 
     window.playToolBreakSound = () => { if (_buffers['tool_break']) playNamedSound('tool_break', 0.6, 0.9, 1.1); };
+    window.playNamedSoundAt = playNamedSoundAt;
     window.playBurpSound = () => { if (_buffers['burp']) playNamedSound('burp', 0.5, 0.9, 1.1); };
     window.playFlintAndSteelSound = (wx, wy, wz) => playNamedSoundAt('flint_and_steel', 0.6, 0.9, 1.1, wx + 0.5, wy + 0.5, wz + 0.5);
 

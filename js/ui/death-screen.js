@@ -10,10 +10,6 @@
     div.id = 'death-screen';
     div.innerHTML = `
         <style>
-            @font-face {
-                font-family: 'Minecraft';
-                src: url('textures/minecraft-font.ttf') format('truetype');
-            }
             #death-screen {
                 display: none;
                 position: fixed;

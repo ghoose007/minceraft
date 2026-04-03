@@ -2,7 +2,7 @@
 // CONFIGURATION CONSTANTS
 // ==========================================
 
-const ASSET_VERSION = "108";
+const ASSET_VERSION = "115";
 
 const CHUNK_SIZE = 16;
 const CHUNK_HEIGHT = 256; 
@@ -93,4 +93,81 @@ const BIOME_WATER_COLORS = {
     'rainforest':    [0x1B/255, 0x9E/255, 0xD8/255],
     'ocean':         [0x3F/255, 0x76/255, 0xE4/255],
     'extreme_hills': [0x00/255, 0x7B/255, 0xF7/255]
+};
+
+// ==========================================
+// BLOCK ID CONSTANTS
+// ==========================================
+// Centralized block IDs to eliminate magic numbers throughout the codebase.
+const BLOCK_IDS = {
+    AIR: 0,
+    WATER: 4,
+    OAK_LEAVES: 14,
+    FLOWER_YELLOW: 16,
+    TORCH: 17,
+    CACTUS: 20,
+    BIRCH_LEAVES: 22,
+    TALL_GRASS: 23,
+    FERN: 24,
+    DEAD_BUSH: 26,
+    LAVA: 27,
+    SUGAR_CANE: 38,
+    SNOW_LAYER: 40,
+    MUSHROOM_RED: 42,
+    JUNGLE_LEAVES: 43,
+    ROSE: 52,
+    DANDELION: 53,
+    FURNACE: 59,
+    FARMLAND: 62,
+    FARMLAND_WET: 63,
+    CROPS: 64,
+    TNT: 65,
+    VINE: 66,
+    LILY_PAD: 67,
+    GLASS_PANE: 68,
+    CHEST: 69,
+    OAK_SLAB: 70,
+    STONE_SLAB: 71,
+    COBBLE_SLAB: 72,
+    BRICK_SLAB: 73,
+    STONE_BRICK_SLAB: 74,
+    SPRUCE_SLAB: 75,
+    BIRCH_SLAB: 76,
+    NETHER_BRICK_SLAB: 77,
+    OAK_STAIRS: 80,
+    COBBLE_STAIRS: 81,
+    BRICK_STAIRS: 82,
+    STONE_BRICK_STAIRS: 83,
+    SPRUCE_STAIRS: 84,
+    BIRCH_STAIRS: 85,
+    NETHER_BRICK_STAIRS: 86,
+    FIRE: 89,
+    NETHER_PORTAL: 90,
+    GLOWSTONE: 91,
+    SOUL_SAND: 92,
+    LOOT_CHEST: 93,
+    SANDSTONE_STAIRS: 94,
+    ICE: 95,
+    SPRUCE_LEAVES: 97,
+    NETHER_WART_0: 116,
+    NETHER_WART_1: 117,
+    NETHER_WART_2: 118,
+    PACKED_ICE: 138,
+    OAK_FENCE: 144,
+    SPRUCE_FENCE: 145,
+    BIRCH_FENCE: 146,
+    JUNGLE_FENCE: 147,
+    NETHER_BRICK_FENCE: 148,
+    DOOR: 149,
+    TRAPDOOR: 150,
+    JUNGLE_STAIRS: 152,
+    JUNGLE_SLAB: 157,
+    IRON_BARS: 158,
+    ENCHANTING_TABLE: 201,
+    REDSTONE_DUST: 202,
+    WOOD_BUTTON: 203,
+    LEVER: 205,
+    REDSTONE_TORCH: 206,
+    PISTON: 207,
+    STICKY_PISTON: 208
 };

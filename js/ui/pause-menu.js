@@ -14,30 +14,76 @@ window.showPauseScreen = function(screenId) {
 }
 
 window.toggleGraphics = function() {
-    settingGraphicsFancy = !settingGraphicsFancy;
-    document.getElementById('btn-graphics').innerText = `Graphics: ${settingGraphicsFancy ? 'Fancy' : 'Fast'}`;
+    if (!settingGraphicsFancy && !settingGraphicsFabulous) {
+        settingGraphicsFancy = true;
+        settingGraphicsFabulous = false;
+    } else if (settingGraphicsFancy && !settingGraphicsFabulous) {
+        settingGraphicsFancy = true;
+        settingGraphicsFabulous = true;
+    } else {
+        settingGraphicsFancy = false;
+        settingGraphicsFabulous = false;
+    }
+
+    const label = settingGraphicsFabulous ? 'Fabulous!' : (settingGraphicsFancy ? 'Fancy' : 'Fast');
+    const btn = document.getElementById('btn-graphics');
+    if (btn) {
+        btn.innerText = 'Graphics: ' + label;
+        // Force repaint
+    }
+    console.log('[Settings] Graphics toggled to: ' + label);
+    const warn = document.getElementById('fabulous-warning');
+    if (warn) warn.style.display = settingGraphicsFabulous ? 'block' : 'none';
     _initNeedsRemesh = true;
+
+    try {
+        if (settingGraphicsFabulous) {
+            if (typeof initFabulousGraphics === 'function' && !fabulousEnabled) {
+                initFabulousGraphics();
+            }
+            if (typeof _applyFabulousShaders === 'function') _applyFabulousShaders();
+        } else if (!settingGraphicsFancy) {
+            if (typeof disposeFabulousGraphics === 'function') {
+                disposeFabulousGraphics();
+            }
+            if (typeof _restoreStandardShaders === 'function') _restoreStandardShaders();
+        }
+    } catch (e) {
+        console.error('[Fabulous] Error toggling graphics:', e);
+    }
 }
 
 window.toggleSmoothLighting = function() {
     settingSmoothLighting = !settingSmoothLighting;
-    document.getElementById('btn-smooth-light').innerText = `Smooth Lighting: ${settingSmoothLighting ? 'ON' : 'OFF'}`;
+    var el = document.getElementById('btn-smooth-light');
+    if (el) {
+        el.innerText = 'Smooth Lighting: ' + (settingSmoothLighting ? 'ON' : 'OFF');
+    }
     _initNeedsRemesh = true;
 }
 
 window.toggleViewBobbing = function() {
     settingViewBobbing = !settingViewBobbing;
-    document.getElementById('btn-view-bobbing').innerText = `View Bobbing: ${settingViewBobbing ? 'ON' : 'OFF'}`;
+    var el = document.getElementById('btn-view-bobbing');
+    if (el) {
+        el.innerText = 'View Bobbing: ' + (settingViewBobbing ? 'ON' : 'OFF');
+    }
 }
 
 window.toggleRenderDist = function() {
     currentRenderDistIndex = (currentRenderDistIndex + 1) % RENDER_DISTANCES.length;
-    document.getElementById('btn-render-dist').innerText = `Render Distance: ${RENDER_NAMES[currentRenderDistIndex]}`;
+    var el = document.getElementById('btn-render-dist');
+    if (el) {
+        el.innerText = 'Render Distance: ' + RENDER_NAMES[currentRenderDistIndex];
+    }
 }
 
 window.toggleGUIScale = function() {
     currentGUIScaleIndex = (currentGUIScaleIndex + 1) % GUI_SCALES.length;
-    document.getElementById('btn-gui-scale').innerText = `GUI Scale: ${GUI_SCALES[currentGUIScaleIndex]}`;
+    var el = document.getElementById('btn-gui-scale');
+    if (el) {
+        el.innerText = 'GUI Scale: ' + GUI_SCALES[currentGUIScaleIndex];
+    }
     applyGUIScale();
 }
 
@@ -192,10 +238,37 @@ const _origShowPauseScreen = window.showPauseScreen;
 window.showPauseScreen = function(screenId) {
     _origShowPauseScreen(screenId);
     if (screenId === 'options-menu') {
+        // Refresh sliders
         const soundBtn = document.getElementById('sound-slider-btn');
         const sensBtn = document.getElementById('sensitivity-slider-btn');
         if (soundBtn && soundBtn._refreshSlider) soundBtn._refreshSlider();
         if (sensBtn && sensBtn._refreshSlider) sensBtn._refreshSlider();
+        // Refresh difficulty label
+        const diffBtn = document.getElementById('btn-difficulty');
+        if (diffBtn && typeof DIFFICULTY_LABELS !== 'undefined') {
+            diffBtn.innerText = 'Difficulty: ' + (DIFFICULTY_LABELS[settingDifficulty] || settingDifficulty);
+        }
+    }
+    if (screenId === 'video-settings-menu') {
+        // Refresh ALL video settings button labels to match current state
+        const gfxLabel = settingGraphicsFabulous ? 'Fabulous!' : (settingGraphicsFancy ? 'Fancy' : 'Fast');
+        const btnGfx = document.getElementById('btn-graphics');
+        if (btnGfx) btnGfx.innerText = 'Graphics: ' + gfxLabel;
+
+        const btnRD = document.getElementById('btn-render-dist');
+        if (btnRD) btnRD.innerText = 'Render Distance: ' + RENDER_NAMES[currentRenderDistIndex];
+
+        const btnSL = document.getElementById('btn-smooth-light');
+        if (btnSL) btnSL.innerText = 'Smooth Lighting: ' + (settingSmoothLighting ? 'ON' : 'OFF');
+
+        const btnVB = document.getElementById('btn-view-bobbing');
+        if (btnVB) btnVB.innerText = 'View Bobbing: ' + (settingViewBobbing ? 'ON' : 'OFF');
+
+        const btnGS = document.getElementById('btn-gui-scale');
+        if (btnGS) btnGS.innerText = 'GUI Scale: ' + GUI_SCALES[currentGUIScaleIndex];
+
+        const warn = document.getElementById('fabulous-warning');
+        if (warn) warn.style.display = settingGraphicsFabulous ? 'block' : 'none';
     }
 };
 
@@ -248,5 +321,42 @@ window.applyPlayerDamage = function(amount) {
     if (typeof updateHealthUI === 'function') updateHealthUI();
     if (player.health <= 0 && !player._dead) {
         if (typeof window.killPlayer === 'function') window.killPlayer();
+    }
+};
+
+// ==========================================
+// FABULOUS SHADER MATERIAL MANAGEMENT
+// ==========================================
+window._applyFabulousShaders = function() {
+    if (typeof injectFabulousLightingShader === 'function') {
+        if (solidMaterial) {
+            solidMaterial.onBeforeCompile = null;
+            solidMaterial.needsUpdate = true;
+            injectFabulousLightingShader(solidMaterial);
+            solidMaterial.needsUpdate = true;
+        }
+        if (glassMaterial) {
+            glassMaterial.onBeforeCompile = null;
+            glassMaterial.needsUpdate = true;
+            injectFabulousLightingShader(glassMaterial);
+            glassMaterial.needsUpdate = true;
+        }
+    }
+};
+
+window._restoreStandardShaders = function() {
+    if (typeof injectLightingShader === 'function') {
+        if (solidMaterial) {
+            solidMaterial.onBeforeCompile = null;
+            solidMaterial.needsUpdate = true;
+            injectLightingShader(solidMaterial);
+            solidMaterial.needsUpdate = true;
+        }
+        if (glassMaterial) {
+            glassMaterial.onBeforeCompile = null;
+            glassMaterial.needsUpdate = true;
+            injectLightingShader(glassMaterial);
+            glassMaterial.needsUpdate = true;
+        }
     }
 };

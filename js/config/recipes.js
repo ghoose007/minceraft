@@ -24,6 +24,9 @@ const RECIPES = [
     { pattern: [[121, 121],[121, 121]], output: { id: 31, count: 1 } }, // Bricks
     { pattern: [[38, 38, 38], [38, 38, 38]], output: { id: 68, count: 16 } }, // Glass Pane
     { pattern: [[119],[112]], output: { id: 17, count: 4 } }, // Torch (Coal 119 over Stick 112)
+    { pattern: [['plank']], output: { id: 203, count: 1 } }, // Wood Button (1 plank)
+    { pattern: [[112],[33]], output: { id: 205, count: 1 } }, // Lever (stick over cobblestone)
+    { pattern: [[202],[112]], output: { id: 206, count: 1 } }, // Redstone Torch (redstone over stick)
     // --- Hoes ---
     { pattern: [['plank', 'plank'], [0, 112], [0, 112]], output: { id: 130, count: 1 } }, // Wooden Hoe
     { pattern: [['plank', 'plank'], [112, 0], [112, 0]], output: { id: 130, count: 1 } }, 
@@ -189,7 +192,13 @@ const RECIPES = [
     { pattern: [['plank', 'plank', 'plank'], [198, 198, 198], ['plank', 'plank', 'plank']], output: { id: 200, count: 1 } },
 
     // --- Enchanting Table (book + diamonds + obsidian) ---
-    { pattern: [[0, 198, 0], [114, 28, 114], [28, 28, 28]], output: { id: 201, count: 1 } }
+    { pattern: [[0, 198, 0], [114, 28, 114], [28, 28, 28]], output: { id: 201, count: 1 } },
+
+    // --- Piston (3 planks + cobblestone + iron + cobblestone + cobblestone + redstone + cobblestone) ---
+    { pattern: [['plank', 'plank', 'plank'], [33, 113, 33], [33, 202, 33]], output: { id: 207, count: 1 } },
+
+    // --- Sticky Piston (cactus + piston) ---
+    { pattern: [[20], [207]], output: { id: 208, count: 1 } }
 
 ];
 

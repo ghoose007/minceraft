@@ -2,6 +2,82 @@
 // MAIN GAME LOOP
 // ==========================================
 
+// --- Cached function-existence checks (avoids 50+ typeof checks per frame) ---
+// Populated once on first animate() call when all scripts are loaded.
+let _fnCacheReady = false;
+let _fn_updateClock, _fn_doRandomTicks, _fn_updateMobs, _fn_tickMobSpawning;
+let _fn_updateArrows, _fn_tickSpawnerBlocks, _fn_updateTNTEntities;
+let _fn_updateHerobrineEntities, _fn_tickEnchantBooks, _fn_updateXPOrbs, _fn_tickRedstone;
+let _fn_soundUpdateListener, _fn_soundCheckDigTick, _fn_soundCheckFootsteps;
+let _fn_soundCheckWaterSplash, _fn_soundCheckSwim, _fn_soundCheckAmbientFluids;
+let _fn_getTargetedMob, _fn_breakBlock, _fn_damageHeldTool, _fn_addToInventory;
+let _fn_playItemSound, _fn_playFizzSound, _fn_spawnFireSmoke, _fn_spawnWaterSplash;
+let _fn_playWaterSplashAt, _fn_igniteTNT, _fn_animatePlayerModel;
+let _fn_updateThirdPersonCamera, _fn_updateFireEffects, _fn_getWaterFlowDirection;
+
+function _cacheFunctionRefs() {
+    _fn_updateClock = typeof updateClock === 'function' ? updateClock : null;
+    _fn_doRandomTicks = typeof doRandomTicks === 'function' ? doRandomTicks : null;
+    _fn_updateMobs = typeof updateMobs === 'function' ? updateMobs : null;
+    _fn_tickMobSpawning = typeof tickMobSpawning === 'function' ? tickMobSpawning : null;
+    _fn_updateArrows = typeof updateArrows === 'function' ? updateArrows : null;
+    _fn_tickSpawnerBlocks = typeof tickSpawnerBlocks === 'function' ? tickSpawnerBlocks : null;
+    _fn_updateTNTEntities = typeof updateTNTEntities === 'function' ? updateTNTEntities : null;
+    _fn_updateHerobrineEntities = typeof window.updateHerobrineEntities === 'function' ? window.updateHerobrineEntities : null;
+    _fn_tickEnchantBooks = typeof window._tickEnchantBooks === 'function' ? window._tickEnchantBooks : null;
+    _fn_updateXPOrbs = typeof window.updateXPOrbs === 'function' ? window.updateXPOrbs : null;
+    _fn_tickRedstone = typeof window.tickRedstone === 'function' ? window.tickRedstone : null;
+    _fn_soundUpdateListener = typeof window._soundUpdateListener === 'function' ? window._soundUpdateListener : null;
+    _fn_soundCheckDigTick = typeof window._soundCheckDigTick === 'function' ? window._soundCheckDigTick : null;
+    _fn_soundCheckFootsteps = typeof window._soundCheckFootsteps === 'function' ? window._soundCheckFootsteps : null;
+    _fn_soundCheckWaterSplash = typeof window._soundCheckWaterSplash === 'function' ? window._soundCheckWaterSplash : null;
+    _fn_soundCheckSwim = typeof window._soundCheckSwim === 'function' ? window._soundCheckSwim : null;
+    _fn_soundCheckAmbientFluids = typeof window._soundCheckAmbientFluids === 'function' ? window._soundCheckAmbientFluids : null;
+    _fn_getTargetedMob = typeof window.getTargetedMob === 'function' ? window.getTargetedMob : null;
+    _fn_breakBlock = typeof window.breakBlock === 'function' ? window.breakBlock : null;
+    _fn_damageHeldTool = typeof window.damageHeldTool === 'function' ? window.damageHeldTool : null;
+    _fn_addToInventory = typeof window.addToInventory === 'function' ? window.addToInventory : null;
+    _fn_playItemSound = typeof window.playItemSound === 'function' ? window.playItemSound : null;
+    _fn_playFizzSound = typeof window.playFizzSound === 'function' ? window.playFizzSound : null;
+    _fn_spawnFireSmoke = typeof window.spawnFireSmoke === 'function' ? window.spawnFireSmoke : null;
+    _fn_spawnWaterSplash = typeof window.spawnWaterSplash === 'function' ? window.spawnWaterSplash : null;
+    _fn_playWaterSplashAt = typeof window.playWaterSplashAt === 'function' ? window.playWaterSplashAt : null;
+    _fn_igniteTNT = typeof window.igniteTNT === 'function' ? window.igniteTNT : null;
+    _fn_animatePlayerModel = typeof animatePlayerModel === 'function' ? animatePlayerModel : null;
+    _fn_updateThirdPersonCamera = typeof updateThirdPersonCamera === 'function' ? updateThirdPersonCamera : null;
+    _fn_updateFireEffects = typeof window.updateFireEffects === 'function' ? window.updateFireEffects : null;
+    _fn_getWaterFlowDirection = typeof getWaterFlowDirection === 'function' ? getWaterFlowDirection : null;
+    _fnCacheReady = true;
+}
+
+// --- Cached DOM elements (avoid getElementById every frame) ---
+let _cachedOverlayEl = null;
+let _cachedDebugEl = null;
+
+// --- Helper: refresh whichever survival UI is currently open ---
+function refreshOpenUI() {
+    if (uiState === 'INVENTORY' || uiState === 'CRAFTING') {
+        if (typeof renderInventory === 'function') renderInventory();
+    } else if (uiState === 'FURNACE') {
+        if (typeof renderFurnace === 'function') renderFurnace();
+    } else if (uiState === 'CHEST') {
+        if (typeof renderChest === 'function') renderChest();
+    } else if (uiState === 'ENCHANTING') {
+        if (typeof renderEnchanting === 'function') renderEnchanting();
+    }
+}
+
+// --- Helper: dispose and clean up a particle ---
+function _disposeParticle(p) {
+    scene.remove(p.mesh);
+    if (p.mesh.onBeforeRender) p.mesh.onBeforeRender = null;
+    if (p.isSmoke && p.mesh.material) p.mesh.material.dispose();
+    if (p.mesh.geometry && p.mesh.geometry.userData && p.mesh.geometry.userData.refCount !== undefined) {
+        p.mesh.geometry.userData.refCount--;
+        if (p.mesh.geometry.userData.refCount <= 0) p.mesh.geometry.dispose();
+    }
+}
+
 // --- LAVA POP & SMOKE TRAIL RESOURCES (Noise-Based) ---
 let lavaPopMaterial = null;
 const MAX_SMOKE_TRAILS = 30;
@@ -53,6 +129,7 @@ function initLavaPopResources() {
 
 function animate() {
     requestAnimationFrame(animate);
+    if (!_fnCacheReady) _cacheFunctionRefs();
     const time = performance.now();
     let dt = (time - lastTime) / 1000;
     lastTime = time;
@@ -69,7 +146,7 @@ function animate() {
     else if (globalTime < DAY_TIME / 2 + NIGHT_TIME) t = 0.25 + ((globalTime - DAY_TIME / 2) / NIGHT_TIME) * 0.5;
     else t = 0.75 + ((globalTime - DAY_TIME / 2 - NIGHT_TIME) / (DAY_TIME / 2)) * 0.25;
 
-    if (!isPaused && typeof updateClock === 'function') updateClock(t);
+    if (!isPaused && _fn_updateClock) _fn_updateClock(t);
 
     const angle = t * Math.PI * 2;
     const sunHeight = Math.cos(angle); 
@@ -91,28 +168,29 @@ function animate() {
         randomTickTimer += dt;
         if (randomTickTimer >= 0.05) { 
             randomTickTimer = 0;
-            if (typeof doRandomTicks === 'function') doRandomTicks();
+            if (_fn_doRandomTicks) _fn_doRandomTicks();
         }
 
         window.blockBreakCooldown = window.blockBreakCooldown || 0;
         if (window.blockBreakCooldown > 0) window.blockBreakCooldown -= dt;
 
-        if (typeof updateMobs === 'function') updateMobs(dt);
-        if (typeof tickMobSpawning === 'function') tickMobSpawning(dt);
-        if (typeof updateArrows === 'function') updateArrows(dt);
-        if (typeof tickSpawnerBlocks === 'function') tickSpawnerBlocks(dt);
-        if (typeof updateTNTEntities === 'function') updateTNTEntities(dt);
-        if (typeof window.updateHerobrineEntities === 'function') window.updateHerobrineEntities(dt);
-        if (typeof window._tickEnchantBooks === 'function') window._tickEnchantBooks(dt);
-        if (typeof window.updateXPOrbs === 'function') window.updateXPOrbs(dt);
+        if (_fn_updateMobs) _fn_updateMobs(dt);
+        if (_fn_tickMobSpawning) _fn_tickMobSpawning(dt);
+        if (_fn_updateArrows) _fn_updateArrows(dt);
+        if (_fn_tickSpawnerBlocks) _fn_tickSpawnerBlocks(dt);
+        if (_fn_updateTNTEntities) _fn_updateTNTEntities(dt);
+        if (_fn_updateHerobrineEntities) _fn_updateHerobrineEntities(dt);
+        if (_fn_tickEnchantBooks) _fn_tickEnchantBooks(dt);
+        if (_fn_updateXPOrbs) _fn_updateXPOrbs(dt);
+        if (_fn_tickRedstone) _fn_tickRedstone(dt);
 
         // Sound system — update listener position for spatial audio, then tick sounds
-        if (typeof window._soundUpdateListener === 'function') window._soundUpdateListener();
-        if (typeof window._soundCheckDigTick === 'function') window._soundCheckDigTick(dt);
-        if (typeof window._soundCheckFootsteps === 'function') window._soundCheckFootsteps(dt);
-        if (typeof window._soundCheckWaterSplash === 'function') window._soundCheckWaterSplash();
-        if (typeof window._soundCheckSwim === 'function') window._soundCheckSwim();
-        if (typeof window._soundCheckAmbientFluids === 'function') window._soundCheckAmbientFluids(dt);
+        if (_fn_soundUpdateListener) _fn_soundUpdateListener();
+        if (_fn_soundCheckDigTick) _fn_soundCheckDigTick(dt);
+        if (_fn_soundCheckFootsteps) _fn_soundCheckFootsteps(dt);
+        if (_fn_soundCheckWaterSplash) _fn_soundCheckWaterSplash();
+        if (_fn_soundCheckSwim) _fn_soundCheckSwim();
+        if (_fn_soundCheckAmbientFluids) _fn_soundCheckAmbientFluids(dt);
 
         if (typeof gameMode !== 'undefined') {
             const holdingLeftClick = typeof isLeftMouseHeld !== 'undefined' && isLeftMouseHeld;
@@ -137,7 +215,7 @@ function animate() {
                 }
 
                 if (holdingLeftClick && !miningState.isMining && window.blockBreakCooldown <= 0) {
-                    const hitMob = typeof window.getTargetedMob === 'function' ? window.getTargetedMob() : null;
+                    const hitMob = _fn_getTargetedMob ? _fn_getTargetedMob() : null;
                     if (hitMob) {
                         let damage = 1; 
                         if (currentBuildBlock !== 0 && typeof TOOL_DATA !== 'undefined' && TOOL_DATA[currentBuildBlock]) {
@@ -148,9 +226,9 @@ function animate() {
                         window.blockBreakCooldown = 0.3; 
                     } else {
                         const target = targetRay;
-                        if (target && target.id !== 18 && target.id !== 0) {
+                        if (target && target.id !== 18 && target.id !== BLOCK_IDS.AIR) {
                             if (hardness === 0) {
-                                if (typeof window.breakBlock === 'function') window.breakBlock(target.hit[0], target.hit[1], target.hit[2], canHarvest);
+                                if (_fn_breakBlock) _fn_breakBlock(target.hit[0], target.hit[1], target.hit[2], canHarvest);
                                 window.damageHeldTool(1);
                                 window.blockBreakCooldown = 0.3; 
                             } else {
@@ -174,34 +252,34 @@ function animate() {
                     const target = raycastVoxel();
                     if (!target || target.hit[0] !== miningState.x || target.hit[1] !== miningState.y || target.hit[2] !== miningState.z) {
                         miningState.isMining = false;
-                        if (typeof breakingBox !== 'undefined' && breakingBox) breakingBox.visible = false;
+                        if (breakingBox) breakingBox.visible = false;
                     } else {
                         if (swingAnimation <= 0) swingAnimation = 1.0;
                         if (hardness < 0) miningState.progress = 0;
                         else if (hardness === 0) {
                             // TNT: Ignite on punch instead of breaking
-                            if (miningState.id === 65 && typeof window.igniteTNT === 'function') {
-                                window.igniteTNT(miningState.x, miningState.y, miningState.z);
+                            if (miningState.id === BLOCK_IDS.TNT && _fn_igniteTNT) {
+                                _fn_igniteTNT(miningState.x, miningState.y, miningState.z);
                             } else {
-                                if (typeof window.breakBlock === 'function') window.breakBlock(miningState.x, miningState.y, miningState.z, canHarvest);
+                                if (_fn_breakBlock) _fn_breakBlock(miningState.x, miningState.y, miningState.z, canHarvest);
                             }
                             miningState.isMining = false;
-                            if (typeof breakingBox !== 'undefined' && breakingBox) breakingBox.visible = false;
+                            if (breakingBox) breakingBox.visible = false;
                             window.blockBreakCooldown = 0.3;
                         } else {
                             miningState.progress += (dt * speedMult) / (hardness * 1.5); 
                             if (miningState.progress >= 1.0) {
-                                if (typeof window.breakBlock === 'function') {
-                                    window.breakBlock(miningState.x, miningState.y, miningState.z, canHarvest);
+                                if (_fn_breakBlock) {
+                                    _fn_breakBlock(miningState.x, miningState.y, miningState.z, canHarvest);
                                 }
                                 
-                                // NEW: Apply durability damage when a block is fully broken
-                                if (typeof window.damageHeldTool === 'function') {
-                                    window.damageHeldTool(1);
+                                // Apply durability damage when a block is fully broken
+                                if (_fn_damageHeldTool) {
+                                    _fn_damageHeldTool(1);
                                 }
 
                                 miningState.isMining = false;
-                                if (typeof breakingBox !== 'undefined' && breakingBox) breakingBox.visible = false;
+                                if (breakingBox) breakingBox.visible = false;
                                 window.blockBreakCooldown = 0.3;
                             } else {
                                 const stage = Math.floor(miningState.progress * 10); 
@@ -215,15 +293,15 @@ function animate() {
                 }
             } else if (gameMode === 'creative' && holdingLeftClick) {
                 if (window.blockBreakCooldown <= 0) {
-                    const hitMob = typeof window.getTargetedMob === 'function' ? window.getTargetedMob() : null;
+                    const hitMob = _fn_getTargetedMob ? _fn_getTargetedMob() : null;
                     if (hitMob) {
                         hitMob.takeDamage(100, player.x, player.z); 
                         swingAnimation = 1.0;
                         window.blockBreakCooldown = 0.3;
                     } else {
                         const target = raycastVoxel();
-                        if (target && target.id !== 18 && target.id !== 0) {
-                            if (typeof window.breakBlock === 'function') window.breakBlock(target.hit[0], target.hit[1], target.hit[2]);
+                        if (target && target.id !== 18 && target.id !== BLOCK_IDS.AIR) {
+                            if (_fn_breakBlock) _fn_breakBlock(target.hit[0], target.hit[1], target.hit[2]);
                             window.blockBreakCooldown = 0.3;
                         }
                     } 
@@ -245,8 +323,8 @@ function animate() {
                 const px = Math.floor(player.x), py = Math.floor(player.y), pz = Math.floor(player.z);
                 const feetId  = getVoxel(px, py, pz) & 0xFF;
                 const bodyId  = getVoxel(px, py + 1, pz) & 0xFF;
-                const inLavaNow  = (feetId === 27 || bodyId === 27);
-                const onFireNow  = (feetId === 89 || bodyId === 89); // fire block id = 89
+                const inLavaNow  = (feetId === BLOCK_IDS.LAVA || bodyId === BLOCK_IDS.LAVA);
+                const onFireNow  = (feetId === BLOCK_IDS.FIRE || bodyId === BLOCK_IDS.FIRE);
 
                 if (inLavaNow) {
                     // Lava: set on fire for 15s, damage 4hp every 0.5s
@@ -283,7 +361,7 @@ function animate() {
                         player._fireDamageTimer = 0;
                     }
                     // Water extinguishes fire
-                    const inWaterNow = (feetId === 4 || bodyId === 4);
+                    const inWaterNow = (feetId === BLOCK_IDS.WATER || bodyId === BLOCK_IDS.WATER);
                     if (inWaterNow) { player._fireTimer = 0; player._fireDamageTimer = 0; }
                 }
                 player.onFire = (player._fireTimer > 0) || inLavaNow || onFireNow;
@@ -292,12 +370,12 @@ function animate() {
             }
 
             // Update fire overlay + model fire meshes
-            if (typeof window.updateFireEffects === 'function') {
-                window.updateFireEffects(player.onFire, performance.now() / 1000);
+            if (_fn_updateFireEffects) {
+                _fn_updateFireEffects(player.onFire, performance.now() / 1000);
             }
 
             // Animate the player model for third-person view
-            if (typeof animatePlayerModel === 'function') animatePlayerModel(dt);
+            if (_fn_animatePlayerModel) _fn_animatePlayerModel(dt);
 
             const NORMAL_FOV = 75;
             const SPRINT_FOV = 85;
@@ -339,7 +417,7 @@ function animate() {
             }
 
             // Check if third-person camera should take over
-            const isThirdPerson = (typeof cameraMode !== 'undefined' && cameraMode !== 0 && typeof updateThirdPersonCamera === 'function');
+            const isThirdPerson = (typeof cameraMode !== 'undefined' && cameraMode !== 0 && _fn_updateThirdPersonCamera);
             
             if (!isThirdPerson) {
                 const yawSin = Math.sin(player.yaw);
@@ -358,7 +436,7 @@ function animate() {
                     'YXZ'
                 );
             } else {
-                updateThirdPersonCamera();
+                _fn_updateThirdPersonCamera();
             }
 
             const SWING_DURATION = 0.3; 
@@ -397,7 +475,7 @@ function animate() {
                     let pSun = getSunLight(headX, headY, headZ) / 15.0;
                     let pTorch = getTorchLight(headX, headY, headZ) / 15.0;
                     
-                    if (currentBuildBlock === 17 || currentBuildBlock === 27) { pSun = 1.0; pTorch = 1.0; }
+                    if (currentBuildBlock === BLOCK_IDS.TORCH || currentBuildBlock === BLOCK_IDS.LAVA) { pSun = 1.0; pTorch = 1.0; }
                     
                     const mesh = currentHeldMesh.children[0];
                     if (mesh && mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.color) {
@@ -416,7 +494,12 @@ function animate() {
             }
 
             for (let [posKey, f] of activeFurnaces.entries()) {
-                const [fx, fy, fz] = posKey.split(',').map(Number);
+                // Cache parsed coords on furnace object to avoid split+map every frame
+                if (f._fx === undefined) {
+                    const parts = posKey.split(',');
+                    f._fx = +parts[0]; f._fy = +parts[1]; f._fz = +parts[2];
+                }
+                const fx = f._fx, fy = f._fy, fz = f._fz;
                 const val = getVoxel(fx, fy, fz);
                 if ((val & 0xFF) !== 59) {
                     if (f.input.count > 0) window.spawnDroppedItem(fx+0.5, fy+0.5, fz+0.5, f.input.id, f.input.count);
@@ -518,8 +601,11 @@ function animate() {
                 const waterBounds = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity, dirty: false };
                 const lavaBounds = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity, dirty: false };
                 
-                const remaining = [];
-                for (const entry of window._fluidSchedule) {
+                // In-place compaction: process ready entries, keep unready ones
+                let _remainingWater = 0, _remainingLava = 0;
+                let writeIdx = 0;
+                for (let ri = 0; ri < window._fluidSchedule.length; ri++) {
+                    const entry = window._fluidSchedule[ri];
                     if (entry.time <= now) {
                         const idx = entry.idx;
                         if (idx === -1) continue;
@@ -534,10 +620,12 @@ function animate() {
                             updateLava(wx, iy, wz, lavaBounds);
                         }
                     } else {
-                        remaining.push(entry);
+                        window._fluidSchedule[writeIdx++] = entry;
+                        if (entry.type === 'water') _remainingWater++;
+                        else _remainingLava++;
                     }
                 }
-                window._fluidSchedule = remaining;
+                window._fluidSchedule.length = writeIdx;
                 
                 if (waterBounds.dirty) {
                     const cx = Math.floor((waterBounds.minX + waterBounds.maxX) / 2);
@@ -553,10 +641,12 @@ function animate() {
                     updateChunksInBounds(lavaBounds.minX, lavaBounds.maxX, lavaBounds.minZ, lavaBounds.maxZ);
                     debugTickCount++;
                 }
+                debugWaterQueue = _remainingWater;
+                debugLavaQueue = _remainingLava;
+            } else {
+                debugWaterQueue = 0;
+                debugLavaQueue = 0;
             }
-
-            debugWaterQueue = window._fluidSchedule ? window._fluidSchedule.filter(e => e.type === 'water').length : 0;
-            debugLavaQueue = window._fluidSchedule ? window._fluidSchedule.filter(e => e.type === 'lava').length : 0;
 
             if (pendingBlockUpdates.length > 0) {
                 if (pendingBlockUpdates.length === 1) {
@@ -587,7 +677,10 @@ function animate() {
                 const pCz = Math.floor(player.z / CHUNK_SIZE);
                 
                 if (dirtyChunks.size > 8) {
-                    const keysToProcess = [];
+                    // Reuse persistent array to avoid GC from allocating objects every frame
+                    if (!window._dirtyChunkSortArr) window._dirtyChunkSortArr = [];
+                    const keysToProcess = window._dirtyChunkSortArr;
+                    keysToProcess.length = 0;
                     for (let key of dirtyChunks) {
                         const sep = key.indexOf(',');
                         const kx = parseInt(key.substring(0, sep));
@@ -651,7 +744,7 @@ function animate() {
                 }
             }
             
-            const itemsToRemove = [];
+            const itemsToRemove = new Set();
             for (let i = droppedItems.length - 1; i >= 0; i--) {
                 let item = droppedItems[i];
                 
@@ -672,7 +765,7 @@ function animate() {
                 }
 
                 if (item.count <= 0) {
-                    itemsToRemove.push(i);
+                    itemsToRemove.add(i);
                     continue; 
                 }
 
@@ -704,16 +797,16 @@ function animate() {
                 // --- WATER DETECTION FOR THIS ITEM ---
                 const _itemIx = Math.floor(item.x), _itemIy = Math.floor(item.y), _itemIz = Math.floor(item.z);
                 const _itemBlockAtFeet = getVoxel(_itemIx, _itemIy, _itemIz) & 0xFF;
-                const itemInWater = (_itemBlockAtFeet === 4);
+                const itemInWater = (_itemBlockAtFeet === BLOCK_IDS.WATER);
 
                 // Splash sound & particles when item first enters water
                 if (itemInWater && !item._wasInWater) {
                     const splashVol = Math.min(0.2, 0.05 + Math.abs(item.vy) * 0.015);
-                    if (typeof window.playWaterSplashAt === 'function') {
-                        window.playWaterSplashAt(item.x, item.y, item.z, splashVol);
+                    if (_fn_playWaterSplashAt) {
+                        _fn_playWaterSplashAt(item.x, item.y, item.z, splashVol);
                     }
-                    if (typeof window.spawnWaterSplash === 'function') {
-                        window.spawnWaterSplash(item.x, item.y, item.z);
+                    if (_fn_spawnWaterSplash) {
+                        _fn_spawnWaterSplash(item.x, item.y, item.z);
                     }
                 }
                 item._wasInWater = itemInWater;
@@ -721,7 +814,7 @@ function animate() {
                 if (itemInWater) {
                     // Check if the block above is also water or air
                     const _aboveId = getVoxel(_itemIx, _itemIy + 1, _itemIz) & 0xFF;
-                    const atSurface = (_aboveId !== 4); // block above is NOT water = at surface level
+                    const atSurface = (_aboveId !== BLOCK_IDS.WATER); // block above is NOT water = at surface level
 
                     if (atSurface && Math.abs(item.vy) < 0.5) {
                         // At surface AND nearly stopped: settle to rest position
@@ -742,8 +835,8 @@ function animate() {
                     item.vz *= Math.exp(-6.0 * dt);
 
                     // --- WATER FLOW PUSH (items) ---
-                    if (typeof getWaterFlowDirection === 'function') {
-                        const flow = getWaterFlowDirection(_itemIx, _itemIy, _itemIz);
+                    if (_fn_getWaterFlowDirection) {
+                        const flow = _fn_getWaterFlowDirection(_itemIx, _itemIy, _itemIz);
                         const ITEM_FLOW_FORCE = 5.6;
                         item.vx += flow.x * ITEM_FLOW_FORCE * dt;
                         item.vz += flow.z * ITEM_FLOW_FORCE * dt;
@@ -778,7 +871,7 @@ function animate() {
                 const blockBelowId = blockBelowVal & 0xFF;
                 
                 let onGround = false;
-                if (blockBelowId !== 0 && !isFluidBlock(blockBelowId) && !isCrossBlock(blockBelowId) && blockBelowId !== 17 && blockBelowId !== 23 && blockBelowId !== 64 && blockBelowId !== 66 && blockBelowId !== 90) {
+                if (blockBelowId !== BLOCK_IDS.AIR && !isFluidBlock(blockBelowId) && !isCrossBlock(blockBelowId) && blockBelowId !== BLOCK_IDS.TORCH && blockBelowId !== BLOCK_IDS.TALL_GRASS && blockBelowId !== BLOCK_IDS.CROPS && blockBelowId !== BLOCK_IDS.VINE && blockBelowId !== BLOCK_IDS.NETHER_PORTAL) {
                     // Get actual block top height for partial blocks (snow, slabs)
                     let blockTop = bY + 1;
                     if (typeof getBlockBounds === 'function') {
@@ -797,13 +890,10 @@ function animate() {
                         else item.vy = 0;
 
                         // --- ICE SLIPPERINESS FOR ITEMS ---
-                        // MC ice: 0.98 slipperiness, packed ice: 0.989, normal: 0.6
-                        // Friction multiplier per tick = slipperiness. Higher = more sliding.
                         let itemFriction;
-                        if (blockBelowId === 95) itemFriction = 0.98;          // Ice
-                        else if (blockBelowId === 138) itemFriction = 0.989;    // Packed Ice
-                        else itemFriction = 0.6;                                // Normal
-                        // Convert MC per-tick friction to continuous: pow(slip, 20) per second
+                        if (blockBelowId === BLOCK_IDS.ICE) itemFriction = 0.98;
+                        else if (blockBelowId === BLOCK_IDS.PACKED_ICE) itemFriction = 0.989;
+                        else itemFriction = 0.6;
                         const frictionDecay = -Math.log(itemFriction) * 20.0;
                         item.vx *= Math.exp(-frictionDecay * dt); 
                         item.vz *= Math.exp(-frictionDecay * dt);
@@ -818,11 +908,11 @@ function animate() {
 
                 // Destroy items that touch lava
                 const itemBlockId = getVoxel(Math.floor(item.x), Math.floor(item.y), Math.floor(item.z)) & 0xFF;
-                if (itemBlockId === 27) { // Lava
-                    if (typeof window.playFizzSound === 'function') {
-                        window.playFizzSound(item.x, item.y, item.z);
+                if (itemBlockId === BLOCK_IDS.LAVA) {
+                    if (_fn_playFizzSound) {
+                        _fn_playFizzSound(item.x, item.y, item.z);
                     }
-                    itemsToRemove.push(i);
+                    itemsToRemove.add(i);
                     continue;
                 }
 
@@ -848,7 +938,7 @@ function animate() {
                 const _iLx = Math.floor(item.x), _iLy = Math.floor(item.y + hoverOffset), _iLz = Math.floor(item.z);
                 let _iSun = getSunLight(_iLx, _iLy, _iLz) / 15.0;
                 let _iTorch = getTorchLight(_iLx, _iLy, _iLz) / 15.0;
-                if (item.id === 17 || item.id === 27) { _iSun = 1.0; _iTorch = 1.0; }
+                if (item.id === BLOCK_IDS.TORCH || item.id === BLOCK_IDS.LAVA) { _iSun = 1.0; _iTorch = 1.0; }
 
                 // Only traverse if light changed since last update
                 if (item._lastSun !== _iSun || item._lastTorch !== _iTorch) {
@@ -871,42 +961,34 @@ function animate() {
                 if (item.pickupDelay <= 0) {
                     const distSq = (player.x - item.x)**2 + (player.y - item.y)**2 + (player.z - item.z)**2;
                     if (distSq < 2.5) { 
-                        if (typeof window.addToInventory === 'function') {
-                            const leftover = window.addToInventory(item.id, item.count, item.durability);
+                        if (_fn_addToInventory) {
+                            const leftover = _fn_addToInventory(item.id, item.count, item.durability);
                             if (leftover === 0) {
-                                if (typeof window.playItemSound === 'function') window.playItemSound(0.3);
-                                itemsToRemove.push(i);
-                                // Re-render any open survival UI
-                                if (uiState === 'INVENTORY' && typeof renderInventory === 'function') renderInventory();
-                                else if (uiState === 'CRAFTING' && typeof renderInventory === 'function') renderInventory();
-                                else if (uiState === 'FURNACE' && typeof renderFurnace === 'function') renderFurnace();
-                                else if (uiState === 'CHEST' && typeof renderChest === 'function') renderChest();
-                                else if (uiState === 'ENCHANTING' && typeof renderEnchanting === 'function') renderEnchanting();
+                                if (_fn_playItemSound) _fn_playItemSound(0.3);
+                                itemsToRemove.add(i);
+                                refreshOpenUI();
                                 continue;
                             } else {
                                 item.count = leftover;
-                                // Re-render any open survival UI
-                                if (uiState === 'INVENTORY' && typeof renderInventory === 'function') renderInventory();
-                                else if (uiState === 'CRAFTING' && typeof renderInventory === 'function') renderInventory();
-                                else if (uiState === 'FURNACE' && typeof renderFurnace === 'function') renderFurnace();
-                                else if (uiState === 'CHEST' && typeof renderChest === 'function') renderChest();
-                                else if (uiState === 'ENCHANTING' && typeof renderEnchanting === 'function') renderEnchanting();
+                                refreshOpenUI();
                             }
                         }
                     }
                 }
 
-                if (item.age > 300) itemsToRemove.push(i);
+                if (item.age > 300) itemsToRemove.add(i);
             }
 
-            // Sort removal indices descending so splicing doesn't shift later indices
-            for (let ri = itemsToRemove.length - 1; ri >= 0; ri--) {
-                const i = itemsToRemove[ri];
-                const drop = droppedItems[i];
-                scene.remove(drop.mesh);
-                scene.remove(drop.shadow);
-                drop.mesh.traverse((child) => { if (child.isMesh && child.geometry) child.geometry.dispose(); });
-                droppedItems.splice(i, 1);
+            // Remove items — sort descending so splicing doesn't shift later indices
+            if (itemsToRemove.size > 0) {
+                const sortedIndices = Array.from(itemsToRemove).sort((a, b) => b - a);
+                for (const i of sortedIndices) {
+                    const drop = droppedItems[i];
+                    scene.remove(drop.mesh);
+                    scene.remove(drop.shadow);
+                    drop.mesh.traverse((child) => { if (child.isMesh && child.geometry) child.geometry.dispose(); });
+                    droppedItems.splice(i, 1);
+                }
             }
 
             const blocksToRemove = [];
@@ -953,29 +1035,19 @@ function animate() {
             const MAX_PARTICLES = 200;
             while (particles.length > MAX_PARTICLES) {
                 const oldest = particles.shift();
-                scene.remove(oldest.mesh);
-                if (oldest.mesh.onBeforeRender) oldest.mesh.onBeforeRender = null;
-                if (oldest.isSmoke && oldest.mesh.material) oldest.mesh.material.dispose();
-                if (oldest.mesh.geometry && oldest.mesh.geometry.userData && oldest.mesh.geometry.userData.refCount !== undefined) {
-                    oldest.mesh.geometry.userData.refCount--;
-                    if (oldest.mesh.geometry.userData.refCount <= 0) oldest.mesh.geometry.dispose();
-                }
+                _disposeParticle(oldest);
             }
 
             for (let i = particles.length - 1; i >= 0; i--) {
                 let p = particles[i];
                 p.life -= dt;
 
-                // --- UPDATED REMOVAL & POOLING ---
+                // --- REMOVAL: swap-and-pop (O(1) instead of O(n) splice) ---
                 if (p.life <= 0) {
-                        scene.remove(p.mesh);
-                        if (p.mesh.onBeforeRender) p.mesh.onBeforeRender = null;
-                        if (p.mesh.geometry && p.mesh.geometry.userData && p.mesh.geometry.userData.refCount !== undefined) {
-                            p.mesh.geometry.userData.refCount--;
-                            if (p.mesh.geometry.userData.refCount <= 0) p.mesh.geometry.dispose();
-                        }
-                    
-                    particles.splice(i, 1);
+                    _disposeParticle(p);
+                    // Swap with last element and pop
+                    particles[i] = particles[particles.length - 1];
+                    particles.pop();
                     continue;
                 }
 
@@ -1001,9 +1073,6 @@ function animate() {
                     }
                 }
                 
-                // --- CORRECT PLACEMENT (Around Line 876) ---
-            p.mesh.position.set(nextX, nextY, nextZ);
-
                 p.mesh.position.set(nextX, nextY, nextZ);
 
                 // --- LAVA POP TRAIL (Using existing Fire Smoke) ---
@@ -1015,10 +1084,9 @@ function animate() {
                     const distSq = dx*dx + dy*dy + dz*dz;
 
                     // Spawn existing smoke at the PREVIOUS position (lagging behind)
-                    if (distSq > 0.12) { // Increase this number for a longer "gap" between puffs
-                        if (typeof window.spawnFireSmoke === 'function') {
-                            // Spawn 1-2 puffs of your existing fire smoke
-                            window.spawnFireSmoke(p.lastX, p.lastY, p.lastZ);
+                    if (distSq > 0.12) {
+                        if (_fn_spawnFireSmoke) {
+                            _fn_spawnFireSmoke(p.lastX, p.lastY, p.lastZ);
                         }
                         
                         // Update memory to current position
@@ -1106,9 +1174,11 @@ function animate() {
     }
 
     const camX = Math.floor(camera.position.x), camY = Math.floor(camera.position.y), camZ = Math.floor(camera.position.z);
-    const isCameraUnderwater = (getVoxel(camX, camY, camZ) & 0xFF) === 4;
-    const isCameraInLava = (getVoxel(camX, camY, camZ) & 0xFF) === 27;
-    const overlay = document.getElementById('underwater-overlay');
+    const _camBlockId = getVoxel(camX, camY, camZ) & 0xFF;
+    const isCameraUnderwater = _camBlockId === BLOCK_IDS.WATER;
+    const isCameraInLava = _camBlockId === BLOCK_IDS.LAVA;
+    if (!_cachedOverlayEl) _cachedOverlayEl = document.getElementById('underwater-overlay');
+    const overlay = _cachedOverlayEl;
     const radius = RENDER_DISTANCES[currentRenderDistIndex];
     const blocksDist = radius * CHUNK_SIZE;
 
@@ -1155,7 +1225,8 @@ function animate() {
         debugFrameCount = 0; debugTickCount = 0; debugLastSecond = frameEnd;
     }
     
-    const debugEl = document.getElementById('debug-info');
+    if (!_cachedDebugEl) _cachedDebugEl = document.getElementById('debug-info');
+    const debugEl = _cachedDebugEl;
     if (debugEl) {
         if (window.showDebugScreen) {
             const px = player.x.toFixed(3);
@@ -1215,11 +1286,17 @@ Water Q: ${debugWaterQueue} | Lava Q: ${debugLavaQueue} | Dirty Chunks: ${dirtyC
     }
 
     // During death, keep animating the player model tip-over even though gameplay is paused
-    if (isDead && typeof animatePlayerModel === 'function') animatePlayerModel(dt);
+    if (isDead && _fn_animatePlayerModel) _fn_animatePlayerModel(dt);
 
     uiScene.fog = scene.fog; 
-    renderer.clear(); renderer.render(scene, camera);
-    renderer.clearDepth(); renderer.render(uiScene, uiCamera);
+
+    // Fabulous! graphics: use post-processing pipeline
+    if (settingGraphicsFabulous && typeof renderFabulous === 'function' && fabulousEnabled) {
+        renderFabulous(dt);
+    } else {
+        renderer.clear(); renderer.render(scene, camera);
+        renderer.clearDepth(); renderer.render(uiScene, uiCamera);
+    }
 }
 
 function onWindowResize() {
@@ -1228,6 +1305,10 @@ function onWindowResize() {
     uiCamera.aspect = window.innerWidth / window.innerHeight;
     uiCamera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    // Resize Fabulous render targets if active
+    if (typeof resizeFabulousGraphics === 'function' && fabulousEnabled) {
+        resizeFabulousGraphics();
+    }
 }
 
 window.updateBreakingUVs = function(texIndex) {

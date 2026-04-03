@@ -19,7 +19,7 @@ const toolMaterials = {};
 window.buildItemMesh = function(id) {
     // Route materials, saplings, flowers, and bushes to the 3D extruded material mesher
     if ((id >= 112 && id <= 123) || id === 128 || id === 129 || id === 134 || id === 135 || id === 137 || id === 142 || id === 143 || id === 151 || id === 153 || id === 165 || id === 186 || id === 187 || id === 188
-        || id === 197 || id === 198 || id === 199
+        || id === 197 || id === 198 || id === 199 || id === 202 || id === 205 || id === 206
         || id === 23 || id === 53 || id === 24 || id === 116 || id === 117 || id === 118
         || id === 17) return buildMaterialMesh(id);
     // Spawn eggs — use composited canvas texture as flat sprite

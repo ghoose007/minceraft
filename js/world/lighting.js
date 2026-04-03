@@ -197,6 +197,15 @@ function recalculateLighting(ux, uy, uz) {
                         torchQueueLen++;
                     }
                 }
+                // Redstone torch: emits light 7 when ON (bit 10 = 0)
+                if (id === 206 && !((getVoxel(x, y, z) >> 12) & 0x1)) {
+                    setTorchLight(x, y, z, 7);
+                    if (torchQueueLen < queueCapacity) {
+                        torchQueueX[torchQueueLen] = x; torchQueueY[torchQueueLen] = y;
+                        torchQueueZ[torchQueueLen] = z; torchQueueL[torchQueueLen] = 7;
+                        torchQueueLen++;
+                    }
+                }
                 // Lit furnace: emits light level 13 (MC-accurate)
                 if (id === 59 && ((getVoxel(x, y, z) >> 12) & 0x1) === 1) {
                     setTorchLight(x, y, z, 13);

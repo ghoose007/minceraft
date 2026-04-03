@@ -43,6 +43,9 @@ function toggleCameraMode() {
     cameraMode = (cameraMode + 1) % 3;
     const el = document.getElementById('action-text');
     el.textContent = ['First Person', 'Third Person Back', 'Third Person Front'][cameraMode];
+    if (window.mcFont && window.mcFont.isReady()) {
+        window.mcFont.updateEl(el, ['First Person', 'Third Person Back', 'Third Person Front'][cameraMode]);
+    }
     el.style.opacity = '1';
     clearTimeout(actionTextTimeout);
     actionTextTimeout = setTimeout(() => el.style.opacity = '0', 2000);

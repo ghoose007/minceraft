@@ -103,7 +103,7 @@ function getHighestBlock(x, z) {
     const base = (ix & 15) + ((iz & 15) << 12);
     for (let y = WORLD_HEIGHT - 1; y >= 0; y--) {
         const id = chunk[base + (y << 4)] & 0xFF;
-        if (id !== 0 && id !== 16 && id !== 17 && id !== 23 && id !== 24 && id !== 26 && id !== 27 && id !== 42 && id !== 66 && id !== 67 && id !== 116 && id !== 117 && id !== 118 && id !== 64) return y;
+        if (id !== 0 && id !== 16 && id !== 17 && id !== 23 && id !== 24 && id !== 26 && id !== 27 && id !== 42 && id !== 66 && id !== 67 && id !== 116 && id !== 117 && id !== 118 && id !== 64 && id !== 202) return y;
     }
     return 0;
 }

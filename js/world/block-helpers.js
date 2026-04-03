@@ -11,8 +11,8 @@ const _transparentLUT = new Uint8Array(256);
 const _transparentFancyLUT = new Uint8Array(256);
 (function() {
     // Added 62, 63, 64 for Farming, 66 for Vine, 67 for Lily Pad, 70-76 Slabs, 80-86 Stairs
-    const transparentIds = [0, 4, 14, 16, 17, 20, 22, 23, 24, 26, 27, 38, 40, 42, 43, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 89, 90, 93, 94, 95, 97, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201];
-    const transparentFastIds = [0, 4, 16, 17, 20, 23, 24, 26, 27, 38, 40, 42, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 90, 93, 94, 95, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201]; // leaves opaque in Fast mode
+    const transparentIds = [0, 4, 14, 16, 17, 20, 22, 23, 24, 26, 27, 38, 40, 42, 43, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 89, 90, 93, 94, 95, 97, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206];
+    const transparentFastIds = [0, 4, 16, 17, 20, 23, 24, 26, 27, 38, 40, 42, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 90, 93, 94, 95, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206]; // leaves opaque in Fast mode
     for (const id of transparentIds) _transparentFancyLUT[id] = 1;
     for (const id of transparentFastIds) _transparentLUT[id] = 1;
 })();
@@ -72,6 +72,33 @@ function getBlockBounds(id, val, bx, by, bz) {
         else if (level === 2) { b.minX=0.8; b.maxX=1.0; b.minY=0.2; b.maxY=0.8; b.minZ=0.4; b.maxZ=0.6; }
         else if (level === 3) { b.minX=0.4; b.maxX=0.6; b.minY=0.2; b.maxY=0.8; b.minZ=0.0; b.maxZ=0.2; }
         else if (level === 4) { b.minX=0.4; b.maxX=0.6; b.minY=0.2; b.maxY=0.8; b.minZ=0.8; b.maxZ=1.0; }
+    } else if (id === 206) {
+        // Redstone torch: same hitbox as regular torch
+        const level = (val >> 8) & 0xF;
+        if (level === 0) { b.minX=0.4; b.maxX=0.6; b.minY=0.0; b.maxY=0.6; b.minZ=0.4; b.maxZ=0.6; }
+        else if (level === 1) { b.minX=0.0; b.maxX=0.2; b.minY=0.2; b.maxY=0.8; b.minZ=0.4; b.maxZ=0.6; }
+        else if (level === 2) { b.minX=0.8; b.maxX=1.0; b.minY=0.2; b.maxY=0.8; b.minZ=0.4; b.maxZ=0.6; }
+        else if (level === 3) { b.minX=0.4; b.maxX=0.6; b.minY=0.2; b.maxY=0.8; b.minZ=0.0; b.maxZ=0.2; }
+        else if (level === 4) { b.minX=0.4; b.maxX=0.6; b.minY=0.2; b.maxY=0.8; b.minZ=0.8; b.maxZ=1.0; }
+    } else if (id === 202) {
+        // Redstone dust: flat on top of block, 1px tall
+        b.minY = 0.0; b.maxY = 1/16;
+    } else if (id === 203) {
+        // Wood button: small protrusion on wall face
+        const dir = (val >> 8) & 0x3;
+        const pressed = (val >> 10) & 0x1;
+        const depth = pressed ? 1/16 : 2/16;
+        if (dir === 0)      { b.minX=5/16; b.maxX=11/16; b.minY=6/16; b.maxY=10/16; b.minZ=1-depth; b.maxZ=1; }
+        else if (dir === 1) { b.minZ=5/16; b.maxZ=11/16; b.minY=6/16; b.maxY=10/16; b.minX=1-depth; b.maxX=1; }
+        else if (dir === 2) { b.minX=5/16; b.maxX=11/16; b.minY=6/16; b.maxY=10/16; b.minZ=0; b.maxZ=depth; }
+        else if (dir === 3) { b.minZ=5/16; b.maxZ=11/16; b.minY=6/16; b.maxY=10/16; b.minX=0; b.maxX=depth; }
+    } else if (id === 205) {
+        // Lever: base 6x4x2 + stick extends beyond
+        const dir = (val >> 8) & 0x3;
+        if (dir === 0)      { b.minX=5/16; b.maxX=11/16; b.minY=5/16; b.maxY=11/16; b.minZ=1-3/16; b.maxZ=1; }
+        else if (dir === 1) { b.minZ=5/16; b.maxZ=11/16; b.minY=5/16; b.maxY=11/16; b.minX=1-3/16; b.maxX=1; }
+        else if (dir === 2) { b.minX=5/16; b.maxX=11/16; b.minY=5/16; b.maxY=11/16; b.minZ=0; b.maxZ=3/16; }
+        else if (dir === 3) { b.minZ=5/16; b.maxZ=11/16; b.minY=5/16; b.maxY=11/16; b.minX=0; b.maxX=3/16; }
     }
     
     // --- Farming Block Bounds ---
@@ -185,7 +212,7 @@ function getBlockBounds(id, val, bx, by, bz) {
 }
 
 function canSupport(id) {
-    if (id === 0 || id === 4 || id === 27 || isCrossBlock(id) || id === 20 || id === 40 || id === 38 || id === 17 || id === 64 || id === 66 || id === 67 || id === 68 || id === 158) return false;
+    if (id === 0 || id === 4 || id === 27 || isCrossBlock(id) || id === 20 || id === 40 || id === 38 || id === 17 || id === 64 || id === 66 || id === 67 || id === 68 || id === 158 || id === 202 || id === 203 || id === 205 || id === 206) return false;
     return true;
 }
 
@@ -311,6 +338,19 @@ function checkSupport(x, y, z) {
     // Lily pad: needs water below
     if (id === 67) {
         return (getVoxel(x, y - 1, z) & 0xFF) === 4;
+    }
+    // Redstone dust: needs solid block below
+    if (id === 202) {
+        return canSupport(getVoxel(x, y - 1, z) & 0xFF);
+    }
+    // Wood button: needs solid block on its attached face
+    if (id === 203 || id === 205) {
+        const dir = (val >> 8) & 0x3;
+        if (dir === 0) return canSupport(getVoxel(x, y, z + 1) & 0xFF);
+        if (dir === 1) return canSupport(getVoxel(x + 1, y, z) & 0xFF);
+        if (dir === 2) return canSupport(getVoxel(x, y, z - 1) & 0xFF);
+        if (dir === 3) return canSupport(getVoxel(x - 1, y, z) & 0xFF);
+        return false;
     }
     return true;
 }
