@@ -365,7 +365,7 @@ function _buildMobileUI() {
             touch-action: none;
             -webkit-overflow-scrolling: none;
         }
-        body.mobile-mode canvas {
+        body.mobile-mode > canvas {
             width: 100vw !important;
             height: 100vh !important;
         }
