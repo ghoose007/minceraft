@@ -569,7 +569,8 @@ const ORE_XP_VALUES = {
     49: function () { return 1 + Math.floor(Math.random() * 5); },       // Redstone Ore: 1-5
     50: function () { return 2 + Math.floor(Math.random() * 4); },       // Lapis Lazuli Ore: 2-5
     88: function () { return 2 + Math.floor(Math.random() * 4); },       // Nether Quartz Ore: 2-5
-    54: function () { return 15 + Math.floor(Math.random() * 29 - 15); } // Monster Spawner: 15-29
+    54: function () { return 15 + Math.floor(Math.random() * 29 - 15); }, // Monster Spawner: 15-29
+    210: function () { return 5 + Math.floor(Math.random() * 6); }        // Emerald Ore: 5-10
 };
 
 function getXPForOre(blockId) {

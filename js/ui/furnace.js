@@ -34,7 +34,7 @@ function handleFurnaceClick(slotName, e) {
         if (!window.cursorItem) {
             window.cursorItem = { ...slotItem };
             slotItem.id = 0; slotItem.count = 0; delete slotItem.durability;
-        } else if (window.cursorItem.id === slotItem.id && window.cursorItem.count + slotItem.count <= 64) {
+        } else if (window.cursorItem.id === slotItem.id && window.cursorItem.count + slotItem.count <= (window.getMaxStack ? window.getMaxStack(window.cursorItem.id) : 64)) {
             window.cursorItem.count += slotItem.count;
             slotItem.id = 0; slotItem.count = 0; delete slotItem.durability;
         } else { return; }

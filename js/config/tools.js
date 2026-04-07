@@ -103,5 +103,24 @@ const TOOL_DATA = {
     // New items (terrain.png atlas)
     197: { name: 'Paper', atlasIdx: 152, type: 'material', tier: 0, speed: 1.0, isTerrainAtlas: true },
     198: { name: 'Book', atlasIdx: 153, type: 'material', tier: 0, speed: 1.0, isTerrainAtlas: true },
-    199: { name: 'Lapis Lazuli', atlasIdx: 155, type: 'material', tier: 0, speed: 1.0, isTerrainAtlas: true }
+    199: { name: 'Lapis Lazuli', atlasIdx: 155, type: 'material', tier: 0, speed: 1.0, isTerrainAtlas: true },
+    211: { name: 'Emerald', atlasIdx: 175, type: 'material', tier: 0, speed: 1.0, isTerrainAtlas: true },
+
+    // Buckets
+    223: { name: 'Iron Bucket', atlasIdx: 52, type: 'bucket', tier: 0, speed: 1.0, maxStack: 16 },
+    224: { name: 'Water Bucket', atlasIdx: 53, type: 'bucket_water', tier: 0, speed: 1.0, maxStack: 1 },
+    225: { name: 'Lava Bucket', atlasIdx: 54, type: 'bucket_lava', tier: 0, speed: 1.0, maxStack: 1 },
+
+    // Emerald Tools (tier 4, double diamond durability, faster than diamond)
+    214: { name: 'Emerald Sword', atlasIdx: 47, type: 'sword', tier: 4, speed: 5.0, damage: 8, maxDurability: 3122 },
+    215: { name: 'Emerald Axe', atlasIdx: 48, type: 'axe', tier: 4, speed: 10.0, damage: 7, maxDurability: 3122 },
+    216: { name: 'Emerald Hoe', atlasIdx: 49, type: 'hoe', tier: 4, speed: 10.0, damage: 1, maxDurability: 3122 },
+    217: { name: 'Emerald Pickaxe', atlasIdx: 50, type: 'pickaxe', tier: 4, speed: 10.0, damage: 6, maxDurability: 3122 },
+    218: { name: 'Emerald Shovel', atlasIdx: 51, type: 'shovel', tier: 4, speed: 10.0, damage: 5, maxDurability: 3122 },
+
+    // Emerald Armor (double diamond durability, same defense + extra heart per piece)
+    219: { name: 'Emerald Helmet', atlasIdx: 46, type: 'armor', armorSlot: 'helmet', defense: 3, maxDurability: 726, bonusHealth: 2 },
+    220: { name: 'Emerald Chestplate', atlasIdx: 45, type: 'armor', armorSlot: 'chestplate', defense: 8, maxDurability: 1056, bonusHealth: 2 },
+    221: { name: 'Emerald Leggings', atlasIdx: 44, type: 'armor', armorSlot: 'leggings', defense: 6, maxDurability: 990, bonusHealth: 2 },
+    222: { name: 'Emerald Boots', atlasIdx: 43, type: 'armor', armorSlot: 'boots', defense: 3, maxDurability: 858, bonusHealth: 2 }
 };

@@ -300,7 +300,7 @@ class Mob {
                     const id = val & 0xFF;
                     if (id === 4)  foundWater = true;
                     if (id === 27) foundLava  = true;
-                    if (id === 0 || isFluidBlock(id) || isCrossBlock(id) || id === 17 || id === 23 || id === 64 || id === 66 || id === 90) continue;
+                    if (id === 0 || isFluidBlock(id) || isCrossBlock(id) || id === 17 || id === 23 || id === 64 || id === 66 || id === 90 || id === 209) continue;
                     
                     const bRaw = typeof getBlockBounds === 'function' ? getBlockBounds(id, val, bx, by, bz) : { minX:0,maxX:1,minY:0,maxY:1,minZ:0,maxZ:1 };
                     const boundsList = Array.isArray(bRaw) ? bRaw : [bRaw];
@@ -354,7 +354,7 @@ class Mob {
                     for (let bz = sMinZ; bz <= sMaxZ && !hit; bz++) {
                         const val = getVoxel(bx, by, bz);
                         const id = val & 0xFF;
-                        if (id === 0 || isFluidBlock(id) || isCrossBlock(id) || id === 17 || id === 23 || id === 64 || id === 66 || id === 90) continue;
+                        if (id === 0 || isFluidBlock(id) || isCrossBlock(id) || id === 17 || id === 23 || id === 64 || id === 66 || id === 90 || id === 209) continue;
                         const bRaw = typeof getBlockBounds === 'function' ? getBlockBounds(id, val, bx, by, bz) : {minX:0,maxX:1,minY:0,maxY:1,minZ:0,maxZ:1};
                         const boundsList = Array.isArray(bRaw) ? bRaw : [bRaw];
                         for (const b of boundsList) {
@@ -519,12 +519,12 @@ function _mobWallAhead(mob, vx, vz) {
     // Check for solid block at foot level and one above (body height)
     for (let h = 0; h < Math.ceil(mob.height); h++) {
         const bid = getVoxel(probeX, feetY + h, probeZ) & 0xFF;
-        if (bid !== 0 && !isFluidBlock(bid) && !isCrossBlock(bid) && bid !== 17 && bid !== 23 && bid !== 64 && bid !== 66 && bid !== 90 && bid !== 40) {
+        if (bid !== 0 && !isFluidBlock(bid) && !isCrossBlock(bid) && bid !== 17 && bid !== 23 && bid !== 64 && bid !== 66 && bid !== 90 && bid !== 209 && bid !== 40) {
             // There's a wall — check if it's jumpable (just 1 block high with clearance above)
             if (h === 0) {
                 const aboveWall = getVoxel(probeX, feetY + 1, probeZ) & 0xFF;
                 const aboveWall2 = getVoxel(probeX, feetY + 2, probeZ) & 0xFF;
-                const isPassthrough = (id) => id === 0 || isFluidBlock(id) || isCrossBlock(id) || id === 17 || id === 23 || id === 64 || id === 66 || id === 90 || id === 40;
+                const isPassthrough = (id) => id === 0 || isFluidBlock(id) || isCrossBlock(id) || id === 17 || id === 23 || id === 64 || id === 66 || id === 90 || id === 209 || id === 40;
                 if (isPassthrough(aboveWall) && isPassthrough(aboveWall2)) {
                     return false; // Jumpable 1-block wall, physics will handle the jump
                 }
@@ -587,7 +587,7 @@ function checkLineOfSight(x1, y1, z1, x2, y2, z2) {
         const id = getVoxel(px, py, pz) & 0xFF;
         
         // Block vision if the voxel is solid (air, fluids, and foliage are transparent)
-        if (id !== 0 && !isFluidBlock(id) && !isCrossBlock(id) && id !== 17 && id !== 18 && id !== 20 && id !== 90) {
+        if (id !== 0 && !isFluidBlock(id) && !isCrossBlock(id) && id !== 17 && id !== 18 && id !== 20 && id !== 90 && id !== 209) {
             return false;
         }
     }

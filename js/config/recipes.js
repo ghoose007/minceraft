@@ -17,6 +17,7 @@ const RECIPES = [
     // --- Blocks & Utility ---
     { pattern: [['plank', 'plank'],['plank', 'plank']], output: { id: 58, count: 1 } }, // Crafting Table
     { pattern: [[113, 0], [0, 135]], output: { id: 136, count: 1 } }, // NEW: Flint and Steel
+    { pattern: [[113, 0, 113], [0, 113, 0]], output: { id: 223, count: 1 } }, // Iron Bucket
     { pattern: [['plank', 'plank', 'plank'],['plank', 0, 'plank'],['plank', 'plank', 'plank']], output: { id: 69, count: 1 } }, // Chest
     { pattern: [['plank'],['plank']], output: { id: 112, count: 4 } }, // Sticks
     { pattern: [[33, 33, 33],[33, 0, 33],[33, 33, 33]], output: { id: 59, count: 1 } }, // Furnace
@@ -174,6 +175,21 @@ const RECIPES = [
     { pattern: [[114, 0, 114], [114, 114, 114], [114, 114, 114]], output: { id: 179, count: 1 } }, // Diamond Chestplate
     { pattern: [[114, 114, 114], [114, 0, 114], [114, 0, 114]], output: { id: 180, count: 1 } }, // Diamond Leggings
     { pattern: [[114, 0, 114], [114, 0, 114]], output: { id: 181, count: 1 } }, // Diamond Boots
+
+    // --- Emerald Tools (211 = emerald) ---
+    { pattern: [[211, 211, 211], [0, 112, 0], [0, 112, 0]], output: { id: 217, count: 1 } }, // Emerald Pickaxe
+    { pattern: [[211, 211], [211, 112], [0, 112]], output: { id: 215, count: 1 } },           // Emerald Axe (Left)
+    { pattern: [[211, 211], [112, 211], [112, 0]], output: { id: 215, count: 1 } },           // Emerald Axe (Right)
+    { pattern: [[211], [211], [112]], output: { id: 214, count: 1 } },                        // Emerald Sword
+    { pattern: [[211], [112], [112]], output: { id: 218, count: 1 } },                        // Emerald Shovel
+    { pattern: [[211, 211], [0, 112], [0, 112]], output: { id: 216, count: 1 } },             // Emerald Hoe (Left)
+    { pattern: [[211, 211], [112, 0], [112, 0]], output: { id: 216, count: 1 } },             // Emerald Hoe (Right)
+
+    // --- Emerald Armor (211 = emerald) ---
+    { pattern: [[211, 211, 211], [211, 0, 211]], output: { id: 219, count: 1 } },             // Emerald Helmet
+    { pattern: [[211, 0, 211], [211, 211, 211], [211, 211, 211]], output: { id: 220, count: 1 } }, // Emerald Chestplate
+    { pattern: [[211, 211, 211], [211, 0, 211], [211, 0, 211]], output: { id: 221, count: 1 } },   // Emerald Leggings
+    { pattern: [[211, 0, 211], [211, 0, 211]], output: { id: 222, count: 1 } },               // Emerald Boots
 
     // --- Gold Armor (143 = gold ingot) ---
     { pattern: [[143, 143, 143], [143, 0, 143]], output: { id: 182, count: 1 } }, // Gold Helmet

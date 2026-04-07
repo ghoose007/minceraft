@@ -41,26 +41,41 @@ function renderInventory() {
         { name: 'Slabs', ids: [70, 71, 72, 73, 74, 75, 76, 77, 157] },
         { name: 'Stairs', ids: [80, 81, 82, 83, 84, 85, 86, 94, 152] },
         { name: 'Fences & Doors', ids: [144, 145, 146, 147, 148, 149, 150, 151] },
-        { name: 'Natural', ids: [13, 21, 41, 96, 14, 22, 43, 97, 16, 23, 24, 53, 52, 66, 67, 20, 40] },
+        { name: 'Natural', ids: [13, 21, 41, 96, 14, 22, 43, 97, 16, 23, 24, 53, 212, 213, 52, 66, 67, 20, 40] },
         { name: 'Saplings & Seeds', ids: [116, 117, 118, 137, 128, 129] },
-        { name: 'Ores & Minerals', ids: [7, 6, 8, 9, 49, 50, 88, 119, 113, 143, 114, 153, 199, 135, 121, 120] },
+        { name: 'Ores & Minerals', ids: [7, 6, 8, 9, 49, 50, 88, 210, 119, 113, 143, 114, 153, 199, 211, 135, 121, 120] },
         { name: 'Redstone', ids: [202, 206, 203, 205, 207, 208, 65] },
         { name: 'Utilities', ids: [17, 58, 59, 69, 93, 201, 54, 62] },
-        { name: 'Fluids', ids: [4, 27] },
+        // Fluids now obtained via buckets only
         { name: 'Wooden Tools', ids: [101, 100, 102, 103, 130] },
         { name: 'Stone Tools', ids: [105, 104, 106, 107, 131] },
         { name: 'Iron Tools', ids: [109, 108, 110, 111, 132] },
         { name: 'Diamond Tools', ids: [125, 124, 126, 127, 133] },
         { name: 'Gold Tools', ids: [160, 159, 161, 162, 163] },
-        { name: 'Combat', ids: [164, 165, 136] },
+        { name: 'Emerald Tools', ids: [217, 215, 218, 214, 216] },
+        { name: 'Combat', ids: [164, 165, 136, 223, 224, 225] },
         { name: 'Leather Armor', ids: [174, 175, 176, 177] },
         { name: 'Iron Armor', ids: [170, 171, 172, 173] },
         { name: 'Diamond Armor', ids: [178, 179, 180, 181] },
         { name: 'Gold Armor', ids: [182, 183, 184, 185] },
+        { name: 'Emerald Armor', ids: [219, 220, 221, 222] },
         { name: 'Food', ids: [115, 134, 122, 123, 187, 188] },
         { name: 'Materials', ids: [112, 186, 197, 198] },
         { name: 'Spawn Eggs', ids: [190, 191, 192, 193, 194, 195, 196] },
     ];
+    
+    // If aether is disabled, remove emerald-related items
+    const aetherDisabled = (typeof GEN_AETHER_ENABLED !== 'undefined' && !GEN_AETHER_ENABLED);
+    if (aetherDisabled) {
+        for (let i = categories.length - 1; i >= 0; i--) {
+            if (categories[i].name === 'Emerald Tools' || categories[i].name === 'Emerald Armor') {
+                categories.splice(i, 1);
+            } else {
+                // Remove emerald ore (210) and emerald item (211) from other categories
+                categories[i].ids = categories[i].ids.filter(id => id !== 210 && id !== 211);
+            }
+        }
+    }
 
     // Hidden blocks that should never appear
     const hideIds = new Set([18, 60, 63, 64, 89, 90, 151]);
@@ -282,7 +297,25 @@ function handleArmorSlotClick(slotIdx, e) {
 
     if (typeof renderInventory === 'function') renderInventory();
     if (typeof updateCursorItemUI === 'function') updateCursorItemUI(e);
+    if (typeof _recalcArmorHealthBonus === 'function') _recalcArmorHealthBonus();
 }
+
+// Recalculate player max health based on emerald armor bonus
+function _recalcArmorHealthBonus() {
+    const baseHealth = 20;
+    let bonus = 0;
+    for (const slot of armorSlots) {
+        if (slot.id === 0) continue;
+        const data = TOOL_DATA[slot.id];
+        if (data && data.bonusHealth) bonus += data.bonusHealth;
+    }
+    const newMax = baseHealth + bonus;
+    if (player.maxHealth !== newMax) {
+        player.maxHealth = newMax;
+        if (player.health > player.maxHealth) player.health = player.maxHealth;
+    }
+}
+window._recalcArmorHealthBonus = _recalcArmorHealthBonus;
 
 // --- ARMOR BAR UI ---
 window.updateArmorBar = function() {

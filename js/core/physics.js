@@ -65,6 +65,9 @@ function raycastVoxel() {
         const id = val & 0xFF;
 
         if (id !== 0 && !isFluidBlock(id)) {
+            // In survival, skip portal blocks — they are non-interactable
+            if ((id === 90 || id === 209) && typeof gameMode !== 'undefined' && gameMode !== 'creative') continue;
+            
             // For full blocks, the DDA hit is exact
             const exactX = ox + dir.x * t;
             const exactY = oy + dir.y * t;
@@ -145,6 +148,41 @@ function raycastVoxel() {
     return null;
 }
 
+// Raycast that hits fluid source blocks (for bucket pickup)
+function raycastFluidSource() {
+    const dir = new THREE.Vector3();
+    let ox, oy, oz;
+    if (typeof cameraMode !== 'undefined' && cameraMode !== 0) {
+        dir.set(-Math.sin(player.yaw)*Math.cos(player.pitch), Math.sin(player.pitch), -Math.cos(player.yaw)*Math.cos(player.pitch));
+        ox = player.x; oy = player.y + player.eyeLevel; oz = player.z;
+    } else {
+        camera.getWorldDirection(dir);
+        ox = camera.position.x; oy = camera.position.y; oz = camera.position.z;
+    }
+    const maxDist = 5.0;
+    let x = Math.floor(ox), y = Math.floor(oy), z = Math.floor(oz);
+    const stepX = dir.x >= 0 ? 1 : -1, stepY = dir.y >= 0 ? 1 : -1, stepZ = dir.z >= 0 ? 1 : -1;
+    const tDeltaX = dir.x !== 0 ? Math.abs(1/dir.x) : Infinity;
+    const tDeltaY = dir.y !== 0 ? Math.abs(1/dir.y) : Infinity;
+    const tDeltaZ = dir.z !== 0 ? Math.abs(1/dir.z) : Infinity;
+    let tMaxX = dir.x !== 0 ? ((dir.x > 0 ? (x+1-ox) : (ox-x)) / Math.abs(dir.x)) : Infinity;
+    let tMaxY = dir.y !== 0 ? ((dir.y > 0 ? (y+1-oy) : (oy-y)) / Math.abs(dir.y)) : Infinity;
+    let tMaxZ = dir.z !== 0 ? ((dir.z > 0 ? (z+1-oz) : (oz-z)) / Math.abs(dir.z)) : Infinity;
+    let normal = [0,0,0], t = 0;
+    for (let i = 0; i < 200; i++) {
+        if (tMaxX < tMaxY && tMaxX < tMaxZ) { t=tMaxX; x+=stepX; tMaxX+=tDeltaX; normal=[-stepX,0,0]; }
+        else if (tMaxY < tMaxZ) { t=tMaxY; y+=stepY; tMaxY+=tDeltaY; normal=[0,-stepY,0]; }
+        else { t=tMaxZ; z+=stepZ; tMaxZ+=tDeltaZ; normal=[0,0,-stepZ]; }
+        if (t > maxDist) break;
+        const val = getVoxel(x,y,z), id = val & 0xFF;
+        if (id !== 0 && !isFluidBlock(id)) return null; // Hit solid block first
+        if (isFluidBlock(id) && ((val >> 13) & 0x1) === 1) {
+            return { hit: [x,y,z], normal: normal, id: id, val: val };
+        }
+    }
+    return null;
+}
+
 function checkAABB(aabb1, aabb2) {
     return (aabb1.minX < aabb2.maxX && aabb1.maxX > aabb2.minX &&
             aabb1.minY < aabb2.maxY && aabb1.maxY > aabb2.minY &&
@@ -186,7 +224,7 @@ function sweepAxis(axis, dist, pos, height) {
                     const val = getVoxel(bx, by, bz);
                     const id = val & 0xFF;
                     // Exclude fluids, torches, roses, crops, vines, and tall grass from physical body collision
-                    if (id !== 0 && !isFluidBlock(id) && id !== 17 && id !== 206 && id !== 23 && id !== 64 && id !== 66 && id !== 90 && !isCrossBlock(id)) {
+                    if (id !== 0 && !isFluidBlock(id) && id !== 17 && id !== 206 && id !== 23 && id !== 64 && id !== 66 && id !== 90 && id !== 209 && !isCrossBlock(id)) {
                         const b = getBlockBounds(id, val, bx, by, bz);
                         const blockAABB = {
                             minX: bx + b.minX, maxX: bx + b.maxX,
@@ -563,28 +601,35 @@ function movePlayer(dt) {
         }
     }
 
-    // --- NETHER PORTAL CHECK ---
-    // Use a timestamp-based cooldown so it survives dimension switching
+    // --- PORTAL CHECK (Nether + Aether) ---
     const now = performance.now();
     if (typeof window._lastPortalUse === 'undefined') window._lastPortalUse = 0;
     const isSwitching = (typeof _dimensionSwitching !== 'undefined' && _dimensionSwitching);
     if (!isSwitching && now - window._lastPortalUse > 4000) { // 4 second cooldown
-        // Check a small area around the player to catch thin portals on block boundaries
         const checkXs = [Math.floor(player.x), Math.floor(player.x + 0.3), Math.floor(player.x - 0.3)];
         const checkZs = [Math.floor(player.z), Math.floor(player.z + 0.3), Math.floor(player.z - 0.3)];
         let inPortal = false;
+        let inAetherPortal = false;
         outer:
         for (const cpx of checkXs) {
             for (const cpz of checkZs) {
                 for (let checkY = Math.floor(player.y); checkY <= Math.floor(player.y + player.height); checkY++) {
-                    if ((getVoxel(cpx, checkY, cpz) & 0xFF) === BLOCK_IDS.NETHER_PORTAL) {
+                    const bid = getVoxel(cpx, checkY, cpz) & 0xFF;
+                    if (bid === BLOCK_IDS.NETHER_PORTAL) {
                         inPortal = true;
+                        break outer;
+                    }
+                    if (bid === BLOCK_IDS.AETHER_PORTAL) {
+                        inAetherPortal = true;
                         break outer;
                     }
                 }
             }
         }
         if (inPortal && typeof window.switchDimension === 'function') {
+            window._lastPortalUse = now;
+            window.switchDimension();
+        } else if (inAetherPortal && typeof window.switchDimension === 'function') {
             window._lastPortalUse = now;
             window.switchDimension();
         }

@@ -178,21 +178,57 @@ function checkGravity(x, y, z, _visited) {
 }
 
 function getCornerHeight(bx, y, bz, dx, dz, fluidId = 4) {
-    const maxLevel = fluidId === 27 ? 4 : 8; 
-    let sum = 0, count = 0;
+    // Canonical Minecraft fluid corner height algorithm with WEIGHTED averaging.
+    //
+    // Sample the 2x2 cells around this corner. If ANY of them has fluid
+    // directly above (i.e. it's submerged or part of a vertical column),
+    // the corner is full height (1.0).
+    //
+    // Otherwise compute a WEIGHTED average where "near-full" cells (sources
+    // and flowing cells with height >= 0.8) get 10x the weight of thin
+    // flowing cells. This is what makes a source's corner stay near 0.875
+    // even when surrounded by thin flowing tails — without this weighting,
+    // the source's corner gets dragged down toward thin neighbors and the
+    // source's side faces tilt dramatically.
+    //
+    // The early-return-on-fluid-above is what makes adjacent cells agree
+    // on shared corners: a topmost cell next to a submerged neighbor will
+    // see the submerged cell in its 2x2 sample and return 1.0, matching
+    // the submerged cell's own corner value.
+    //
+    // Falling fluid is also treated as 1.0 since it represents a vertical
+    // column passing through the cell.
+    let totalHeight = 0;
+    let totalWeight = 0;
     for (let ix = 0; ix <= 1; ix++) {
         for (let iz = 0; iz <= 1; iz++) {
             const nx = bx + dx - 1 + ix, nz = bz + dz - 1 + iz;
             const nVal = getVoxel(nx, y, nz);
             if ((nVal & 0xFF) === fluidId) {
                 const aboveVal = getVoxel(nx, y + 1, nz);
-                if ((aboveVal & 0xFF) === fluidId) return 1.0; 
-
+                if ((aboveVal & 0xFF) === fluidId) return 1.0;
+                const isFalling = (nVal >> 12) & 0x1;
+                if (isFalling) return 1.0;
                 const isSource = (nVal >> 13) & 0x1;
-                if (isSource) { sum += 0.9; count++; } 
-                else { const level = (nVal >> 8) & 0xF; sum += (level / maxLevel) * 0.8 + 0.1; count++; }
+                let h;
+                if (isSource) {
+                    h = 8.0 / 9.0;
+                } else {
+                    const level = (nVal >> 8) & 0xF;
+                    h = level / 9.0;
+                }
+                // MC weighting: cells at height >= 0.8 (sources and near-full
+                // flowing cells) get 10x weight, dominating the average and
+                // preventing thin neighbors from pulling down the corner.
+                if (h >= 0.8) {
+                    totalHeight += h * 10.0;
+                    totalWeight += 10;
+                } else {
+                    totalHeight += h;
+                    totalWeight += 1;
+                }
             }
         }
     }
-    return count > 0 ? sum / count : 0.1;
+    return totalWeight > 0 ? totalHeight / totalWeight : 0.0;
 }

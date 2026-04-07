@@ -63,17 +63,56 @@ async function init(seed, loadedData) {
     // Reset dimension state for fresh starts (loaded worlds restore this later)
     currentDimension = 'overworld';
     netherGenerated = false;
+    aetherGenerated = false;
     overworldChunkStorage = null;
     overworldGeneratedChunks = null;
     overworldBiomeMap = null;
     netherChunkStorage = null;
     netherGeneratedChunks = null;
+    aetherChunkStorage = null;
+    aetherGeneratedChunks = null;
+    aetherBiomeMap = null;
     if (!window._portalLinks) window._portalLinks = [];
     else window._portalLinks.length = 0;
+    if (!window._aetherPortalLinks) window._aetherPortalLinks = [];
+    else window._aetherPortalLinks.length = 0;
+    
+    // Reset dimensionData table — both fresh and load paths populate it
+    // (the load path does it via _loadV5IntoData/_loadV4IntoData before
+    // calling init; the fresh path populates it just after initChunkStorage
+    // below).
+    if (!loadedData && typeof dimensionData !== 'undefined') {
+        for (const dimName of ['overworld', 'nether', 'aether']) {
+            const d = dimensionData[dimName];
+            d.chunks = null;
+            d.generatedFlags = null;
+            d.biomeMap = null;
+            d.chunksX = 0;
+            d.chunksZ = 0;
+            d.worldWidth = 0;
+            d.worldDepth = 0;
+            d.generated = false;
+            d.playerPos = null;
+        }
+    }
     
     clearChunkStorage();
     initChunkStorage();
     _updateWorldHalves();
+    
+    // Populate dimensionData.overworld for fresh worlds. The load path
+    // already populated it via _loadV5IntoData / _loadV4IntoData.
+    if (!loadedData && typeof dimensionData !== 'undefined') {
+        const od = dimensionData.overworld;
+        od.chunksX = CHUNKS_X;
+        od.chunksZ = CHUNKS_Z;
+        od.worldWidth = WORLD_WIDTH;
+        od.worldDepth = WORLD_DEPTH;
+        od.chunks = chunkStorageArr;
+        od.generatedFlags = generatedChunksArr;
+        od.biomeMap = biomeMap;
+        od.generated = true;
+    }
     
     useLazyGeneration = (CHUNKS_X > LAZY_GEN_THRESHOLD || CHUNKS_Z > LAZY_GEN_THRESHOLD);
     
@@ -104,9 +143,12 @@ async function init(seed, loadedData) {
     heldItemGroup.rotation.set(0, -Math.PI / 4, Math.PI / 16);
     uiCamera.add(heldItemGroup);
     
-    renderer = new THREE.WebGLRenderer({ antialias: false });
+    renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    // PERF: Clamp pixel ratio to 1 — on high-DPI displays (Retina, mobile),
+    // window.devicePixelRatio is 2-3x, which means rendering 4-9x as many pixels.
+    // For pixel-art games, the visual quality difference is minimal but the perf cost is huge.
+    renderer.setPixelRatio(Math.min(1, window.devicePixelRatio));
     renderer.autoClear = false; 
     document.body.appendChild(renderer.domElement);
 
@@ -215,6 +257,7 @@ async function init(seed, loadedData) {
         solidMaterial = new THREE.MeshBasicMaterial({ map: textureAtlas, alphaTest: 0.5, transparent: false, side: THREE.FrontSide, vertexColors: true });
         injectLightingShader(solidMaterial);
         if (typeof createPortalMaterial === 'function') createPortalMaterial(textureAtlas);
+        if (typeof createAetherPortalMaterial === 'function') createAetherPortalMaterial(textureAtlas);
         glassMaterial = new THREE.MeshBasicMaterial({ map: textureAtlas, transparent: true, opacity: 1.0, alphaTest: 0.0, side: THREE.FrontSide, vertexColors: true, depthWrite: false });
         injectLightingShader(glassMaterial);
         const waterTex = await loadWaterTexture();
@@ -245,35 +288,83 @@ async function init(seed, loadedData) {
     scene.add(breakingBox);
     
     if (loadedData) {
-        // --- RESTORE SAVED WORLD ---
+        // --- RESTORE SAVED WORLD (v5 unified path) ---
+        // dimensionData has already been populated by loadWorldFromSlot.
+        // We just need to bind the active dimension, reconstruct biomes for
+        // any dimension that doesn't have them (v4 migration), restore the
+        // player, and trigger notifyDimensionChange.
         updateLoadingBar(30, 'Restoring world data...');
         await yieldToUI();
         
-        if (loadedData.generatedFlags) {
-            for (let i = 0; i < loadedData.generatedFlags.length && i < generatedChunksArr.length; i++) {
-                generatedChunksArr[i] = loadedData.generatedFlags[i];
-            }
-        }
-        if (typeof decompressChunks === 'function') decompressChunks(loadedData.chunks);
+        // Determine which dimension the player should be in
+        const targetDim = loadedData.currentDimension || 'overworld';
         
-        // Rebuild biome map from noise
+        // Reconstruct biomes for dimensions that don't have them persisted.
+        // v5 saves persist biomes — only v4-migrated saves need this.
         updateLoadingBar(35, 'Rebuilding biome data...');
         await yieldToUI();
-        const halfW = WORLD_WIDTH / 2, halfD = WORLD_DEPTH / 2;
-        for (let cx = 0; cx < CHUNKS_X; cx++) {
-            for (let cz = 0; cz < CHUNKS_Z; cz++) {
-                if (generatedChunksArr[cx * CHUNKS_Z + cz] !== 1) continue;
-                const biomeData = _computeChunkBiomeData(cx, cz);
-                const sx = cx * CHUNK_SIZE - halfW, sz = cz * CHUNK_SIZE - halfD;
-                for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-                    for (let lz = 0; lz < CHUNK_SIZE; lz++) {
-                        const gIdx = (sx + lx + halfW) + (sz + lz + halfD) * WORLD_WIDTH;
-                        if (gIdx >= 0 && gIdx < WORLD_WIDTH * WORLD_DEPTH)
-                            biomeMap[gIdx] = BIOME_NAMES[biomeData.biomes[lx + lz * CHUNK_SIZE]];
+        for (const dimName of ['overworld', 'nether', 'aether']) {
+            const dimMeta = loadedData.dimensions ? loadedData.dimensions[dimName] : null;
+            if (!dimMeta || !dimMeta.generated) continue;
+            if (dimMeta.hasBiomes) continue;  // already loaded from disk
+            
+            const d = dimensionData[dimName];
+            if (!d || !d.chunks || !d.biomeMap) continue;
+            
+            // Bind to this dimension temporarily so the biome reconstruction
+            // helpers operate on the right WORLD_WIDTH/CHUNKS_X. We'll re-bind
+            // to the player's dimension at the end.
+            _bindActiveDimension(dimName);
+            
+            const halfW = d.worldWidth / 2;
+            const halfD = d.worldDepth / 2;
+            
+            if (dimName === 'overworld') {
+                // Overworld: noise-based biome reconstruction via _computeChunkBiomeData
+                for (let cx = 0; cx < d.chunksX; cx++) {
+                    for (let cz = 0; cz < d.chunksZ; cz++) {
+                        if (d.generatedFlags[cx * d.chunksZ + cz] !== 1) continue;
+                        const biomeData = _computeChunkBiomeData(cx, cz);
+                        const sx = cx * CHUNK_SIZE - halfW, sz = cz * CHUNK_SIZE - halfD;
+                        for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+                            for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+                                const gIdx = (sx + lx + halfW) + (sz + lz + halfD) * d.worldWidth;
+                                if (gIdx >= 0 && gIdx < d.worldWidth * d.worldDepth)
+                                    d.biomeMap[gIdx] = BIOME_NAMES[biomeData.biomes[lx + lz * CHUNK_SIZE]];
+                            }
+                        }
+                    }
+                }
+            } else if (dimName === 'aether') {
+                // Aether: noise-based dense biome reconstruction
+                if (typeof _initAetherNoise === 'function') _initAetherNoise();
+                if (typeof _computeAetherChunkBiomeData === 'function') {
+                    for (let cx = 0; cx < d.chunksX; cx++) {
+                        for (let cz = 0; cz < d.chunksZ; cz++) {
+                            if (d.generatedFlags[cx * d.chunksZ + cz] !== 1) continue;
+                            const aData = _computeAetherChunkBiomeData(cx, cz);
+                            if (!aData || !aData.biomes) continue;
+                            const sx = cx * CHUNK_SIZE - halfW, sz = cz * CHUNK_SIZE - halfD;
+                            for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+                                for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+                                    const gIdx = (sx + lx + halfW) + (sz + lz + halfD) * d.worldWidth;
+                                    if (gIdx >= 0 && gIdx < d.worldWidth * d.worldDepth) {
+                                        const id = aData.biomes[lx + lz * CHUNK_SIZE];
+                                        if (typeof AETHER_BIOME_NAMES_BY_ID !== 'undefined')
+                                            d.biomeMap[gIdx] = AETHER_BIOME_NAMES_BY_ID[id];
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
+            // Nether biomes are uniform; the smoothing kernel will handle the
+            // default cells fine, no reconstruction needed.
         }
+        
+        // Bind to the player's actual dimension
+        _bindActiveDimension(targetDim);
         
         // Restore player
         player.x = loadedData.player.x; player.y = loadedData.player.y; player.z = loadedData.player.z;
@@ -283,7 +374,7 @@ async function init(seed, loadedData) {
         player.highestY = loadedData.player.highestY || loadedData.player.y;
         player.vx = 0; player.vy = 0; player.vz = 0; player.onGround = false;
 
-        // Restore world spawn point (fallback to player position if not saved)
+        // Restore world spawn point
         window.worldSpawnX = loadedData.worldSpawnX !== undefined ? loadedData.worldSpawnX : player.x;
         window.worldSpawnY = loadedData.worldSpawnY !== undefined ? loadedData.worldSpawnY : (player.y - 2);
         window.worldSpawnZ = loadedData.worldSpawnZ !== undefined ? loadedData.worldSpawnZ : player.z;
@@ -322,6 +413,8 @@ async function init(seed, loadedData) {
             window.setPlayerXPState(loadedData.xpState.level, loadedData.xpState.xp, loadedData.xpState.totalXP);
         }
         
+        if (typeof window._recalcArmorHealthBonus === 'function') window._recalcArmorHealthBonus();
+        
         // Restore chests
         if (loadedData.chests && typeof activeChests !== 'undefined') {
             activeChests.clear();
@@ -342,81 +435,23 @@ async function init(seed, loadedData) {
             }
         }
         
-        // Restore dropped items — defer until after scene and meshes are ready
+        // Defer dropped items until scene+meshes ready
         if (loadedData.droppedItems && loadedData.droppedItems.length > 0) {
             window._pendingDroppedItems = loadedData.droppedItems;
         }
         
-        // --- Restore dimension state ---
-        if (loadedData._savedDimension && loadedData._savedDimension === 'nether') {
-            // Player was in the nether when they saved.
-            // chunkStorageArr currently holds overworld data (decompressed above).
-            // Save it aside, then decompress nether into the active arrays.
-            overworldChunkStorage = chunkStorageArr;
-            overworldGeneratedChunks = generatedChunksArr;
-            overworldBiomeMap = biomeMap;
-            
-            // Switch to nether dimensions
-            if (typeof _setNetherWorldSize === 'function') _setNetherWorldSize();
-            
-            const total = CHUNKS_X * CHUNKS_Z;
-            netherChunkStorage = new Array(total);
-            for (let i = 0; i < total; i++) netherChunkStorage[i] = null;
-            netherGeneratedChunks = new Uint8Array(total);
-            
-            if (loadedData.netherChunks && loadedData.netherChunks.length > 0) {
-                chunkStorageArr = netherChunkStorage;
-                generatedChunksArr = netherGeneratedChunks;
-                if (loadedData.netherGeneratedFlags) {
-                    for (let i = 0; i < loadedData.netherGeneratedFlags.length && i < generatedChunksArr.length; i++)
-                        generatedChunksArr[i] = loadedData.netherGeneratedFlags[i];
-                }
-                if (typeof decompressChunks === 'function') decompressChunks(loadedData.netherChunks);
-            }
-            
-            chunkStorageArr = netherChunkStorage;
-            generatedChunksArr = netherGeneratedChunks;
-            biomeMap = new Array(WORLD_WIDTH * WORLD_DEPTH);
-            currentDimension = 'nether';
-            netherGenerated = true;
-        } else {
-            currentDimension = 'overworld';
-            // If nether was previously generated, restore its data into stored arrays
-            if (loadedData._netherGenerated && loadedData.netherChunks && loadedData.netherChunks.length > 0) {
-                // Temporarily switch to nether dimensions for decompression
-                const savedCX = CHUNKS_X, savedCZ = CHUNKS_Z, savedWW = WORLD_WIDTH, savedWD = WORLD_DEPTH;
-                if (typeof _setNetherWorldSize === 'function') _setNetherWorldSize();
-                
-                const total = CHUNKS_X * CHUNKS_Z;
-                netherChunkStorage = new Array(total);
-                for (let i = 0; i < total; i++) netherChunkStorage[i] = null;
-                netherGeneratedChunks = new Uint8Array(total);
-                
-                const savedArr = chunkStorageArr;
-                const savedGen = generatedChunksArr;
-                chunkStorageArr = netherChunkStorage;
-                generatedChunksArr = netherGeneratedChunks;
-                if (loadedData.netherGeneratedFlags) {
-                    for (let i = 0; i < loadedData.netherGeneratedFlags.length && i < generatedChunksArr.length; i++)
-                        generatedChunksArr[i] = loadedData.netherGeneratedFlags[i];
-                }
-                if (typeof decompressChunks === 'function') decompressChunks(loadedData.netherChunks);
-                
-                // Restore overworld dimensions and arrays
-                chunkStorageArr = savedArr;
-                generatedChunksArr = savedGen;
-                CHUNKS_X = savedCX; CHUNKS_Z = savedCZ;
-                WORLD_WIDTH = savedWW; WORLD_DEPTH = savedWD;
-                _updateWorldHalves();
-                netherGenerated = true;
-            }
+        // Restore portal links
+        window._portalLinks = loadedData.portalLinks || [];
+        window._aetherPortalLinks = loadedData.aetherPortalLinks || [];
+        
+        // CRITICAL: notify the dimension-change handler so it spawns the
+        // correct dimension worker, resets the mesh worker with the new
+        // world dimensions, and clears tracking caches.
+        if (typeof notifyDimensionChange === 'function') {
+            notifyDimensionChange();
         }
         
-        // Restore portal links and nether generated flag
-        netherGenerated = loadedData._netherGenerated || netherGenerated || false;
-        window._portalLinks = loadedData._portalLinks || [];
-        
-        // Lighting and meshing
+        // Lighting and meshing for current dimension
         updateLoadingBar(60, 'Recalculating lighting...');
         await yieldToUI();
         const loadRadius = Math.min(RENDER_DISTANCES[currentRenderDistIndex] + 2, 12);
@@ -562,6 +597,16 @@ async function init(seed, loadedData) {
     // Position camera at player so the view is correct behind the overlay
     camera.position.set(player.x, player.y + player.eyeLevel, player.z);
     camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
+    
+    // Spawn the worldgen worker for background chunk generation.
+    // Falls back to inline gen on the main thread if worker fails.
+    if (typeof spawnWorldgenWorker === 'function') {
+        try { spawnWorldgenWorker(); } catch(e) { console.warn('worker spawn failed:', e); }
+    }
+    // Spawn the mesh builder worker for background mesh building.
+    if (typeof spawnMeshWorker === 'function') {
+        try { spawnMeshWorker(); } catch(e) { console.warn('mesh worker spawn failed:', e); }
+    }
     
     animate();
 
@@ -965,9 +1010,10 @@ window.getTargetedMob = function() {
                             if (typeof selectSlot === 'function') selectSlot(activeSlot);
                         }
                         swingAnimation = 1.0;
-                        return; // Stop further placement logic
                     }
                 }
+                // Seeds always return — never fall through to block placement
+                return;
             }
             
             // --- UI BLOCK INTERACTIONS ---
@@ -1072,11 +1118,132 @@ window.getTargetedMob = function() {
             }
 
             if (currentBuildBlock === 0) return;
+
+            // ---> BUCKET SYSTEM (before placement guards) <---
+            if (currentBuildBlock === 223 || currentBuildBlock === 224 || currentBuildBlock === 225) {
+                if (currentBuildBlock === 223) {
+                    // Empty bucket — use fluid raycast to find source blocks
+                    const fluidTarget = typeof raycastFluidSource === 'function' ? raycastFluidSource() : null;
+                    if (fluidTarget) {
+                        const fhX = fluidTarget.hit[0], fhY = fluidTarget.hit[1], fhZ = fluidTarget.hit[2];
+                        const fhId = fluidTarget.id;
+                        if (fhId === 4) {
+                            setVoxel(fhX, fhY, fhZ, 0);
+                            pendingBlockUpdates.push({x: fhX, y: fhY, z: fhZ});
+                            if (typeof queueNeighbors === 'function') queueNeighbors(fhX, fhY, fhZ);
+                            if (typeof updateChunks === 'function') updateChunks(fhX, fhY, fhZ);
+                            if (inventory[activeSlot].count > 1) {
+                                inventory[activeSlot].count--;
+                                let added = false;
+                                for (let s = 0; s < inventory.length; s++) {
+                                    if (inventory[s].id === 0) { inventory[s] = {id: 224, count: 1}; added = true; break; }
+                                }
+                                if (!added && typeof window.spawnDroppedItem === 'function') window.spawnDroppedItem(player.x, player.y + 1, player.z, 224, 1);
+                            } else {
+                                inventory[activeSlot] = {id: 224, count: 1};
+                            }
+                            const sv = Math.floor(Math.random() * 3);
+                            if (typeof window.playNamedSound === 'function') window.playNamedSound('water_fill_' + sv, 1.0, 0.9, 1.1);
+                            if (typeof buildUI === 'function') buildUI();
+                            if (typeof selectSlot === 'function') selectSlot(activeSlot);
+                            swingAnimation = 1.0; return;
+                        } else if (fhId === 27) {
+                            setVoxel(fhX, fhY, fhZ, 0);
+                            pendingBlockUpdates.push({x: fhX, y: fhY, z: fhZ});
+                            if (typeof queueNeighbors === 'function') queueNeighbors(fhX, fhY, fhZ);
+                            if (typeof updateChunks === 'function') updateChunks(fhX, fhY, fhZ);
+                            if (inventory[activeSlot].count > 1) {
+                                inventory[activeSlot].count--;
+                                let added = false;
+                                for (let s = 0; s < inventory.length; s++) {
+                                    if (inventory[s].id === 0) { inventory[s] = {id: 225, count: 1}; added = true; break; }
+                                }
+                                if (!added && typeof window.spawnDroppedItem === 'function') window.spawnDroppedItem(player.x, player.y + 1, player.z, 225, 1);
+                            } else {
+                                inventory[activeSlot] = {id: 225, count: 1};
+                            }
+                            const sv = Math.floor(Math.random() * 3);
+                            if (typeof window.playNamedSound === 'function') window.playNamedSound('lava_fill_' + sv, 1.0, 0.9, 1.1);
+                            if (typeof buildUI === 'function') buildUI();
+                            if (typeof selectSlot === 'function') selectSlot(activeSlot);
+                            swingAnimation = 1.0; return;
+                        }
+                    }
+                    // If no fluid found, empty bucket does nothing on right-click
+                    swingAnimation = 1.0; return;
+                }
+                
+                // Water/lava bucket placement — use normal raycast target
+                const hitX = target.hit[0], hitY = target.hit[1], hitZ = target.hit[2];
+                const hitId = getVoxel(hitX, hitY, hitZ) & 0xFF;
+                let px = hitX + target.normal[0];
+                let py = hitY + target.normal[1];
+                let pz = hitZ + target.normal[2];
+
+                if (currentBuildBlock === 224) {
+                    // Water bucket can't be used in the nether at all — water
+                    // would evaporate, and the aether portal frame ignition
+                    // (which uses water) shouldn't work in the nether either.
+                    if (typeof currentDimension !== 'undefined' && currentDimension === 'nether') {
+                        swingAnimation = 1.0; return;
+                    }
+                    // Water bucket — place at hit pos if fluid, otherwise adjacent
+                    if (hitId === 4 || hitId === 27) { px = hitX; py = hitY; pz = hitZ; }
+                    const placeId = getVoxel(px, py, pz) & 0xFF;
+                    if (placeId === 0 || placeId === 4 || placeId === 27 || (typeof isCrossBlock === 'function' && isCrossBlock(placeId))) {
+                        // Check for aether portal frame before placing water
+                        if (typeof detectAetherPortalFrame === 'function') {
+                            const aetherResult = detectAetherPortalFrame(px, py, pz);
+                            if (aetherResult) {
+                                for (const pos of aetherResult.interior) {
+                                    setVoxel(pos.x, pos.y, pos.z, 209, aetherResult.axis);
+                                    pendingBlockUpdates.push({x: pos.x, y: pos.y, z: pos.z});
+                                }
+                                if (typeof updateChunks === 'function') updateChunks(px, py, pz);
+                                inventory[activeSlot] = {id: 223, count: 1};
+                                const sv = Math.floor(Math.random() * 3);
+                                if (typeof window.playNamedSound === 'function') window.playNamedSound('water_empty_' + sv, 1.0, 0.9, 1.1);
+                                if (typeof buildUI === 'function') buildUI();
+                                if (typeof selectSlot === 'function') selectSlot(activeSlot);
+                                swingAnimation = 1.0; return;
+                            }
+                        }
+                        setVoxel(px, py, pz, 4, 8, 0, 1);
+                        pendingBlockUpdates.push({x: px, y: py, z: pz});
+                        if (typeof queueNeighbors === 'function') queueNeighbors(px, py, pz);
+                        if (typeof updateWaterQueue !== 'undefined' && typeof getVoxelIndex === 'function') updateWaterQueue.add(getVoxelIndex(px, py, pz));
+                        if (typeof updateChunks === 'function') updateChunks(px, py, pz);
+                        inventory[activeSlot] = {id: 223, count: 1};
+                        const sv = Math.floor(Math.random() * 3);
+                        if (typeof window.playNamedSound === 'function') window.playNamedSound('water_empty_' + sv, 1.0, 0.9, 1.1);
+                        if (typeof buildUI === 'function') buildUI();
+                        if (typeof selectSlot === 'function') selectSlot(activeSlot);
+                        swingAnimation = 1.0; return;
+                    }
+                } else if (currentBuildBlock === 225) {
+                    if (hitId === 4 || hitId === 27) { px = hitX; py = hitY; pz = hitZ; }
+                    const placeId = getVoxel(px, py, pz) & 0xFF;
+                    if (placeId === 0 || placeId === 4 || placeId === 27 || (typeof isCrossBlock === 'function' && isCrossBlock(placeId))) {
+                        setVoxel(px, py, pz, 27, 4, 0, 1);
+                        pendingBlockUpdates.push({x: px, y: py, z: pz});
+                        if (typeof queueNeighbors === 'function') queueNeighbors(px, py, pz);
+                        if (typeof updateLavaQueue !== 'undefined' && typeof getVoxelIndex === 'function') updateLavaQueue.add(getVoxelIndex(px, py, pz));
+                        if (typeof updateChunks === 'function') updateChunks(px, py, pz);
+                        inventory[activeSlot] = {id: 223, count: 1};
+                        const sv = Math.floor(Math.random() * 3);
+                        if (typeof window.playNamedSound === 'function') window.playNamedSound('lava_empty_' + sv, 1.0, 0.9, 1.1);
+                        if (typeof buildUI === 'function') buildUI();
+                        if (typeof selectSlot === 'function') selectSlot(activeSlot);
+                        swingAnimation = 1.0; return;
+                    }
+                }
+                swingAnimation = 1.0; return;
+            }
             
             // Block placement of tools/items — only allow actual placeable blocks and saplings
             if (currentBuildBlock >= 100) {
                 // These are placeable despite being >= 100
-                const placeableHighIds = [116, 117, 118, 128, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158, 190, 191, 192, 193, 194, 195, 196, 200, 201, 202, 203, 205, 206, 207, 208];
+                const placeableHighIds = [116, 117, 118, 128, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158, 190, 191, 192, 193, 194, 195, 196, 200, 201, 202, 203, 205, 206, 207, 208, 210, 212, 213];
                 if (!placeableHighIds.includes(currentBuildBlock)) return;
             }
 
@@ -1226,12 +1393,19 @@ window.getTargetedMob = function() {
                     // Check if clicking inside a valid obsidian portal frame
                     const portalResult = detectPortalFrame(px, py, pz);
                     if (portalResult) {
+                        // Nether portals can't be lit in the aether — you'd be
+                        // bypassing the overworld which is not allowed.
+                        if (typeof currentDimension !== 'undefined' && currentDimension === 'aether') {
+                            swingAnimation = 1.0;
+                            return;
+                        }
                         // Fill portal interior with portal blocks
                         for (const pos of portalResult.interior) {
                             setVoxel(pos.x, pos.y, pos.z, 90, portalResult.axis); // axis: 0=X-aligned, 1=Z-aligned
                             pendingBlockUpdates.push({x: pos.x, y: pos.y, z: pos.z});
                         }
                         if (typeof window.damageHeldTool === 'function') window.damageHeldTool(1);
+                        if (typeof window.playFlintAndSteelSound === 'function') window.playFlintAndSteelSound(px, py, pz);
                         if (typeof buildUI === 'function') buildUI();
                         swingAnimation = 1.0;
                         return;
@@ -1254,6 +1428,7 @@ window.getTargetedMob = function() {
                     pendingBlockUpdates.push({x: px, y: py, z: pz});
                     
                     if (typeof window.damageHeldTool === 'function') window.damageHeldTool(1);
+                    if (typeof window.playFlintAndSteelSound === 'function') window.playFlintAndSteelSound(px, py, pz);
                     if (typeof buildUI === 'function') buildUI();
                 }
                 swingAnimation = 1.0;
@@ -1512,6 +1687,31 @@ window.getTargetedMob = function() {
                               
             if (!intersect || currentBuildBlock === 17 || currentBuildBlock === 116 || currentBuildBlock === 117 || currentBuildBlock === 118 || currentBuildBlock === 137 || currentBuildBlock === 202 || currentBuildBlock === 203 || currentBuildBlock === 205 || currentBuildBlock === 206) {
                 if (currentBuildBlock === 4) {
+                    // Water can't exist in the nether — also blocks aether
+                    // portal ignition in the nether since that path uses water.
+                    if (typeof currentDimension !== 'undefined' && currentDimension === 'nether') {
+                        swingAnimation = 1.0; return;
+                    }
+                    // Check if placing water inside a glowstone portal frame → Aether portal
+                    if (typeof detectAetherPortalFrame === 'function') {
+                        const aetherResult = detectAetherPortalFrame(px, py, pz);
+                        if (aetherResult) {
+                            for (const pos of aetherResult.interior) {
+                                setVoxel(pos.x, pos.y, pos.z, 209, aetherResult.axis);
+                                pendingBlockUpdates.push({x: pos.x, y: pos.y, z: pos.z});
+                            }
+                            if (typeof updateChunks === 'function') updateChunks(px, py, pz);
+                            swingAnimation = 1.0;
+                            // Consume water bucket in survival
+                            if (gameMode === 'survival' && inventory[activeSlot]) {
+                                inventory[activeSlot].count--;
+                                if (inventory[activeSlot].count <= 0) { inventory[activeSlot].id = 0; inventory[activeSlot].count = 0; }
+                                if (typeof buildUI === 'function') buildUI();
+                                if (typeof selectSlot === 'function') selectSlot(activeSlot);
+                            }
+                            return;
+                        }
+                    }
                     setVoxel(px, py, pz, 4, 8, 0, 1); 
                     updateWaterQueue.add(getVoxelIndex(px, py, pz));
                 } else if (currentBuildBlock === 27) {

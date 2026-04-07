@@ -7,7 +7,7 @@
 // Check if a block is solid (blocks movement)
 Mob.prototype._isSolid = function(bx, by, bz) {
     const id = getVoxel(bx, by, bz) & 0xFF;
-    if (id === 0 || isFluidBlock(id) || isCrossBlock(id) || id === 17 || id === 23 || id === 64 || id === 66 || id === 90) return false;
+    if (id === 0 || isFluidBlock(id) || isCrossBlock(id) || id === 17 || id === 23 || id === 64 || id === 66 || id === 90 || id === 209) return false;
     return true;
 };
 
@@ -28,7 +28,7 @@ Mob.prototype._testCollisionPure = function(x, y, z) {
             for (let bz = sMinZ; bz <= sMaxZ; bz++) {
                 const val = getVoxel(bx, by, bz);
                 const id = val & 0xFF;
-                if (id === 0 || isFluidBlock(id) || isCrossBlock(id) || id === 17 || id === 23 || id === 64 || id === 66 || id === 90) continue;
+                if (id === 0 || isFluidBlock(id) || isCrossBlock(id) || id === 17 || id === 23 || id === 64 || id === 66 || id === 90 || id === 209) continue;
                 const b = getBlockBounds(id, val, bx, by, bz);
                 const blockAABB = {
                     minX: bx + b.minX, maxX: bx + b.maxX,

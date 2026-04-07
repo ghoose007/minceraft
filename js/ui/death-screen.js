@@ -219,64 +219,130 @@ window.respawnPlayer = function() {
     player.health = player.maxHealth;
     player.vy = 0; player.vx = 0; player.vz = 0;
 
-    // If in the nether, switch back to overworld first
-    if (typeof currentDimension !== 'undefined' && currentDimension === 'nether') {
-        if (overworldChunkStorage) {
-            netherChunkStorage = chunkStorageArr;
-            netherGeneratedChunks = generatedChunksArr;
-            chunkStorageArr = overworldChunkStorage;
-            generatedChunksArr = overworldGeneratedChunks;
-            if (overworldBiomeMap) biomeMap = overworldBiomeMap;
-            currentDimension = 'overworld';
+    // If in the nether or aether, switch back to overworld using the unified
+    // dimensionData system. This was previously a hand-rolled swap that
+    // manually reassigned chunkStorageArr/overworldChunkStorage/etc — that
+    // path bypassed the new dimension state machine and left the world in
+    // a broken state.
+    const sourceDim = (typeof currentDimension !== 'undefined') ? currentDimension : null;
+    const needsSwitch = (sourceDim === 'nether' || sourceDim === 'aether')
+        && typeof dimensionData !== 'undefined' && dimensionData.overworld
+        && dimensionData.overworld.generated;
+    
+    if (needsSwitch) {
+        // Snapshot current (source) dimension state so chunks aren't lost —
+        // the player might come back via portal later.
+        if (typeof _snapshotPlayerPosToCurrentDim === 'function') _snapshotPlayerPosToCurrentDim();
+        const srcData = dimensionData[sourceDim];
+        srcData.chunks = chunkStorageArr;
+        srcData.generatedFlags = generatedChunksArr;
+        srcData.biomeMap = biomeMap;
+        srcData.chunksX = CHUNKS_X;
+        srcData.chunksZ = CHUNKS_Z;
+        srcData.worldWidth = WORLD_WIDTH;
+        srcData.worldDepth = WORLD_DEPTH;
+        srcData.generated = true;
+        
+        // Switch globals to overworld dimensions BEFORE binding so the
+        // mesh worker reset (sent by notifyDimensionChange) gets the right
+        // sizes.
+        if (typeof _setOverworldWorldSize === 'function') _setOverworldWorldSize();
+        dimensionData.overworld.chunksX = CHUNKS_X;
+        dimensionData.overworld.chunksZ = CHUNKS_Z;
+        dimensionData.overworld.worldWidth = WORLD_WIDTH;
+        dimensionData.overworld.worldDepth = WORLD_DEPTH;
+        
+        if (typeof _ensureDimensionAllocated === 'function') _ensureDimensionAllocated('overworld');
+        if (typeof _bindActiveDimension === 'function') _bindActiveDimension('overworld');
+        if (typeof notifyDimensionChange === 'function') notifyDimensionChange();
 
-            // Clear nether mobs
-            if (typeof globalMobs !== 'undefined') {
-                for (let i = globalMobs.length - 1; i >= 0; i--) {
-                    const mob = globalMobs[i];
+        // Save current source-dimension mobs into the per-dimension stash, then clear
+        if (!window._dimensionMobs) window._dimensionMobs = { overworld: [], nether: [], aether: [] };
+        const savedMobs = [];
+        if (typeof globalMobs !== 'undefined') {
+            for (let i = globalMobs.length - 1; i >= 0; i--) {
+                const mob = globalMobs[i];
+                if (!mob.dead && !mob.dying) {
+                    const mobType = mob.constructor && mob.constructor.name ? mob.constructor.name : 'unknown';
+                    savedMobs.push({ type: mobType, x: mob.x, y: mob.y, z: mob.z, health: mob.health || 20 });
+                }
+                if (mob.mesh) {
                     scene.remove(mob.mesh);
-                    scene.remove(mob.shadow);
                     mob.mesh.traverse(c => { if (c.isMesh && c.geometry) c.geometry.dispose(); });
-                    if (mob.material) mob.material.dispose();
                 }
-                globalMobs.length = 0;
+                if (mob.shadow) { scene.remove(mob.shadow); if (mob.shadow.geometry) mob.shadow.geometry.dispose(); }
+                if (mob.material) mob.material.dispose();
             }
-
-            // Clear dropped items
-            if (typeof droppedItems !== 'undefined') {
-                for (const item of droppedItems) {
-                    scene.remove(item.mesh);
-                    scene.remove(item.shadow);
-                    item.mesh.traverse(c => { if (c.isMesh && c.geometry) c.geometry.dispose(); });
-                }
-                droppedItems.length = 0;
-            }
-
-            // Restore overworld fog/sky
-            const rd = RENDER_DISTANCES[currentRenderDistIndex] * CHUNK_SIZE;
-            scene.fog = new THREE.Fog(0x87CEEB, rd * 0.4, rd);
-            scene.background = new THREE.Color(0x87CEEB);
-            if (typeof celestialGroup !== 'undefined' && celestialGroup) celestialGroup.visible = true;
-            if (window.cloudMesh) window.cloudMesh.visible = true;
-            if (window.cloudDepthMesh) window.cloudDepthMesh.visible = true;
-
-            // Rebuild lighting and chunks
-            if (typeof recalculateLighting === 'function') recalculateLighting();
-            if (typeof updateAllChunks === 'function') updateAllChunks();
-            for (const key of dirtyChunks) {
-                const sep = key.indexOf(',');
-                const cx = parseInt(key.substring(0, sep));
-                const cz = parseInt(key.substring(sep + 1));
-                if (typeof buildChunkMesh === 'function') buildChunkMesh(cx, cz);
-            }
-            dirtyChunks.clear();
+            globalMobs.length = 0;
         }
-    }
+        window._dimensionMobs[sourceDim] = savedMobs;
 
-    // Teleport to world spawn
-    player.x = window.worldSpawnX;
-    player.z = window.worldSpawnZ;
-    player.y = window.worldSpawnY + 2;
-    player.highestY = player.y;
+        // Clear dropped items (they belong to the source dimension — items don't follow on death)
+        if (typeof droppedItems !== 'undefined') {
+            for (const item of droppedItems) {
+                if (item.mesh) scene.remove(item.mesh);
+                if (item.shadow) scene.remove(item.shadow);
+                if (item.mesh) item.mesh.traverse(c => { if (c.isMesh && c.geometry) c.geometry.dispose(); });
+            }
+            droppedItems.length = 0;
+        }
+
+        // Restore overworld fog/sky
+        const rd = RENDER_DISTANCES[currentRenderDistIndex] * CHUNK_SIZE;
+        scene.fog = new THREE.Fog(0x87CEEB, rd * 0.4, rd);
+        scene.background = new THREE.Color(0x87CEEB);
+        if (typeof celestialGroup !== 'undefined' && celestialGroup) celestialGroup.visible = true;
+        if (window.cloudMesh) window.cloudMesh.visible = true;
+        if (window.cloudDepthMesh) window.cloudDepthMesh.visible = true;
+
+        // Clear the rendered chunk meshes — they were the nether's geometry
+        // and the keys collide with overworld chunk keys at the same coords.
+        // Without this, leftover nether meshes stay rendered until the
+        // visibility pass prunes them.
+        if (typeof chunkMeshes !== 'undefined') {
+            for (const [key, group] of chunkMeshes) {
+                scene.remove(group);
+                group.traverse(child => {
+                    if (child.isMesh && child.geometry) child.geometry.dispose();
+                });
+            }
+            chunkMeshes.clear();
+        }
+        window._lastVisChunkX = undefined;
+        window._lastVisChunkZ = undefined;
+        dirtyChunks.clear();
+
+        // Teleport to world spawn FIRST, so lighting/meshing happens around
+        // the right area.
+        player.x = window.worldSpawnX;
+        player.z = window.worldSpawnZ;
+        player.y = window.worldSpawnY + 2;
+        player.highestY = player.y;
+
+        // Recalculate lighting and rebuild meshes near the player.
+        // Use lazy-style lighting (it's bounded to loaded chunks) instead
+        // of full-world lighting which would try to allocate empty chunks.
+        if (typeof recalculateLighting === 'function') recalculateLighting();
+        
+        // Mark chunks near the player as dirty and rebuild them
+        const loadRadius = Math.min(RENDER_DISTANCES[currentRenderDistIndex] + 2, 12);
+        if (typeof updateNearbyChunks === 'function') {
+            updateNearbyChunks(player.x, player.z, loadRadius);
+        }
+        for (const key of dirtyChunks) {
+            const sep = key.indexOf(',');
+            const cx = parseInt(key.substring(0, sep));
+            const cz = parseInt(key.substring(sep + 1));
+            if (typeof buildChunkMesh === 'function') buildChunkMesh(cx, cz);
+        }
+        dirtyChunks.clear();
+    } else {
+        // Already in overworld (or aether — unsupported case): just teleport
+        player.x = window.worldSpawnX;
+        player.z = window.worldSpawnZ;
+        player.y = window.worldSpawnY + 2;
+        player.highestY = player.y;
+    }
 
     // Reset third-person model (restores original materials)
     if (typeof window.resetPlayerModel === 'function') window.resetPlayerModel();

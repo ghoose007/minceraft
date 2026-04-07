@@ -22,13 +22,13 @@ function _pathNodeY(bx, bz, baseY, mobHeight, maxDrop, maxStepUp) {
     for (let gy = searchTop; gy >= searchBot; gy--) {
         const groundId = getVoxel(bx, gy, bz) & 0xFF;
         // Is this a solid ground block? (same passthrough rules as mob collision)
-        if (groundId !== 0 && !isFluidBlock(groundId) && !isCrossBlock(groundId) && groundId !== 17 && groundId !== 23 && groundId !== 64 && groundId !== 66 && groundId !== 90) {
+        if (groundId !== 0 && !isFluidBlock(groundId) && !isCrossBlock(groundId) && groundId !== 17 && groundId !== 23 && groundId !== 64 && groundId !== 66 && groundId !== 90 && groundId !== 209) {
             const standY = gy + 1;
             // Check head clearance above standing position
             let clear = true;
             for (let h = 0; h < headRoom; h++) {
                 const aboveId = getVoxel(bx, standY + h, bz) & 0xFF;
-                if (aboveId !== 0 && !isFluidBlock(aboveId) && !isCrossBlock(aboveId) && aboveId !== 17 && aboveId !== 23 && aboveId !== 64 && aboveId !== 66 && aboveId !== 90) {
+                if (aboveId !== 0 && !isFluidBlock(aboveId) && !isCrossBlock(aboveId) && aboveId !== 17 && aboveId !== 23 && aboveId !== 64 && aboveId !== 66 && aboveId !== 90 && aboveId !== 209) {
                     clear = false;
                     break;
                 }

@@ -295,11 +295,20 @@ function updateLava(x, y, z, dirtyBounds) {
     } else if (belowId === 27) {
         // Flow into existing lava below — update if not already full
         const belowLevel = (below >> 8) & 0xF;
-        if (belowLevel < maxLevel) {
+        const belowSource = (below >> 13) & 0x1;
+        if (belowLevel < maxLevel && !belowSource) {
             setVoxel(x, y - 1, z, 27, maxLevel, 1, 0);
             updateLavaQueue.add(getVoxelIndex(x, y - 1, z));
             markDirty(x, z);
         }
+        // If pool below is already settled (full level or source), do
+        // nothing — we're a falling lava cell sitting on top of a pool
+        // and that's a legitimate continuous column. Rendering treats
+        // falling cells as full-height so the column merges visually.
+        // We must NOT enter the horizontal-spread branch (the else below)
+        // because that would create a floating layer of flowing lava on
+        // the pool surface.
+        return;
     } else if (belowId === 4) {
         // Lava flowing down onto water — water becomes cobblestone, lava continues next tick
         setVoxel(x, y - 1, z, 33); // cobblestone replaces the water

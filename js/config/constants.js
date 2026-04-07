@@ -2,7 +2,7 @@
 // CONFIGURATION CONSTANTS
 // ==========================================
 
-const ASSET_VERSION = "115";
+const ASSET_VERSION = "250";
 
 const CHUNK_SIZE = 16;
 const CHUNK_HEIGHT = 256; 
@@ -92,7 +92,10 @@ const BIOME_WATER_COLORS = {
     'jungle':        [0x14/255, 0xA2/255, 0xC5/255],
     'rainforest':    [0x1B/255, 0x9E/255, 0xD8/255],
     'ocean':         [0x3F/255, 0x76/255, 0xE4/255],
-    'extreme_hills': [0x00/255, 0x7B/255, 0xF7/255]
+    'extreme_hills': [0x00/255, 0x7B/255, 0xF7/255],
+    'aether_skyforest': [0.1, 1.8, 1.35],
+    'aether_void':      [0.1, 1.8, 1.35],
+    'aether_lake':      [0.1, 1.8, 1.35]
 };
 
 // ==========================================
@@ -169,5 +172,9 @@ const BLOCK_IDS = {
     LEVER: 205,
     REDSTONE_TORCH: 206,
     PISTON: 207,
-    STICKY_PISTON: 208
+    STICKY_PISTON: 208,
+    AETHER_PORTAL: 209
 };
+
+// --- AETHER DIMENSION ---
+const AETHER_HEIGHT = 128;

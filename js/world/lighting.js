@@ -222,6 +222,8 @@ function recalculateLighting(ux, uy, uz) {
     const ndx = [1,-1,0,0,0,0];
     const ndy = [0,0,1,-1,0,0];
     const ndz = [0,0,0,0,1,-1];
+    // PERF: Direct LUT access instead of function calls (saves ~3 function calls per voxel)
+    const tLUT = settingGraphicsFancy ? _transparentFancyLUT : _transparentLUT;
     let sqIdx = 0;
     while (sqIdx < sunQueueLen) {
         const sx = sunQueueX[sqIdx], sy = sunQueueY[sqIdx], sz = sunQueueZ[sqIdx], sl = sunQueueL[sqIdx];
@@ -231,8 +233,17 @@ function recalculateLighting(ux, uy, uz) {
             const nx = sx + ndx[d], ny = sy + ndy[d], nz = sz + ndz[d];
             if (nx < minX || nx > maxX || nz < minZ || nz > maxZ || ny < minY || ny > maxY) continue;
             
-            const id = getVoxel(nx, ny, nz) & 0xFF;
-            if (!isBlockTransparent(id)) continue;
+            // Inline getVoxel + isBlockTransparent + getSunLight
+            const ix = nx + _halfW;
+            const iy = ny;
+            const iz = nz + _halfD;
+            if ((ix >>> 0) >= WORLD_WIDTH || (iy >>> 0) >= WORLD_HEIGHT || (iz >>> 0) >= WORLD_DEPTH) continue;
+            const chunk = chunkStorageArr[(ix >> 4) * CHUNKS_Z + (iz >> 4)];
+            if (!chunk) continue;
+            const li = (ix & 15) + (iy << 4) + ((iz & 15) << 12);
+            const nVal = chunk[li];
+            const id = nVal & 0xFF;
+            if (!tLUT[id]) continue;
             
             // Leaves reduce light by 2 per block, everything else by 1
             const reduction = (id === 14 || id === 22 || id === 43 || id === 97) ? 2 : 1;
@@ -241,8 +252,10 @@ function recalculateLighting(ux, uy, uz) {
             
             if (nx === sx && nz === sz && ny < sy && sl === 15 && id === 0) nLevel = 15;
             
-            if (nLevel > getSunLight(nx, ny, nz)) {
-                setSunLight(nx, ny, nz, nLevel);
+            const currentSun = (nVal >> 14) & 0xF;
+            if (nLevel > currentSun) {
+                // Inline setSunLight: sun light is bits 14-17 (0xF << 14 = 0x3C000)
+                chunk[li] = (chunk[li] & ~0x3C000) | (nLevel << 14);
                 if (sunQueueLen < queueCapacity) {
                     sunQueueX[sunQueueLen] = nx; sunQueueY[sunQueueLen] = ny;
                     sunQueueZ[sunQueueLen] = nz; sunQueueL[sunQueueLen] = nLevel;
@@ -261,16 +274,27 @@ function recalculateLighting(ux, uy, uz) {
             const nx = tx + ndx[d], ny = ty + ndy[d], nz = tz + ndz[d];
             if (nx < minX || nx > maxX || nz < minZ || nz > maxZ || ny < minY || ny > maxY) continue;
             
-            const id = getVoxel(nx, ny, nz) & 0xFF;
-            if (!isBlockTransparent(id)) continue;
+            // Inline getVoxel + isBlockTransparent + getTorchLight
+            const ix = nx + _halfW;
+            const iy = ny;
+            const iz = nz + _halfD;
+            if ((ix >>> 0) >= WORLD_WIDTH || (iy >>> 0) >= WORLD_HEIGHT || (iz >>> 0) >= WORLD_DEPTH) continue;
+            const chunk = chunkStorageArr[(ix >> 4) * CHUNKS_Z + (iz >> 4)];
+            if (!chunk) continue;
+            const li = (ix & 15) + (iy << 4) + ((iz & 15) << 12);
+            const nVal = chunk[li];
+            const id = nVal & 0xFF;
+            if (!tLUT[id]) continue;
             
             // Leaves reduce torch light by 2 per block too
             const reduction = (id === 14 || id === 22 || id === 43 || id === 97) ? 2 : 1;
             let nLevel = tl - reduction;
             if (nLevel < 0) nLevel = 0;
             
-            if (nLevel > getTorchLight(nx, ny, nz)) {
-                setTorchLight(nx, ny, nz, nLevel);
+            const currentTorch = (nVal >> 18) & 0xF;
+            if (nLevel > currentTorch) {
+                // Inline setTorchLight: torch light is bits 18-21 (0xF << 18 = 0x3C0000)
+                chunk[li] = (chunk[li] & ~0x3C0000) | (nLevel << 18);
                 if (torchQueueLen < queueCapacity) {
                     torchQueueX[torchQueueLen] = nx; torchQueueY[torchQueueLen] = ny;
                     torchQueueZ[torchQueueLen] = nz; torchQueueL[torchQueueLen] = nLevel;

@@ -93,7 +93,16 @@ window.spawnBlockDrops = function(targetId, x, y, z, val) {
 window.breakBlock = function(x, y, z, canHarvest = true) {
     const val = getVoxel(x, y, z);
     const targetId = val & 0xFF;
-    if (targetId === 18 || targetId === 0 || targetId === 90) return;
+    
+    // In creative mode, allow breaking bedrock and portal blocks
+    if (gameMode === 'creative') {
+        if (targetId === 0) return; // Can't break air
+        if (targetId === 4 || targetId === 27) return; // Can't mine fluids
+    } else {
+        // Survival: bedrock and portals are unbreakable
+        if (targetId === 18 || targetId === 0 || targetId === 90 || targetId === 209) return;
+        if (targetId === 4 || targetId === 27) return; // Can't mine fluids
+    }
 
     if (targetId === 60 && typeof forceCloseStructure === 'function') {
         forceCloseStructure(x, y, z);
@@ -195,8 +204,13 @@ window.breakBlock = function(x, y, z, canHarvest = true) {
         window.spawnBlockDrops(targetId, x, y, z, val);
     }
 
-    // If an obsidian block was broken, destroy any adjacent portal blocks (cascade)
-    if (targetId === 28) {
+    // If an obsidian or glowstone frame block was broken, destroy adjacent portal blocks
+    if (targetId === 28 || targetId === 91) {
+        _destroyAdjacentPortals(x, y, z);
+    }
+    
+    // If a portal block itself was broken (creative mode), also cascade-destroy connected portals
+    if (targetId === 90 || targetId === 209) {
         _destroyAdjacentPortals(x, y, z);
     }
 };
@@ -205,26 +219,27 @@ window.breakBlock = function(x, y, z, canHarvest = true) {
 function _destroyAdjacentPortals(ox, oy, oz) {
     const queue = [];
     const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
-    // Check all 6 neighbors of the broken block for portal blocks
     for (const [dx, dy, dz] of dirs) {
         const nx = ox + dx, ny = oy + dy, nz = oz + dz;
-        if ((getVoxel(nx, ny, nz) & 0xFF) === 90) {
-            queue.push([nx, ny, nz]);
+        const nid = getVoxel(nx, ny, nz) & 0xFF;
+        if (nid === 90 || nid === 209) {
+            queue.push([nx, ny, nz, nid]);
         }
     }
-    // Flood-fill destroy all connected portal blocks
     const visited = new Set();
     while (queue.length > 0) {
-        const [px, py, pz] = queue.pop();
+        const [px, py, pz, portalType] = queue.pop();
         const key = `${px},${py},${pz}`;
         if (visited.has(key)) continue;
         visited.add(key);
-        if ((getVoxel(px, py, pz) & 0xFF) !== 90) continue;
-        if (typeof spawnParticles === 'function') spawnParticles(px, py, pz, 90);
+        const bid = getVoxel(px, py, pz) & 0xFF;
+        if (bid !== portalType) continue;
+        if (typeof spawnParticles === 'function') spawnParticles(px, py, pz, portalType);
         setVoxel(px, py, pz, 0);
+        if (typeof window.playBlockSoundAt === 'function') window.playBlockSoundAt(portalType, 'break', 1.0, px, py, pz);
         pendingBlockUpdates.push({x: px, y: py, z: pz});
         for (const [dx, dy, dz] of dirs) {
-            queue.push([px + dx, py + dy, pz + dz]);
+            queue.push([px + dx, py + dy, pz + dz, portalType]);
         }
     }
 }

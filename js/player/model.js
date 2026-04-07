@@ -413,6 +413,7 @@ function _getArmorTierPrefix(itemId) {
     if (itemId >= 174 && itemId <= 177) return 'leather';
     if (itemId >= 178 && itemId <= 181) return 'diamond';
     if (itemId >= 182 && itemId <= 185) return 'gold';
+    if (itemId >= 219 && itemId <= 222) return 'emerald';
     return 'iron'; // fallback
 }
 

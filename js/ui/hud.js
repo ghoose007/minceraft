@@ -134,13 +134,18 @@ if (!document.getElementById('mc-3d-styles')) {
             bottom: 56px;
             left: calc(50% - 182px);
             display: flex;
-            flex-direction: row;
+            flex-direction: column-reverse;
             z-index: 101;
-            max-width: 160px;
+            max-width: 168px;
+        }
+        .health-row {
+            display: flex;
+            flex-direction: row;
+            max-width: 168px;
             overflow: hidden;
         }
 
-        /* Armor Bar: Same position as health but 20px higher */
+        /* Armor Bar: dynamically positioned above health bar */
         #armor-bar {
             position: fixed;
             bottom: 76px;
@@ -292,9 +297,16 @@ function updateDurabilityBar(slotEl, item) {
 
 
 window.isStackable = function(id) {
-    // Any item in TOOL_DATA that has maxDurability is a tool and NOT stackable
     if (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[id] && TOOL_DATA[id].maxDurability) return false;
+    // Filled buckets don't stack
+    if (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[id] && TOOL_DATA[id].maxStack === 1) return false;
     return true;
+};
+
+window.getMaxStack = function(id) {
+    if (!window.isStackable(id)) return 1;
+    if (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[id] && TOOL_DATA[id].maxStack) return TOOL_DATA[id].maxStack;
+    return 64;
 };
 
 // --- UI MANAGEMENT ---
@@ -371,7 +383,7 @@ function createIconElement(id) {
     
     // Terrain Items (Sticks, Saplings, Food, Seeds 128, Wheat 129, Nether Brick 142, Gold Ingot 143, Quartz 153)
     if ((parsedId >= 112 && parsedId <= 123) || parsedId === 128 || parsedId === 129 || parsedId === 134 || parsedId === 135 || parsedId === 137 || parsedId === 142 || parsedId === 143 || parsedId === 151 || parsedId === 153 || parsedId === 165 || parsedId === 186 || parsedId === 187 || parsedId === 188
-        || parsedId === 197 || parsedId === 198 || parsedId === 199 || parsedId === 202 || parsedId === 205 || parsedId === 206) {
+        || parsedId === 197 || parsedId === 198 || parsedId === 199 || parsedId === 202 || parsedId === 205 || parsedId === 206 || parsedId === 211) {
         const data = BLOCK_DATA[parsedId] || TOOL_DATA[parsedId];
         if (data) {
             const atlasIdx = data.atlasIdx;
@@ -395,7 +407,8 @@ function createIconElement(id) {
         return icon;
     } 
     // Tools — any item in TOOL_DATA with durability uses tools.png
-    else if (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[parsedId] && TOOL_DATA[parsedId].maxDurability) {
+    // Also buckets (223-225) which use tools.png but have no durability
+    else if (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[parsedId] && (TOOL_DATA[parsedId].maxDurability || parsedId === 223 || parsedId === 224 || parsedId === 225)) {
         const data = TOOL_DATA[parsedId];
         if (data) {
             const atlasIdx = data.atlasIdx;
@@ -409,7 +422,7 @@ function createIconElement(id) {
         const block = BLOCK_DATA[parsedId];
         if (!block) return icon;
         
-        const flatRenderIds = [4, 27, 16, 23, 24, 17, 40, 52, 53, 66, 67, 68, 116, 117, 118, 137, 150, 158];
+        const flatRenderIds = [4, 27, 16, 23, 24, 17, 40, 52, 53, 66, 67, 68, 116, 117, 118, 137, 150, 158, 212, 213];
         if (flatRenderIds.includes(parsedId)) {
             icon.style = getIconStyle(parsedId); 
         } else if (typeof isFenceBlock === 'function' && isFenceBlock(parsedId)) {
@@ -589,13 +602,48 @@ function updateHealthUI() {
     if (typeof gameMode !== 'undefined' && gameMode !== 'survival') { bar.style.display = 'none'; return; }
     
     bar.style.display = 'flex'; bar.innerHTML = '';
-    const fullHearts = Math.floor(player.health / 2);
-    const hasHalf = player.health % 2 !== 0;
-    const emptyHearts = (player.maxHealth / 2) - fullHearts - (hasHalf ? 1 : 0);
     
-    for (let i = 0; i < fullHearts; i++) { const h = document.createElement('div'); h.className = 'heart full'; bar.appendChild(h); }
-    if (hasHalf) { const h = document.createElement('div'); h.className = 'heart half'; bar.appendChild(h); }
-    for (let i = 0; i < emptyHearts; i++) { const h = document.createElement('div'); h.className = 'heart empty'; bar.appendChild(h); }
+    const totalHearts = Math.ceil(player.maxHealth / 2);
+    const baseHearts = 10; // Standard row = 10 hearts
+    const bonusHearts = Math.max(0, totalHearts - baseHearts);
+    const hasBonus = bonusHearts > 0;
+    
+    // Build hearts array: full, half, empty based on current health
+    function buildRow(startHeart, numHearts, health, maxForRow) {
+        const row = document.createElement('div');
+        row.className = 'health-row';
+        for (let i = 0; i < numHearts; i++) {
+            const h = document.createElement('div');
+            h.className = 'heart';
+            const heartIdx = startHeart + i;
+            const healthAtHeart = heartIdx * 2; // health value at start of this heart
+            if (player.health >= healthAtHeart + 2) {
+                h.classList.add('full');
+            } else if (player.health >= healthAtHeart + 1) {
+                h.classList.add('half');
+            } else {
+                h.classList.add('empty');
+            }
+            row.appendChild(h);
+        }
+        return row;
+    }
+    
+    // Row 1 (bottom): first 10 hearts (health 0-20)
+    bar.appendChild(buildRow(0, baseHearts, player.health, 20));
+    
+    // Row 2 (top): bonus hearts (health 20+)
+    if (hasBonus) {
+        bar.appendChild(buildRow(baseHearts, bonusHearts, player.health, player.maxHealth));
+    }
+    
+    // Move armor bar up based on number of heart rows
+    const armorBar = document.getElementById('armor-bar');
+    if (armorBar) {
+        const rowHeight = 14; // approximate heart row height in px
+        const baseBottom = 76; // default armor bar bottom
+        armorBar.style.bottom = (baseBottom + (hasBonus ? rowHeight : 0)) + 'px';
+    }
 }
 
 let handTexture = null;
@@ -774,7 +822,7 @@ document.addEventListener('mousemove', (e) => {
 window.addToInventory = function(id, count, durability) {
     if (typeof inventory === 'undefined') return count;
 
-    const stackLimit = window.isStackable(id) ? 64 : 1;
+    const stackLimit = window.getMaxStack ? window.getMaxStack(id) : (window.isStackable(id) ? 64 : 1);
 
     // First try stacking
     if (stackLimit > 1) {
@@ -817,9 +865,25 @@ window.addToInventory = function(id, count, durability) {
     return count; 
 };
 
+let _finalizePending = false;
+let _finalizeSlot = -1;
 function finalizeInvUpdate(idx) {
-    buildUI();
-    if (typeof renderInventory === 'function') renderInventory();
-    if (typeof renderFurnace === 'function' && uiState === 'FURNACE') renderFurnace();
-    if (idx === activeSlot || idx === -1) selectSlot(activeSlot);
+    // Track which slot needs updating (activeSlot or -1 for any)
+    if (idx === activeSlot || idx === -1) _finalizeSlot = idx;
+    
+    if (_finalizePending) return; // Already scheduled
+    _finalizePending = true;
+    
+    setTimeout(function() {
+        _finalizePending = false;
+        buildUI();
+        if (typeof renderInventory === 'function' && 
+            (uiState === 'INVENTORY' || uiState === 'CRAFTING')) renderInventory();
+        if (typeof renderFurnace === 'function' && uiState === 'FURNACE') renderFurnace();
+        if (_finalizeSlot === activeSlot || _finalizeSlot === -1) selectSlot(activeSlot);
+        _finalizeSlot = -1;
+    }, 30);
 }
+
+// Expose for use by menu.js superflat layer editor
+window.createIconElement = createIconElement;

@@ -61,7 +61,14 @@ function checkRecipe(gridData, gridSize) {
             }
             if (!match) break;
         }
-        if (match) return recipe.output;
+        if (match) {
+            // Block emerald tools/armor recipes when aether is disabled
+            if (typeof GEN_AETHER_ENABLED !== 'undefined' && !GEN_AETHER_ENABLED) {
+                const outId = recipe.output.id;
+                if (outId >= 214 && outId <= 222) continue;
+            }
+            return recipe.output;
+        }
     }
     return null;
 }
@@ -92,7 +99,7 @@ function interactWithSlot(slotItem, e) {
             return true;
         }
     } else {
-        const stackLimit = window.isStackable(window.cursorItem.id) ? 64 : 1;
+        const stackLimit = window.getMaxStack ? window.getMaxStack(window.cursorItem.id) : (window.isStackable(window.cursorItem.id) ? 64 : 1);
         
         if (slotItem.id === 0 || slotItem.count === 0) {
             if (e.button === 2) {
@@ -151,7 +158,7 @@ function handleCraftingOutputClick(type, e) {
 
     if (output.id === 0 || output.count === 0) return;
 
-    const stackLimit = window.isStackable(output.id) ? 64 : 1;
+    const stackLimit = window.getMaxStack ? window.getMaxStack(output.id) : (window.isStackable(output.id) ? 64 : 1);
 
     if (!window.cursorItem) {
         window.cursorItem = { id: output.id, count: output.count };
@@ -176,7 +183,7 @@ function handleCreativeCatalogClick(id, e) {
     // Door block in creative gives door item
     if (parsedId === 149) parsedId = 151;
     if (!window.cursorItem) { 
-        window.cursorItem = { id: parsedId, count: window.isStackable(parsedId) ? 64 : 1 }; 
+        window.cursorItem = { id: parsedId, count: window.getMaxStack ? window.getMaxStack(parsedId) : (window.isStackable(parsedId) ? 64 : 1) }; 
         const tool = TOOL_DATA[parsedId];
         if (tool && tool.maxDurability) window.cursorItem.durability = tool.maxDurability;
     } 

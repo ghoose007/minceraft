@@ -1039,7 +1039,7 @@ function _raycastVoxelFromScreen(screenX, screenY) {
 
         const val = getVoxel(x, y, z);
         const id = val & 0xFF;
-        if (id !== 0 && id !== 4 && id !== 27 && !(typeof isCrossBlock === 'function' && isCrossBlock(id)) && id !== 90) {
+        if (id !== 0 && id !== 4 && id !== 27 && !(typeof isCrossBlock === 'function' && isCrossBlock(id)) && id !== 90 && id !== 209) {
             return { hit: [x, y, z], normal: normal, val: val };
         }
     }
@@ -1087,8 +1087,9 @@ function _handleTap(screenX, screenY) {
 
     swingAnimation = 1.0;
 
-    // Check for mob hit using camera center (where crosshair is)
-    const hitMob = (typeof targetedMob !== 'undefined') ? targetedMob : null;
+    // Check for mob hit at the crosshair (where player is looking), not the tap position.
+    // Use getTargetedMob which raycasts from camera center, same as desktop.
+    const hitMob = (typeof window.getTargetedMob === 'function') ? window.getTargetedMob() : null;
     if (hitMob) {
         let damage = 1;
         if (currentBuildBlock !== 0 && typeof TOOL_DATA !== 'undefined' && TOOL_DATA[currentBuildBlock]) {
@@ -1182,23 +1183,208 @@ function _handleTap(screenX, screenY) {
         return;
     }
 
+    // --- Hoe tilling ---
+    if (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[currentBuildBlock] && TOOL_DATA[currentBuildBlock].type === 'hoe') {
+        const targetId = getVoxel(target.hit[0], target.hit[1], target.hit[2]) & 0xFF;
+        if ((targetId === 1 || targetId === 2) && target.normal[1] === 1) {
+            const aboveId = getVoxel(target.hit[0], target.hit[1] + 1, target.hit[2]) & 0xFF;
+            if (aboveId === 0) {
+                setVoxel(target.hit[0], target.hit[1], target.hit[2], 62);
+                if (typeof pendingBlockUpdates !== 'undefined') pendingBlockUpdates.push({x: target.hit[0], y: target.hit[1], z: target.hit[2]});
+                if (typeof spawnParticles === 'function') spawnParticles(target.hit[0], target.hit[1], target.hit[2], 2);
+                if (typeof window.damageHeldTool === 'function') window.damageHeldTool(1);
+                if (typeof window.playBlockSoundAt === 'function') window.playBlockSoundAt(2, 'dig', 0.6, target.hit[0], target.hit[1], target.hit[2]);
+                return;
+            }
+        }
+    }
+
+    // --- Seed planting ---
+    if (currentBuildBlock === 128) {
+        const targetId = getVoxel(target.hit[0], target.hit[1], target.hit[2]) & 0xFF;
+        if (targetId === 62 || targetId === 63) {
+            const aboveId = getVoxel(target.hit[0], target.hit[1] + 1, target.hit[2]) & 0xFF;
+            if (aboveId === 0) {
+                setVoxel(target.hit[0], target.hit[1] + 1, target.hit[2], 64, 0);
+                if (typeof pendingBlockUpdates !== 'undefined') pendingBlockUpdates.push({x: target.hit[0], y: target.hit[1] + 1, z: target.hit[2]});
+                if (gameMode === 'survival') {
+                    inventory[activeSlot].count--;
+                    if (inventory[activeSlot].count <= 0) { inventory[activeSlot].id = 0; inventory[activeSlot].count = 0; }
+                    if (typeof buildUI === 'function') buildUI();
+                    if (typeof selectSlot === 'function') selectSlot(activeSlot);
+                }
+            }
+        }
+        // Seeds always return — never fall through to block placement
+        return;
+    }
+
+    // --- Bucket System ---
+    if (currentBuildBlock === 223 || currentBuildBlock === 224 || currentBuildBlock === 225) {
+        if (currentBuildBlock === 223) {
+            // Empty bucket — use fluid raycast
+            const fluidTarget = typeof raycastFluidSource === 'function' ? raycastFluidSource() : null;
+            if (fluidTarget) {
+                const fhX = fluidTarget.hit[0], fhY = fluidTarget.hit[1], fhZ = fluidTarget.hit[2];
+                const fhId = fluidTarget.id;
+                const newBucketId = fhId === 4 ? 224 : 225;
+                const soundType = fhId === 4 ? 'water_fill_' : 'lava_fill_';
+                setVoxel(fhX, fhY, fhZ, 0);
+                if (typeof pendingBlockUpdates !== 'undefined') pendingBlockUpdates.push({x: fhX, y: fhY, z: fhZ});
+                if (typeof queueNeighbors === 'function') queueNeighbors(fhX, fhY, fhZ);
+                if (typeof updateChunks === 'function') updateChunks(fhX, fhY, fhZ);
+                if (inventory[activeSlot].count > 1) {
+                    inventory[activeSlot].count--;
+                    let added = false;
+                    for (let s = 0; s < inventory.length; s++) {
+                        if (inventory[s].id === 0) { inventory[s] = {id: newBucketId, count: 1}; added = true; break; }
+                    }
+                    if (!added && typeof window.spawnDroppedItem === 'function') window.spawnDroppedItem(player.x, player.y + 1, player.z, newBucketId, 1);
+                } else {
+                    inventory[activeSlot] = {id: newBucketId, count: 1};
+                }
+                if (typeof window.playNamedSound === 'function') window.playNamedSound(soundType + Math.floor(Math.random()*3), 1.0, 0.9, 1.1);
+                if (typeof buildUI === 'function') buildUI();
+                if (typeof selectSlot === 'function') selectSlot(activeSlot);
+            }
+            return;
+        }
+
+        // Water/lava bucket placement
+        const hitX = target.hit[0], hitY = target.hit[1], hitZ = target.hit[2];
+        const hitId = getVoxel(hitX, hitY, hitZ) & 0xFF;
+        let px = hitX + target.normal[0], py = hitY + target.normal[1], pz = hitZ + target.normal[2];
+        if (hitId === 4 || hitId === 27) { px = hitX; py = hitY; pz = hitZ; }
+
+        if (currentBuildBlock === 224) {
+            // Water bucket can't be used in the nether
+            if (typeof currentDimension !== 'undefined' && currentDimension === 'nether') {
+                return;
+            }
+            const placeId = getVoxel(px, py, pz) & 0xFF;
+            if (placeId === 0 || placeId === 4 || placeId === 27 || isCrossBlock(placeId)) {
+                // Check for aether portal frame
+                if (typeof detectAetherPortalFrame === 'function') {
+                    const aetherResult = detectAetherPortalFrame(px, py, pz);
+                    if (aetherResult) {
+                        for (const pos of aetherResult.interior) {
+                            setVoxel(pos.x, pos.y, pos.z, 209, aetherResult.axis);
+                            if (typeof pendingBlockUpdates !== 'undefined') pendingBlockUpdates.push({x: pos.x, y: pos.y, z: pos.z});
+                        }
+                        if (typeof updateChunks === 'function') updateChunks(px, py, pz);
+                        inventory[activeSlot] = {id: 223, count: 1};
+                        if (typeof window.playNamedSound === 'function') window.playNamedSound('water_empty_' + Math.floor(Math.random()*3), 1.0, 0.9, 1.1);
+                        if (typeof buildUI === 'function') buildUI();
+                        if (typeof selectSlot === 'function') selectSlot(activeSlot);
+                        return;
+                    }
+                }
+                setVoxel(px, py, pz, 4, 8, 0, 1);
+                if (typeof pendingBlockUpdates !== 'undefined') pendingBlockUpdates.push({x: px, y: py, z: pz});
+                if (typeof queueNeighbors === 'function') queueNeighbors(px, py, pz);
+                if (typeof updateWaterQueue !== 'undefined' && typeof getVoxelIndex === 'function') updateWaterQueue.add(getVoxelIndex(px, py, pz));
+                if (typeof updateChunks === 'function') updateChunks(px, py, pz);
+                inventory[activeSlot] = {id: 223, count: 1};
+                if (typeof window.playNamedSound === 'function') window.playNamedSound('water_empty_' + Math.floor(Math.random()*3), 1.0, 0.9, 1.1);
+                if (typeof buildUI === 'function') buildUI();
+                if (typeof selectSlot === 'function') selectSlot(activeSlot);
+            }
+        } else if (currentBuildBlock === 225) {
+            const placeId = getVoxel(px, py, pz) & 0xFF;
+            if (placeId === 0 || placeId === 4 || placeId === 27 || isCrossBlock(placeId)) {
+                setVoxel(px, py, pz, 27, 4, 0, 1);
+                if (typeof pendingBlockUpdates !== 'undefined') pendingBlockUpdates.push({x: px, y: py, z: pz});
+                if (typeof queueNeighbors === 'function') queueNeighbors(px, py, pz);
+                if (typeof updateLavaQueue !== 'undefined' && typeof getVoxelIndex === 'function') updateLavaQueue.add(getVoxelIndex(px, py, pz));
+                if (typeof updateChunks === 'function') updateChunks(px, py, pz);
+                inventory[activeSlot] = {id: 223, count: 1};
+                if (typeof window.playNamedSound === 'function') window.playNamedSound('lava_empty_' + Math.floor(Math.random()*3), 1.0, 0.9, 1.1);
+                if (typeof buildUI === 'function') buildUI();
+                if (typeof selectSlot === 'function') selectSlot(activeSlot);
+            }
+        }
+        return;
+    }
+
     // --- Flint & Steel ---
     if (currentBuildBlock === 136) {
-        if (typeof window.useFlintAndSteel === 'function') {
-            window.useFlintAndSteel(target);
+        const px = target.hit[0] + target.normal[0];
+        const py = target.hit[1] + target.normal[1];
+        const pz = target.hit[2] + target.normal[2];
+        
+        if ((getVoxel(px, py, pz) & 0xFF) === 0) {
+            // Check for portal frame
+            if (typeof detectPortalFrame === 'function') {
+                const portalResult = detectPortalFrame(px, py, pz);
+                if (portalResult) {
+                    // Nether portals can't be lit in the aether
+                    if (typeof currentDimension !== 'undefined' && currentDimension === 'aether') {
+                        return;
+                    }
+                    for (const pos of portalResult.interior) {
+                        setVoxel(pos.x, pos.y, pos.z, 90, portalResult.axis);
+                        if (typeof pendingBlockUpdates !== 'undefined') pendingBlockUpdates.push({x: pos.x, y: pos.y, z: pos.z});
+                    }
+                    if (typeof window.damageHeldTool === 'function') window.damageHeldTool(1);
+                    if (typeof window.playFlintAndSteelSound === 'function') window.playFlintAndSteelSound(px, py, pz);
+                    if (typeof buildUI === 'function') buildUI();
+                    return;
+                }
+            }
+            
+            // Check for aether portal frame
+            if (typeof detectAetherPortalFrame === 'function') {
+                const aetherResult = detectAetherPortalFrame(px, py, pz);
+                if (aetherResult) {
+                    // Aether portals can't be lit in the nether
+                    if (typeof currentDimension !== 'undefined' && currentDimension === 'nether') {
+                        return;
+                    }
+                    for (const pos of aetherResult.interior) {
+                        setVoxel(pos.x, pos.y, pos.z, 209, aetherResult.axis);
+                        if (typeof pendingBlockUpdates !== 'undefined') pendingBlockUpdates.push({x: pos.x, y: pos.y, z: pos.z});
+                    }
+                    if (typeof window.damageHeldTool === 'function') window.damageHeldTool(1);
+                    if (typeof window.playFlintAndSteelSound === 'function') window.playFlintAndSteelSound(px, py, pz);
+                    if (typeof buildUI === 'function') buildUI();
+                    return;
+                }
+            }
+            
+            // Place fire
+            let fireDir = 0;
+            if (target.normal[0] === 1) fireDir = 1;
+            else if (target.normal[0] === -1) fireDir = 2;
+            else if (target.normal[2] === 1) fireDir = 3;
+            else if (target.normal[2] === -1) fireDir = 4;
+            
+            setVoxel(px, py, pz, 89, (fireDir << 1));
+            
+            if (typeof window.activeFireBlocks !== 'undefined' && typeof getVoxelIndex === 'function') {
+                window.activeFireBlocks.add(getVoxelIndex(px, py, pz));
+            }
+            
+            if (typeof updateChunks === 'function') updateChunks(px, py, pz);
+            if (typeof pendingBlockUpdates !== 'undefined') pendingBlockUpdates.push({x: px, y: py, z: pz});
+            if (typeof window.damageHeldTool === 'function') window.damageHeldTool(1);
+            if (typeof window.playFlintAndSteelSound === 'function') window.playFlintAndSteelSound(px, py, pz);
+            if (typeof buildUI === 'function') buildUI();
         }
         return;
     }
 
     // --- Spawn eggs ---
     if (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[currentBuildBlock] && TOOL_DATA[currentBuildBlock].type === 'spawn_egg') {
-        const [dx, dy, dz] = [target.hit[0] + target.normal[0], target.hit[1] + target.normal[1], target.hit[2] + target.normal[2]];
+        const dx = target.hit[0] + target.normal[0];
+        const dy = target.hit[1] + target.normal[1];
+        const dz = target.hit[2] + target.normal[2];
         const mobType = TOOL_DATA[currentBuildBlock].mobType;
-        if (typeof window.spawnMobByType === 'function') window.spawnMobByType(mobType, dx + 0.5, dy, dz + 0.5);
+        if (typeof window.spawnMob === 'function') window.spawnMob(mobType, dx + 0.5, dy, dz + 0.5);
         if (gameMode === 'survival') {
             inventory[activeSlot].count--;
             if (inventory[activeSlot].count <= 0) { inventory[activeSlot].id = 0; inventory[activeSlot].count = 0; }
             if (typeof buildUI === 'function') buildUI();
+            if (typeof selectSlot === 'function') selectSlot(activeSlot);
         }
         return;
     }
@@ -1209,8 +1395,8 @@ function _handleTap(screenX, screenY) {
         return;
     }
 
-    // --- Place block ---
-    if (currentBuildBlock !== 0 && !_isToolItem(currentBuildBlock)) {
+    // --- Place block (only if held item is a valid placeable block) ---
+    if (_canPlaceItem(currentBuildBlock)) {
         const targetId = getVoxel(target.hit[0], target.hit[1], target.hit[2]) & 0xFF;
         const targetVal = getVoxel(target.hit[0], target.hit[1], target.hit[2]);
 
@@ -1381,10 +1567,50 @@ function _handleTap(screenX, screenY) {
             let yaw = player.yaw * (180 / Math.PI);
             if (yaw < 0) yaw += 360;
             if ((yaw > 45 && yaw <= 135) || (yaw > 225 && yaw <= 315)) placeLevel = 1;
+        } else if (currentBuildBlock === 207 || currentBuildBlock === 208) {
+            // Piston / Sticky Piston — face toward player (opposite of look direction)
+            const camDir = new THREE.Vector3(0, 0, -1);
+            camDir.applyQuaternion(camera.quaternion);
+            const ax = Math.abs(camDir.x), ay = Math.abs(camDir.y), az = Math.abs(camDir.z);
+            if (ay > ax && ay > az) {
+                placeLevel = camDir.y > 0 ? 0 : 1;
+            } else if (ax > az) {
+                placeLevel = camDir.x > 0 ? 4 : 5;
+            } else {
+                placeLevel = camDir.z > 0 ? 2 : 3;
+            }
+        }
+
+        // Check if placing water inside glowstone frame → Aether portal
+        if (currentBuildBlock === 4 && typeof detectAetherPortalFrame === 'function') {
+            // Water can't exist in the nether, so neither can aether portal ignition there
+            if (typeof currentDimension !== 'undefined' && currentDimension === 'nether') {
+                return;
+            }
+            const aetherResult = detectAetherPortalFrame(dx, dy, dz);
+            if (aetherResult) {
+                for (const pos of aetherResult.interior) {
+                    setVoxel(pos.x, pos.y, pos.z, 209, aetherResult.axis);
+                    pendingBlockUpdates.push({x: pos.x, y: pos.y, z: pos.z});
+                }
+                if (typeof updateChunks === 'function') updateChunks(dx, dy, dz);
+                if (gameMode === 'survival') {
+                    inventory[activeSlot].count--;
+                    if (inventory[activeSlot].count <= 0) { inventory[activeSlot].id = 0; inventory[activeSlot].count = 0; }
+                    if (typeof buildUI === 'function') buildUI();
+                }
+                return;
+            }
         }
 
         setVoxel(dx, dy, dz, currentBuildBlock, placeLevel);
         pendingBlockUpdates.push({x: dx, y: dy, z: dz});
+
+        // Piston/redstone: trigger redstone update and neighbor updates
+        if (currentBuildBlock === 207 || currentBuildBlock === 208) {
+            if (typeof window.onRedstoneBlockChanged === 'function') window.onRedstoneBlockChanged(dx, dy, dz);
+            if (typeof window.triggerNeighborUpdates === 'function') window.triggerNeighborUpdates(dx, dy, dz);
+        }
 
         if (typeof window._soundPlaceBlock === 'function') {
             window._soundPlaceBlock(currentBuildBlock, dx, dy, dz);
@@ -1405,6 +1631,17 @@ function _isToolItem(id) {
     if (!t) return false;
     return t.type === 'axe' || t.type === 'pickaxe' || t.type === 'shovel' || t.type === 'sword' ||
            t.type === 'hoe' || t.type === 'bow';
+}
+
+// Items with IDs >= 100 that ARE valid placeable blocks (matches desktop init.js whitelist)
+const _placeableHighIds = [116, 117, 118, 128, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158, 190, 191, 192, 193, 194, 195, 196, 200, 201, 202, 203, 205, 206, 207, 208, 210, 212, 213];
+
+function _canPlaceItem(id) {
+    if (id === 0) return false;
+    // Low IDs (< 100) are always blocks
+    if (id < 100) return true;
+    // High IDs must be in the whitelist — everything else is a tool/armor/item
+    return _placeableHighIds.includes(id);
 }
 
 // ==========================================

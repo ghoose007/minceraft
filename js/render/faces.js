@@ -89,13 +89,30 @@ function getSmoothedBiomeTint(bx, bz) {
             const iz = bz + dz + halfD;
             if (ix >= 0 && ix < WORLD_WIDTH && iz >= 0 && iz < WORLD_DEPTH) {
                 const biome = biomeMap[ix + iz * WORLD_WIDTH];
+                // Skip aether_void cells (and undefined cells) so they don't
+                // contribute to the average. Aether terrain only exists in
+                // skyforest cells, but the surrounding void cells would
+                // otherwise drag the smoothed tint toward void's color,
+                // producing muddy bluish-grey tints at island edges.
+                if (!biome || biome === 'aether_void') continue;
                 const color = BIOME_COLORS[biome] || [1,1,1];
                 r += color[0]; g += color[1]; b += color[2];
                 count++;
             }
         }
     }
-    const result = count > 0 ? [r/count, g/count, b/count] : [1,1,1];
+    // If all samples were skipped (e.g., a block in a pure void area), fall
+    // back to the cell's own biome color rather than white. This prevents
+    // jarring white blocks if anything ever does spawn in a void cell.
+    let result;
+    if (count > 0) {
+        result = [r/count, g/count, b/count];
+    } else {
+        const halfWf = WORLD_WIDTH / 2;
+        const halfDf = WORLD_DEPTH / 2;
+        const selfBiome = biomeMap[(bx + halfWf) + (bz + halfDf) * WORLD_WIDTH];
+        result = BIOME_COLORS[selfBiome] || [1,1,1];
+    }
     _biomeTintCache.set(cacheKey, result);
     return result;
 }
@@ -114,13 +131,24 @@ function getSmoothedFoliageTint(bx, bz) {
             const iz = bz + dz + halfD;
             if (ix >= 0 && ix < WORLD_WIDTH && iz >= 0 && iz < WORLD_DEPTH) {
                 const biome = biomeMap[ix + iz * WORLD_WIDTH];
+                // Skip aether_void and undefined cells — see getSmoothedBiomeTint
+                // for the reasoning. Same kernel issue applies to foliage.
+                if (!biome || biome === 'aether_void') continue;
                 const color = BIOME_FOLIAGE_COLORS[biome] || BIOME_COLORS[biome] || [1,1,1];
                 r += color[0]; g += color[1]; b += color[2];
                 count++;
             }
         }
     }
-    const result = count > 0 ? [r/count, g/count, b/count] : [1,1,1];
+    let result;
+    if (count > 0) {
+        result = [r/count, g/count, b/count];
+    } else {
+        const halfWf = WORLD_WIDTH / 2;
+        const halfDf = WORLD_DEPTH / 2;
+        const selfBiome = biomeMap[(bx + halfWf) + (bz + halfDf) * WORLD_WIDTH];
+        result = BIOME_FOLIAGE_COLORS[selfBiome] || BIOME_COLORS[selfBiome] || [1,1,1];
+    }
     _biomeFoliageTintCache.set(cacheKey, result);
     return result;
 }
@@ -276,16 +304,55 @@ function getVertexLighting(bx, by, bz, nx, ny, nz, dx, dy, dz) {
     else if (ny !== 0) { d1x = dx; d2z = dz; }
     else { d1x = dx; d2y = dy; }
 
-    const val0 = getVoxel(cx, cy, cz);
-    const val1 = getVoxel(cx + d1x, cy + d1y, cz + d1z);
-    const val2 = getVoxel(cx + d2x, cy + d2y, cz + d2z);
-    const val3 = getVoxel(cx + dx, cy + dy, cz + dz);
+    // Inline 4x getVoxel — most of the time all 4 lookups land in the same chunk,
+    // so we cache the chunk reference and check first.
+    // Compute world->chunk for the base point
+    const ix0 = (cx | 0) + _halfW;
+    const iy0 = cy | 0;
+    const iz0 = (cz | 0) + _halfD;
+    
+    let val0 = 0, val1 = 0, val2 = 0, val3 = 0;
+    
+    // Voxel 0 (cx, cy, cz)
+    if ((ix0 >>> 0) < WORLD_WIDTH && (iy0 >>> 0) < WORLD_HEIGHT && (iz0 >>> 0) < WORLD_DEPTH) {
+        const chunk0 = chunkStorageArr[(ix0 >> 4) * CHUNKS_Z + (iz0 >> 4)];
+        if (chunk0) val0 = chunk0[(ix0 & 15) + (iy0 << 4) + ((iz0 & 15) << 12)];
+    }
+    
+    // Voxel 1 (cx + d1, cy + d1, cz + d1)
+    const ix1 = ((cx + d1x) | 0) + _halfW;
+    const iy1 = (cy + d1y) | 0;
+    const iz1 = ((cz + d1z) | 0) + _halfD;
+    if ((ix1 >>> 0) < WORLD_WIDTH && (iy1 >>> 0) < WORLD_HEIGHT && (iz1 >>> 0) < WORLD_DEPTH) {
+        const chunk1 = chunkStorageArr[(ix1 >> 4) * CHUNKS_Z + (iz1 >> 4)];
+        if (chunk1) val1 = chunk1[(ix1 & 15) + (iy1 << 4) + ((iz1 & 15) << 12)];
+    }
+    
+    // Voxel 2 (cx + d2, cy + d2, cz + d2)
+    const ix2 = ((cx + d2x) | 0) + _halfW;
+    const iy2 = (cy + d2y) | 0;
+    const iz2 = ((cz + d2z) | 0) + _halfD;
+    if ((ix2 >>> 0) < WORLD_WIDTH && (iy2 >>> 0) < WORLD_HEIGHT && (iz2 >>> 0) < WORLD_DEPTH) {
+        const chunk2 = chunkStorageArr[(ix2 >> 4) * CHUNKS_Z + (iz2 >> 4)];
+        if (chunk2) val2 = chunk2[(ix2 & 15) + (iy2 << 4) + ((iz2 & 15) << 12)];
+    }
+    
+    // Voxel 3 (cx + dx, cy + dy, cz + dz)
+    const ix3 = ((cx + dx) | 0) + _halfW;
+    const iy3 = (cy + dy) | 0;
+    const iz3 = ((cz + dz) | 0) + _halfD;
+    if ((ix3 >>> 0) < WORLD_WIDTH && (iy3 >>> 0) < WORLD_HEIGHT && (iz3 >>> 0) < WORLD_DEPTH) {
+        const chunk3 = chunkStorageArr[(ix3 >> 4) * CHUNKS_Z + (iz3 >> 4)];
+        if (chunk3) val3 = chunk3[(ix3 & 15) + (iy3 << 4) + ((iz3 & 15) << 12)];
+    }
 
     const id0 = val0 & 0xFF, id1 = val1 & 0xFF, id2 = val2 & 0xFF, id3 = val3 & 0xFF;
-    const op0 = !isBlockTransparent(id0);
-    const op1 = !isBlockTransparent(id1);
-    const op2 = !isBlockTransparent(id2);
-    const op3 = !isBlockTransparent(id3);
+    // Direct LUT access - avoids function call overhead vs isBlockTransparent()
+    const tLUT = settingGraphicsFancy ? _transparentFancyLUT : _transparentLUT;
+    const op0 = !tLUT[id0];
+    const op1 = !tLUT[id1];
+    const op2 = !tLUT[id2];
+    const op3 = !tLUT[id3];
 
     let ao, sun, torch;
 
@@ -310,6 +377,161 @@ function getVertexLighting(bx, by, bz, nx, ny, nz, dx, dy, dz) {
 function pushFace(x, y, z, face, positions, normals, uvs, colors, biomeTints, blockId, heights = null, offset = null, val = 0) {
     const blockData = BLOCK_DATA[blockId];
     
+    // ==========================================
+    // FAST PATH: Normal cube block, no special handling needed.
+    // Skips plant/cactus/torch branching, closure creation, and per-vertex array allocation.
+    // Conditions: no heights (regular cube), no offset (no rotation/torch level/etc),
+    // not a plant/cactus/torch, no foliage tinting needed, atlasIdx is a simple number.
+    // ==========================================
+    const _isFast = !heights && !offset
+        && blockId !== 16 && blockId !== 23 && blockId !== 24
+        && blockId !== 116 && blockId !== 117 && blockId !== 118
+        && blockId !== 20 && blockId !== 17 && blockId !== 206
+        && blockId !== 14 && blockId !== 97 && blockId !== 66
+        && blockId !== 22 && blockId !== 67
+        && blockId !== 1 // grass top tinted
+        && blockId !== 43 // birch leaves use special tint
+        && blockId !== 4 && blockId !== 27 // water/lava use atlasIdx -1/-2 (separate fluid texture, not main atlas)
+        && blockData && typeof blockData.atlasIdx === 'number';
+    
+    if (_isFast) {
+        const tIndex = blockData.atlasIdx;
+        const uScale = 1 / 16, vScale = 1 / 16;
+        const gridX = tIndex % 16, gridY = Math.floor(tIndex / 16);
+        const uOffset = gridX * uScale;
+        const vOffset = 1.0 - (gridY * vScale) - vScale;
+        const eps = 0.01;
+        
+        // Compute lighting per corner (4 corners)
+        const c0 = face.corners[0], c1 = face.corners[1], c2 = face.corners[2], c3 = face.corners[3];
+        
+        let shade = 1.0;
+        if (face.dir[1] === 1) shade = 1.0;
+        else if (face.dir[1] === -1) shade = 0.5;
+        else if (face.dir[2] !== 0) shade = 0.8;
+        else shade = 0.6;
+        
+        let sun0, sun1, sun2, sun3, torch0, torch1, torch2, torch3;
+        let ao0 = 0, ao1 = 0, ao2 = 0, ao3 = 0;
+        
+        if (!settingSmoothLighting) {
+            const nx = x + face.dir[0], ny = y + face.dir[1], nz = z + face.dir[2];
+            const sl = getSunLight(nx, ny, nz);
+            const tl = getTorchLight(nx, ny, nz);
+            sun0 = sun1 = sun2 = sun3 = sl;
+            torch0 = torch1 = torch2 = torch3 = tl;
+        } else {
+            // Smooth lighting per-corner
+            const fd0 = face.dir[0], fd1 = face.dir[1], fd2 = face.dir[2];
+            // c0
+            let dx, dy, dz;
+            dx = fd0 === 0 ? c0.pos[0] * 2 - 1 : 0;
+            dy = fd1 === 0 ? c0.pos[1] * 2 - 1 : 0;
+            dz = fd2 === 0 ? c0.pos[2] * 2 - 1 : 0;
+            let lData = getVertexLighting(x, y, z, fd0, fd1, fd2, dx, dy, dz);
+            sun0 = lData.sun; torch0 = lData.torch; ao0 = lData.ao;
+            // c1
+            dx = fd0 === 0 ? c1.pos[0] * 2 - 1 : 0;
+            dy = fd1 === 0 ? c1.pos[1] * 2 - 1 : 0;
+            dz = fd2 === 0 ? c1.pos[2] * 2 - 1 : 0;
+            lData = getVertexLighting(x, y, z, fd0, fd1, fd2, dx, dy, dz);
+            sun1 = lData.sun; torch1 = lData.torch; ao1 = lData.ao;
+            // c2
+            dx = fd0 === 0 ? c2.pos[0] * 2 - 1 : 0;
+            dy = fd1 === 0 ? c2.pos[1] * 2 - 1 : 0;
+            dz = fd2 === 0 ? c2.pos[2] * 2 - 1 : 0;
+            lData = getVertexLighting(x, y, z, fd0, fd1, fd2, dx, dy, dz);
+            sun2 = lData.sun; torch2 = lData.torch; ao2 = lData.ao;
+            // c3
+            dx = fd0 === 0 ? c3.pos[0] * 2 - 1 : 0;
+            dy = fd1 === 0 ? c3.pos[1] * 2 - 1 : 0;
+            dz = fd2 === 0 ? c3.pos[2] * 2 - 1 : 0;
+            lData = getVertexLighting(x, y, z, fd0, fd1, fd2, dx, dy, dz);
+            sun3 = lData.sun; torch3 = lData.torch; ao3 = lData.ao;
+        }
+        
+        // Convert to colors
+        const sa0 = shade * (1.0 - (ao0 * 0.25));
+        const sa1 = shade * (1.0 - (ao1 * 0.25));
+        const sa2 = shade * (1.0 - (ao2 * 0.25));
+        const sa3 = shade * (1.0 - (ao3 * 0.25));
+        const inv15 = 1 / 15;
+        const r0 = sun0 * inv15 * sa0, g0 = torch0 * inv15 * sa0, b0 = sa0;
+        const r1 = sun1 * inv15 * sa1, g1 = torch1 * inv15 * sa1, b1 = sa1;
+        const r2 = sun2 * inv15 * sa2, g2 = torch2 * inv15 * sa2, b2 = sa2;
+        const r3 = sun3 * inv15 * sa3, g3 = torch3 * inv15 * sa3, b3 = sa3;
+        
+        // Vertex positions (no plant/cactus/torch transforms)
+        const x0 = x + c0.pos[0], y0 = y + c0.pos[1], z0 = z + c0.pos[2];
+        const x1 = x + c1.pos[0], y1 = y + c1.pos[1], z1 = z + c1.pos[2];
+        const x2 = x + c2.pos[0], y2 = y + c2.pos[1], z2 = z + c2.pos[2];
+        const x3 = x + c3.pos[0], y3 = y + c3.pos[1], z3 = z + c3.pos[2];
+        
+        // UVs (epsilon-clamped to avoid bleeding)
+        let u0u = c0.uv[0]; u0u = u0u === 0 ? eps : (u0u === 1 ? 1 - eps : u0u);
+        let u1u = c1.uv[0]; u1u = u1u === 0 ? eps : (u1u === 1 ? 1 - eps : u1u);
+        let u2u = c2.uv[0]; u2u = u2u === 0 ? eps : (u2u === 1 ? 1 - eps : u2u);
+        let u3u = c3.uv[0]; u3u = u3u === 0 ? eps : (u3u === 1 ? 1 - eps : u3u);
+        
+        let v0v, v1v, v2v, v3v;
+        if (face.dir[1] === 0) {
+            // Side face — V is from c.pos[1]
+            v0v = c0.pos[1] === 0 ? 0 : 1.0;
+            v1v = c1.pos[1] === 0 ? 0 : 1.0;
+            v2v = c2.pos[1] === 0 ? 0 : 1.0;
+            v3v = c3.pos[1] === 0 ? 0 : 1.0;
+            v0v = v0v <= 0 ? eps : (v0v >= 1 ? 1 - eps : v0v);
+            v1v = v1v <= 0 ? eps : (v1v >= 1 ? 1 - eps : v1v);
+            v2v = v2v <= 0 ? eps : (v2v >= 1 ? 1 - eps : v2v);
+            v3v = v3v <= 0 ? eps : (v3v >= 1 ? 1 - eps : v3v);
+        } else {
+            // Top/bottom face — V from uv directly
+            v0v = c0.uv[1]; v0v = v0v === 0 ? eps : (v0v === 1 ? 1 - eps : v0v);
+            v1v = c1.uv[1]; v1v = v1v === 0 ? eps : (v1v === 1 ? 1 - eps : v1v);
+            v2v = c2.uv[1]; v2v = v2v === 0 ? eps : (v2v === 1 ? 1 - eps : v2v);
+            v3v = c3.uv[1]; v3v = v3v === 0 ? eps : (v3v === 1 ? 1 - eps : v3v);
+        }
+        
+        const fu0 = uOffset + u0u * uScale, fv0 = vOffset + v0v * vScale;
+        const fu1 = uOffset + u1u * uScale, fv1 = vOffset + v1v * vScale;
+        const fu2 = uOffset + u2u * uScale, fv2 = vOffset + v2v * vScale;
+        const fu3 = uOffset + u3u * uScale, fv3 = vOffset + v3v * vScale;
+        
+        // Quad split (AO-aware to avoid AO seams)
+        const flipQuad = ao0 + ao2 > ao1 + ao3;
+        const fnx = face.dir[0], fny = face.dir[1], fnz = face.dir[2];
+        
+        if (flipQuad) {
+            positions.push(x0,y0,z0, x1,y1,z1, x3,y3,z3);
+            uvs.push(fu0,fv0, fu1,fv1, fu3,fv3);
+            colors.push(r0,g0,b0, r1,g1,b1, r3,g3,b3);
+            normals.push(fnx,fny,fnz, fnx,fny,fnz, fnx,fny,fnz);
+            
+            positions.push(x1,y1,z1, x2,y2,z2, x3,y3,z3);
+            uvs.push(fu1,fv1, fu2,fv2, fu3,fv3);
+            colors.push(r1,g1,b1, r2,g2,b2, r3,g3,b3);
+            normals.push(fnx,fny,fnz, fnx,fny,fnz, fnx,fny,fnz);
+        } else {
+            positions.push(x0,y0,z0, x1,y1,z1, x2,y2,z2);
+            uvs.push(fu0,fv0, fu1,fv1, fu2,fv2);
+            colors.push(r0,g0,b0, r1,g1,b1, r2,g2,b2);
+            normals.push(fnx,fny,fnz, fnx,fny,fnz, fnx,fny,fnz);
+            
+            positions.push(x0,y0,z0, x2,y2,z2, x3,y3,z3);
+            uvs.push(fu0,fv0, fu2,fv2, fu3,fv3);
+            colors.push(r0,g0,b0, r2,g2,b2, r3,g3,b3);
+            normals.push(fnx,fny,fnz, fnx,fny,fnz, fnx,fny,fnz);
+        }
+        
+        if (biomeTints) {
+            biomeTints.push(1,1,1, 1,1,1, 1,1,1, 1,1,1, 1,1,1, 1,1,1);
+        }
+        return;
+    }
+    
+    // ==========================================
+    // SLOW PATH: Original code with full feature support
+    // ==========================================
     let texIndex = -1;
     let overlayTexIndex = -1;
     

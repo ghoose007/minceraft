@@ -16,8 +16,58 @@ function _initNetherNoise() {
     _netherNoise3 = new PerlinNoise(Math.abs(s3) + 0.01);
 }
 
+// Superflat nether: bedrock floor + 3 netherrack + huge open space + netherrack ceiling + bedrock above
+// + netherrack walls around the world perimeter. Capped at NETHER_HEIGHT (128).
+function _generateSuperflatNetherChunk(cx, cz) {
+    _markChunkGenerated(cx, cz);
+    _getOrCreateChunkFast(cx, cz);
+    
+    const startX = cx * CHUNK_SIZE - Math.floor(WORLD_WIDTH / 2);
+    const startZ = cz * CHUNK_SIZE - Math.floor(WORLD_DEPTH / 2);
+    const halfW = Math.floor(WORLD_WIDTH / 2);
+    const halfD = Math.floor(WORLD_DEPTH / 2);
+    
+    const NETHERRACK = 87;
+    const BEDROCK = 18;
+    
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+            const x = startX + lx;
+            const z = startZ + lz;
+            const wx = x + halfW;
+            const wz = z + halfD;
+            
+            // Bedrock floor at y=0
+            setVoxel(x, 0, z, BEDROCK);
+            // 3 netherrack on top
+            setVoxel(x, 1, z, NETHERRACK);
+            setVoxel(x, 2, z, NETHERRACK);
+            setVoxel(x, 3, z, NETHERRACK);
+            
+            // Netherrack ceiling at NETHER_HEIGHT - 2
+            setVoxel(x, NETHER_HEIGHT - 2, z, NETHERRACK);
+            // Bedrock above ceiling
+            setVoxel(x, NETHER_HEIGHT - 1, z, BEDROCK);
+            
+            // Netherrack walls around world perimeter
+            if (wx <= 1 || wx >= WORLD_WIDTH - 2 || wz <= 1 || wz >= WORLD_DEPTH - 2) {
+                for (let y = 1; y < NETHER_HEIGHT - 1; y++) {
+                    setVoxel(x, y, z, NETHERRACK);
+                }
+            }
+        }
+    }
+}
+
 function generateNetherChunkColumn(cx, cz) {
     if (_isChunkGenerated(cx, cz)) return;
+    
+    // Superflat dispatch
+    if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 1) {
+        _generateSuperflatNetherChunk(cx, cz);
+        return;
+    }
+    
     _markChunkGenerated(cx, cz);
 
     const startX = cx * CHUNK_SIZE - Math.floor(WORLD_WIDTH / 2);

@@ -11,8 +11,8 @@ const _transparentLUT = new Uint8Array(256);
 const _transparentFancyLUT = new Uint8Array(256);
 (function() {
     // Added 62, 63, 64 for Farming, 66 for Vine, 67 for Lily Pad, 70-76 Slabs, 80-86 Stairs
-    const transparentIds = [0, 4, 14, 16, 17, 20, 22, 23, 24, 26, 27, 38, 40, 42, 43, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 89, 90, 93, 94, 95, 97, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206];
-    const transparentFastIds = [0, 4, 16, 17, 20, 23, 24, 26, 27, 38, 40, 42, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 90, 93, 94, 95, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206]; // leaves opaque in Fast mode
+    const transparentIds = [0, 4, 14, 16, 17, 20, 22, 23, 24, 26, 27, 38, 40, 42, 43, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 89, 90, 93, 94, 95, 97, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206, 209, 212, 213];
+    const transparentFastIds = [0, 4, 16, 17, 20, 23, 24, 26, 27, 38, 40, 42, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 90, 93, 94, 95, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206, 209, 212, 213]; // leaves opaque in Fast mode
     for (const id of transparentIds) _transparentFancyLUT[id] = 1;
     for (const id of transparentFastIds) _transparentLUT[id] = 1;
 })();
@@ -26,7 +26,7 @@ _fluidLUT[4] = 1; _fluidLUT[27] = 1;
 function isFluidBlock(id) { return _fluidLUT[id]; }
 
 const _crossLUT = new Uint8Array(256);
-_crossLUT[16] = 1; _crossLUT[23] = 1; _crossLUT[24] = 1; _crossLUT[26] = 1; _crossLUT[42] = 1; _crossLUT[52] = 1; _crossLUT[53] = 1; _crossLUT[89] = 1;
+_crossLUT[16] = 1; _crossLUT[23] = 1; _crossLUT[24] = 1; _crossLUT[26] = 1; _crossLUT[42] = 1; _crossLUT[52] = 1; _crossLUT[53] = 1; _crossLUT[89] = 1; _crossLUT[212] = 1; _crossLUT[213] = 1;
 _crossLUT[116] = 1; _crossLUT[117] = 1; _crossLUT[118] = 1; _crossLUT[137] = 1;
 function isCrossBlock(id) { return _crossLUT[id]; }
 
@@ -130,8 +130,8 @@ function getBlockBounds(id, val, bx, by, bz) {
             if (pdir === 1) { b.minX=T0; b.maxX=T1; b.minZ=0; b.maxZ=1; }
             else { b.minX=0; b.maxX=1; b.minZ=T0; b.maxZ=T1; }
         }
-    } else if (id === 90) {
-        // Nether Portal: 2 pixels thick, directional like glass panes
+    } else if (id === 90 || id === 209) {
+        // Portal blocks: 2 pixels thick, directional like glass panes
         const dir = (val >> 8) & 0x1;
         if (dir === 1) { // Z-axis (portal faces E/W)
             b.minX = 0.375; b.maxX = 0.625; b.minY = 0.0; b.maxY = 1.0; b.minZ = 0.0; b.maxZ = 1.0;
@@ -311,7 +311,7 @@ function checkSupport(x, y, z) {
         }
         return (below === 1 || below === 2);
     }
-    if (id === 17) {
+    if (id === 17 || id === 206) {
         const level = (val >> 8) & 0xF;
         if (level === 0) return canSupport(getVoxel(x, y-1, z) & 0xFF);
         if (level === 1) return canSupport(getVoxel(x-1, y, z) & 0xFF);

@@ -154,7 +154,19 @@
             { key: 'arrow_3', file: 'arrow_3.ogg' },
             { key: 'wood_button', file: 'wood_button.ogg' },
             { key: 'piston_push', file: 'piston_push.ogg' },
-            { key: 'piston_pull', file: 'piston_pull.ogg' }
+            { key: 'piston_pull', file: 'piston_pull.ogg' },
+            { key: 'water_fill_0', file: 'water_fill_0.ogg' },
+            { key: 'water_fill_1', file: 'water_fill_1.ogg' },
+            { key: 'water_fill_2', file: 'water_fill_2.ogg' },
+            { key: 'water_empty_0', file: 'water_empty_0.ogg' },
+            { key: 'water_empty_1', file: 'water_empty_1.ogg' },
+            { key: 'water_empty_2', file: 'water_empty_2.ogg' },
+            { key: 'lava_fill_0', file: 'lava_fill_0.ogg' },
+            { key: 'lava_fill_1', file: 'lava_fill_1.ogg' },
+            { key: 'lava_fill_2', file: 'lava_fill_2.ogg' },
+            { key: 'lava_empty_0', file: 'lava_empty_0.ogg' },
+            { key: 'lava_empty_1', file: 'lava_empty_1.ogg' },
+            { key: 'lava_empty_2', file: 'lava_empty_2.ogg' }
         ];
         for (const s of extraSounds) {
             try {
@@ -203,15 +215,16 @@
         for (const id of ids) _blockSoundLUT[id] = catIdx;
     }
 
-    _setCategory([1, 65, 64, 14, 22, 43, 97, 116, 117, 118, 137, 66, 16, 24, 23, 53, 52, 67, 26, 42], 0);
+    _setCategory([1, 65, 64, 14, 22, 43, 97, 116, 117, 118, 137, 66, 16, 24, 23, 53, 52, 67, 26, 42, 212, 213], 0);
     _setCategory([13, 21, 41, 96, 29, 30, 44, 98, 58, 69, 93, 51, 70, 71, 72, 77, 80, 81, 82, 94, 144, 145, 146, 147, 149, 150, 17, 200, 203, 206], 1);
     _setCategory([3, 33, 32, 10, 11, 12, 48, 6, 7, 8, 9, 49, 50, 88, 31, 28, 87, 59, 91,
-                  73, 74, 75, 76, 83, 84, 85, 86, 54, 60, 38, 68, 95, 90,
-                  99, 138, 139, 140, 141, 148, 152, 154, 155, 156, 19, 157, 158, 201, 202, 205, 207, 208], 2);
+                  73, 74, 75, 76, 83, 84, 85, 86, 54, 60, 38, 68, 95,
+                  99, 138, 139, 140, 141, 148, 152, 154, 155, 156, 19, 157, 158, 201, 202, 205, 207, 208, 210], 2);
     _setCategory([2, 5, 92, 61, 62, 63], 3);
     _setCategory([39, 40], 4);
     _setCategory([34, 35, 36, 37, 20], 5);
     _setCategory([15], 6);
+    _setCategory([90, 209], 7); // Portals use glass sounds
 
     function getBlockSoundCategory(blockId) {
         return CATEGORY_KEYS[_blockSoundLUT[blockId] || 0];
@@ -645,7 +658,11 @@
         if (_ambientFireTimer >= _nextFireAmbient) {
             _ambientFireTimer = 0;
             _nextFireAmbient = 0.5 + Math.random() * 1.5;
-            const pos = _findFlowingFluidNearby(89, 10);
+            // Fire blocks are usually point-source (single cells next to logs),
+            // so the random-sampling search used for water/lava almost never
+            // finds them. Instead, look directly into the activeFireBlocks
+            // registry — every active fire in the world is indexed there.
+            const pos = _findFireNearby(10);
             if (pos && _buffers['fire_ambient']) playNamedSoundAt('fire_ambient', 0.3, 0.8, 1.2, pos.x, pos.y, pos.z);
         }
 
@@ -676,6 +693,36 @@
             }
         }
         return null;
+    }
+
+    function _findFireNearby(radius) {
+        // Walk activeFireBlocks (the registry of every active fire in the
+        // world) and pick a random one within `radius` of the player.
+        // Random sampling like _findFlowingFluidNearby almost never finds
+        // single-cell fire blocks.
+        if (typeof window.activeFireBlocks === 'undefined' || window.activeFireBlocks.size === 0) return null;
+        if (typeof WORLD_WIDTH === 'undefined' || typeof WORLD_HEIGHT === 'undefined' || typeof WORLD_DEPTH === 'undefined') return null;
+        const halfW = WORLD_WIDTH >> 1;
+        const halfD = WORLD_DEPTH >> 1;
+        const px = player.x, py = player.y, pz = player.z;
+        const r2 = radius * radius;
+        const candidates = [];
+        // Reservoir-style: collect up to 8 in-range fires, then pick one.
+        // Capping at 8 keeps the scan cheap even with hundreds of fires.
+        for (const idx of window.activeFireBlocks) {
+            if (idx === -1) continue;
+            const ix = idx % WORLD_WIDTH;
+            const iy = Math.floor(idx / WORLD_WIDTH) % WORLD_HEIGHT;
+            const iz = Math.floor(idx / (WORLD_WIDTH * WORLD_HEIGHT));
+            const wx = ix - halfW, wy = iy, wz = iz - halfD;
+            const dx = wx + 0.5 - px, dy = wy + 0.5 - py, dz = wz + 0.5 - pz;
+            if (dx*dx + dy*dy + dz*dz <= r2) {
+                candidates.push({ x: wx + 0.5, y: wy + 0.5, z: wz + 0.5 });
+                if (candidates.length >= 8) break;
+            }
+        }
+        if (candidates.length === 0) return null;
+        return candidates[Math.floor(Math.random() * candidates.length)];
     }
 
     // =============================================
@@ -804,6 +851,7 @@
 
     window.playToolBreakSound = () => { if (_buffers['tool_break']) playNamedSound('tool_break', 0.6, 0.9, 1.1); };
     window.playNamedSoundAt = playNamedSoundAt;
+    window.playNamedSound = playNamedSound;
     window.playBurpSound = () => { if (_buffers['burp']) playNamedSound('burp', 0.5, 0.9, 1.1); };
     window.playFlintAndSteelSound = (wx, wy, wz) => playNamedSoundAt('flint_and_steel', 0.6, 0.9, 1.1, wx + 0.5, wy + 0.5, wz + 0.5);
 

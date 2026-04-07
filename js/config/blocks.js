@@ -86,6 +86,7 @@ const BLOCK_DATA = {
     88: { name: 'Nether Quartz Ore', atlasIdx: 117, hardness: 3.0, dropId: 153 }, // NEW
     89: { name: 'Fire', atlasIdx: 118, hardness: 0.0, dropId: 0 }, // NEW
     90: { name: 'Nether Portal', atlasIdx: 111, hardness: -1, dropId: 0 }, // NETHER PORTAL
+    209: { name: 'Aether Portal', atlasIdx: -1, hardness: -1, dropId: 0 }, // AETHER PORTAL
     91: { name: 'Glowstone', atlasIdx: 118, hardness: 0.3 },
     92: { name: 'Soul Sand', atlasIdx: 119, hardness: 0.5 },
     116: { name: 'Oak Sapling', atlasIdx: 76, hardness: 0.0, dropId: 116 },
@@ -121,13 +122,16 @@ const BLOCK_DATA = {
     205: { name: 'Lever', atlasIdx: 162, hardness: 0.5, dropId: 205 },
     206: { name: 'Redstone Torch', atlasIdx: 163, hardness: 0.0, dropId: 206, lightLevel: 7 },
     207: { name: 'Piston', atlasIdx: { top: 168, bottom: 165, side: 167 }, hardness: 1.5, dropId: 207 },
-    208: { name: 'Sticky Piston', atlasIdx: { top: 169, bottom: 165, side: 167 }, hardness: 1.5, dropId: 208 }
+    208: { name: 'Sticky Piston', atlasIdx: { top: 169, bottom: 165, side: 167 }, hardness: 1.5, dropId: 208 },
+    210: { name: 'Emerald Ore', atlasIdx: 174, hardness: 25.0, dropId: 211 },
+    212: { name: 'Cyan Flower', atlasIdx: 176, hardness: 0.0 },
+    213: { name: 'Orange Flower', atlasIdx: 177, hardness: 0.0 }
 };
 
 const blockRequirements = {
     1: { optTool: 'shovel' }, 2: { optTool: 'shovel' }, 5: { optTool: 'shovel' }, 15: { optTool: 'shovel' }, 61: { optTool: 'shovel' }, 62: { optTool: 'shovel' }, 63: { optTool: 'shovel' },
     3: { reqTool: 'pickaxe', reqTier: 0 }, 10: { reqTool: 'pickaxe', reqTier: 0 }, 11: { reqTool: 'pickaxe', reqTier: 0 }, 12: { reqTool: 'pickaxe', reqTier: 0 }, 19: { reqTool: 'pickaxe', reqTier: 0 }, 28: { reqTool: 'pickaxe', reqTier: 3 }, 31: { reqTool: 'pickaxe', reqTier: 0 }, 32: { reqTool: 'pickaxe', reqTier: 0 }, 33: { reqTool: 'pickaxe', reqTier: 0 }, 48: { reqTool: 'pickaxe', reqTier: 0 }, 54: { reqTool: 'pickaxe', reqTier: 0 },
-    6: { reqTool: 'pickaxe', reqTier: 1 }, 7: { reqTool: 'pickaxe', reqTier: 0 }, 8: { reqTool: 'pickaxe', reqTier: 2 }, 9: { reqTool: 'pickaxe', reqTier: 2 }, 49: { reqTool: 'pickaxe', reqTier: 2 }, 50: { reqTool: 'pickaxe', reqTier: 1 },
+    6: { reqTool: 'pickaxe', reqTier: 1 }, 7: { reqTool: 'pickaxe', reqTier: 0 }, 8: { reqTool: 'pickaxe', reqTier: 2 }, 9: { reqTool: 'pickaxe', reqTier: 2 }, 49: { reqTool: 'pickaxe', reqTier: 2 }, 50: { reqTool: 'pickaxe', reqTier: 1 }, 210: { reqTool: 'pickaxe', reqTier: 3 },
     13: { optTool: 'axe' }, 21: { optTool: 'axe' }, 41: { optTool: 'axe' }, 29: { optTool: 'axe' }, 30: { optTool: 'axe' }, 44: { optTool: 'axe' }, 58: { optTool: 'axe' }, 69: { optTool: 'axe' }, 96: { optTool: 'axe' }, 98: { optTool: 'axe' }, 144: { optTool: 'axe' }, 145: { optTool: 'axe' }, 146: { optTool: 'axe' }, 147: { optTool: 'axe' }, 149: { optTool: 'axe' }, 150: { optTool: 'axe' },
     59: { reqTool: 'pickaxe', reqTier: 0 }, 60: { reqTool: 'pickaxe', reqTier: 0 },
     // Wood slabs/stairs: axe optimal

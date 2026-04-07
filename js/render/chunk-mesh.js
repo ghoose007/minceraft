@@ -5,12 +5,17 @@
 // --- Persistent reusable arrays for buildChunkMesh (avoids ~32 array allocations per chunk rebuild) ---
 const _cm_firePos = [], _cm_fireNrm = [], _cm_fireUv = [], _cm_fireCol = [], _cm_fireBt = [];
 const _cm_portalPos = [], _cm_portalNrm = [], _cm_portalUv = [], _cm_portalCol = [], _cm_portalBt = [];
+const _cm_aPortalPos = [], _cm_aPortalNrm = [], _cm_aPortalUv = [], _cm_aPortalCol = [], _cm_aPortalBt = [];
 const _cm_solidPos = [], _cm_solidNrm = [], _cm_solidUv = [], _cm_solidCol = [], _cm_solidBt = [];
 const _cm_glassPos = [], _cm_glassNrm = [], _cm_glassUv = [], _cm_glassCol = [], _cm_glassBt = [];
 const _cm_waterPos = [], _cm_waterNrm = [], _cm_waterUv = [], _cm_waterCol = [], _cm_waterBt = [], _cm_waterFt = [], _cm_waterFd = [];
 const _cm_lavaPos = [], _cm_lavaNrm = [], _cm_lavaUv = [], _cm_lavaCol = [], _cm_lavaFt = [], _cm_lavaFd = [];
 
-function buildChunkMesh(cx, cz) {
+// Builds the mesh DATA (raw arrays of positions/normals/uvs/etc) into the
+// module-level _cm_* reusable arrays. Does NOT touch THREE.js — that's done
+// by _assembleChunkMeshFromArrays. Splitting the two halves lets us run the
+// data half in a Web Worker and the assembly half on the main thread.
+function _buildChunkMeshDataOnly(cx, cz) {
     // Clear per-chunk biome tint cache for fresh data
     _biomeTintCache.clear();
     _biomeFoliageTintCache.clear();
@@ -27,6 +32,11 @@ function buildChunkMesh(cx, cz) {
     const portalUvs = _cm_portalUv; portalUvs.length = 0;
     const portalColors = _cm_portalCol; portalColors.length = 0;
     const portalBiomeTints = _cm_portalBt; portalBiomeTints.length = 0;
+    const aetherPortalPositions = _cm_aPortalPos; aetherPortalPositions.length = 0;
+    const aetherPortalNormals = _cm_aPortalNrm; aetherPortalNormals.length = 0;
+    const aetherPortalUvs = _cm_aPortalUv; aetherPortalUvs.length = 0;
+    const aetherPortalColors = _cm_aPortalCol; aetherPortalColors.length = 0;
+    const aetherPortalBiomeTints = _cm_aPortalBt; aetherPortalBiomeTints.length = 0;
     const solidPositions = _cm_solidPos; solidPositions.length = 0;
     const solidNormals = _cm_solidNrm; solidNormals.length = 0;
     const solidUvs = _cm_solidUv; solidUvs.length = 0;
@@ -67,6 +77,25 @@ function buildChunkMesh(cx, cz) {
     const nxpzn = _getChunkFast(ccx + 1, ccz - 1);
     const nxnzp = _getChunkFast(ccx - 1, ccz + 1);
     const nxnzn = _getChunkFast(ccx - 1, ccz - 1);
+    
+    // PERF: Find the highest non-air Y in this chunk so we can skip empty Y range.
+    // Most worlds have terrain peaking far below WORLD_HEIGHT (256). Scanning each
+    // column from the top down until we find a block gives us the max Y in O(16*16)
+    // worst case, then we only scan up to that Y in the main loop instead of all 256.
+    // Also include neighbors so faces between chunks are still drawn correctly.
+    let chunkMaxY = 0;
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+            for (let y = WORLD_HEIGHT - 1; y > chunkMaxY; y--) {
+                if ((localChunk[lx + (y << 4) + (lz << 12)] & 0xFF) !== 0) {
+                    chunkMaxY = y;
+                    break;
+                }
+            }
+        }
+    }
+    // Add 1 for the layer above the highest block (ensures top faces are drawn)
+    const scanMaxY = Math.min(WORLD_HEIGHT - 1, chunkMaxY + 1);
 
     const getLocal = (lx, y, lz) => {
         if ((y >>> 0) >= WORLD_HEIGHT) return 0;
@@ -88,15 +117,74 @@ function buildChunkMesh(cx, cz) {
         return chunk[rx + (y << 4) + (rz << 12)]; 
     };
 
+    // PERF: Precompute a LUT of which block IDs are "fully opaque cubes" — i.e. blocks that
+    // completely fill their voxel space and block all faces of neighbors. We use this to
+    // early-exit for solid blocks that are fully buried (all 6 neighbors are opaque cubes).
+    // This skips the vast majority of underground stone/dirt voxels.
+    if (!window._opaqueFullCubeLUT) {
+        const lut = new Uint8Array(256);
+        // All standard solid blocks are opaque full cubes. Cross blocks, fluids, slabs,
+        // stairs, fences, doors, transparent blocks, etc. are NOT.
+        const opaqueFullCubes = [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 18, 19, 21, 25, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 41, 44, 45, 46, 47, 48, 49, 50, 51, 55, 56, 57, 58, 59, 60, 61, 65, 78, 79, 87, 88, 91, 92, 96, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 138, 139, 140, 141, 142, 143, 153, 154, 155, 156, 159, 160, 161, 162, 163, 199];
+        for (const id of opaqueFullCubes) lut[id] = 1;
+        window._opaqueFullCubeLUT = lut;
+    }
+    const _opaqueLUT = window._opaqueFullCubeLUT;
+
     for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         const x = startX + lx;
         for (let lz = 0; lz < CHUNK_SIZE; lz++) {
             const z = startZ + lz;
-            for (let y = 0; y < WORLD_HEIGHT; y++) {
+            for (let y = 0; y <= scanMaxY; y++) {
                 const val = localChunk[lx + (y << 4) + (lz << 12)]; 
                 const id = val & 0xFF;
                 
                 if (id === 0) continue; 
+                
+                // EARLY EXIT: If this block is an opaque full cube AND all 6 neighbors are
+                // also opaque full cubes, the block is invisible. Skip without any face work.
+                // This skips 80-95% of underground voxels.
+                if (_opaqueLUT[id]) {
+                    const nyVal = (y + 1 < WORLD_HEIGHT) ? localChunk[lx + ((y+1) << 4) + (lz << 12)] : 0;
+                    if (_opaqueLUT[nyVal & 0xFF]) {
+                        const nymVal = (y > 0) ? localChunk[lx + ((y-1) << 4) + (lz << 12)] : 0;
+                        if (y > 0 && _opaqueLUT[nymVal & 0xFF]) {
+                            // Fast path: if x/z neighbors are all in the same chunk (non-edge voxel),
+                            // read directly from localChunk. Avoids 4 closure calls per voxel.
+                            const isInner = (lx > 0 && lx < CHUNK_SIZE - 1 && lz > 0 && lz < CHUNK_SIZE - 1);
+                            if (isInner) {
+                                const nxpV = localChunk[(lx+1) + (y << 4) + (lz << 12)];
+                                if (_opaqueLUT[nxpV & 0xFF]) {
+                                    const nxnV = localChunk[(lx-1) + (y << 4) + (lz << 12)];
+                                    if (_opaqueLUT[nxnV & 0xFF]) {
+                                        const nzpV = localChunk[lx + (y << 4) + ((lz+1) << 12)];
+                                        if (_opaqueLUT[nzpV & 0xFF]) {
+                                            const nznV = localChunk[lx + (y << 4) + ((lz-1) << 12)];
+                                            if (_opaqueLUT[nznV & 0xFF]) {
+                                                continue; // Fully buried (fast path)
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Slow path: edge voxel, need getLocal for cross-chunk reads
+                                const nxpVal = getLocal(lx + 1, y, lz);
+                                if (_opaqueLUT[nxpVal & 0xFF]) {
+                                    const nxnVal = getLocal(lx - 1, y, lz);
+                                    if (_opaqueLUT[nxnVal & 0xFF]) {
+                                        const nzpVal = getLocal(lx, y, lz + 1);
+                                        if (_opaqueLUT[nzpVal & 0xFF]) {
+                                            const nznVal = getLocal(lx, y, lz - 1);
+                                            if (_opaqueLUT[nznVal & 0xFF]) {
+                                                continue; // Fully buried (slow path)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
                 // --- SLAB RENDERING ---
                 if (isSlabBlock(id)) {
@@ -346,7 +434,7 @@ function buildChunkMesh(cx, cz) {
 
                 // --- NETHER PORTAL RENDERING (ID 90) ---
                 // Renders as a thin block (2px / 0.125 wide) like glass panes — all 6 faces
-                if (id === 90) {
+                if (id === 90 || id === 209) {
                     const portalDir = (val >> 8) & 0x1;
                     const portalOffset = { customTex: -1 };
 
@@ -387,10 +475,14 @@ function buildChunkMesh(cx, cz) {
                         const nx = x + f.dir[0], ny = y + f.dir[1], nz = z + f.dir[2];
                         const nId = getVoxel(nx, ny, nz) & 0xFF;
                         // Don't cull between adjacent portal blocks
-                        if (nId === 90) continue;
+                        if (nId === 90 || nId === 209) continue;
                         // Don't render face if neighbor is solid opaque
                         if (nId !== 0 && !isBlockTransparent(nId)) continue;
-                        pushFace(x, y, z, f, portalPositions, portalNormals, portalUvs, portalColors, portalBiomeTints, id, null, portalOffset, val);
+                        if (id === 209) {
+                            pushFace(x, y, z, f, aetherPortalPositions, aetherPortalNormals, aetherPortalUvs, aetherPortalColors, aetherPortalBiomeTints, id, null, portalOffset, val);
+                        } else {
+                            pushFace(x, y, z, f, portalPositions, portalNormals, portalUvs, portalColors, portalBiomeTints, id, null, portalOffset, val);
+                        }
                     }
                     continue;
                 }
@@ -1678,6 +1770,11 @@ function buildChunkMesh(cx, cz) {
                         let draw = false;
 
                         if (nId === id) {
+                            // Same-fluid neighbor: never draw the boundary face.
+                            // The canonical Minecraft getCornerHeight algorithm
+                            // (early-return 1.0 on fluid-above) ensures adjacent
+                            // cells agree on shared corner heights, so seams are
+                            // naturally flush without any rendering hack.
                             draw = false; 
                         } else if (nId === 95) {
                             draw = false; // Don't draw water/lava face against ice (prevents z-fighting)
@@ -1739,7 +1836,7 @@ function buildChunkMesh(cx, cz) {
                         if (id === 20 && nId === 20 && face.dir[1] !== 0) {
                             draw = false;
                         }
-                        else if (nId === 0 || nId === 4 || nId === 27 || isCrossBlock(nId) || isSnowLayer(nId) || nId === 20 || nId === 17 || nId === 54 || nId === 64 || nId === 66 || nId === 67 || nId === 68 || nId === 158 || nId === 90 || isSlabBlock(nId) || isStairBlock(nId) || isFenceBlock(nId) || nId === 149 || nId === 150 || nId === 202 || nId === 203 || nId === 205 || nId === 206) draw = true; 
+                        else if (nId === 0 || nId === 4 || nId === 27 || isCrossBlock(nId) || isSnowLayer(nId) || nId === 20 || nId === 17 || nId === 54 || nId === 64 || nId === 66 || nId === 67 || nId === 68 || nId === 158 || nId === 90 || nId === 209 || isSlabBlock(nId) || isStairBlock(nId) || isFenceBlock(nId) || nId === 149 || nId === 150 || nId === 202 || nId === 203 || nId === 205 || nId === 206) draw = true; 
                         // Extended pistons are partially transparent (arm+head don't fill the block)
                         else if ((nId === 207 || nId === 208) && ((nVal >> 11) & 0x1)) draw = true;
                         
@@ -1773,6 +1870,54 @@ function buildChunkMesh(cx, cz) {
         }
     }
 
+    // End of data building. The THREE.js assembly happens in
+    // _assembleChunkMeshFromArrays so we can run the data half in a worker.
+}
+
+// Reads the module-level _cm_* arrays and creates Three.js BufferGeometry
+// objects, attaching them to a chunkGroup that gets added to the scene.
+// Must be called on the main thread (uses THREE.* and the scene).
+function _assembleChunkMeshFromArrays(cx, cz) {
+    // Read the data arrays (filled by _buildChunkMeshDataOnly OR by the worker)
+    const firePositions = _cm_firePos;
+    const fireNormals = _cm_fireNrm;
+    const fireUvs = _cm_fireUv;
+    const fireColors = _cm_fireCol;
+    const fireBiomeTints = _cm_fireBt;
+    const portalPositions = _cm_portalPos;
+    const portalNormals = _cm_portalNrm;
+    const portalUvs = _cm_portalUv;
+    const portalColors = _cm_portalCol;
+    const portalBiomeTints = _cm_portalBt;
+    const aetherPortalPositions = _cm_aPortalPos;
+    const aetherPortalNormals = _cm_aPortalNrm;
+    const aetherPortalUvs = _cm_aPortalUv;
+    const aetherPortalColors = _cm_aPortalCol;
+    const aetherPortalBiomeTints = _cm_aPortalBt;
+    const solidPositions = _cm_solidPos;
+    const solidNormals = _cm_solidNrm;
+    const solidUvs = _cm_solidUv;
+    const solidColors = _cm_solidCol;
+    const solidBiomeTints = _cm_solidBt;
+    const glassPositions = _cm_glassPos;
+    const glassNormals = _cm_glassNrm;
+    const glassUvs = _cm_glassUv;
+    const glassColors = _cm_glassCol;
+    const glassBiomeTints = _cm_glassBt;
+    const waterPositions = _cm_waterPos;
+    const waterNormals = _cm_waterNrm;
+    const waterUvs = _cm_waterUv;
+    const waterColors = _cm_waterCol;
+    const waterBiomeTints = _cm_waterBt;
+    const waterFluidTypes = _cm_waterFt;
+    const waterFlowDirs = _cm_waterFd;
+    const lavaPositions = _cm_lavaPos;
+    const lavaNormals = _cm_lavaNrm;
+    const lavaUvs = _cm_lavaUv;
+    const lavaColors = _cm_lavaCol;
+    const lavaFluidTypes = _cm_lavaFt;
+    const lavaFlowDirs = _cm_lavaFd;
+
     const chunkKey = `${cx},${cz}`;
     if (chunkMeshes.has(chunkKey)) {
         const group = chunkMeshes.get(chunkKey);
@@ -1789,6 +1934,7 @@ function buildChunkMesh(cx, cz) {
         geometry.setAttribute('uv', new THREE.Float32BufferAttribute(solidUvs, 2));
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(solidColors, 3));
         geometry.setAttribute('aBiomeTint', new THREE.Float32BufferAttribute(solidBiomeTints, 3));
+        geometry.computeBoundingSphere();
         chunkGroup.add(new THREE.Mesh(geometry, solidMaterial));
     }
     if (glassPositions.length > 0) {
@@ -1798,6 +1944,7 @@ function buildChunkMesh(cx, cz) {
         geometry.setAttribute('uv', new THREE.Float32BufferAttribute(glassUvs, 2));
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(glassColors, 3));
         geometry.setAttribute('aBiomeTint', new THREE.Float32BufferAttribute(glassBiomeTints, 3));
+        geometry.computeBoundingSphere();
         const glassMesh = new THREE.Mesh(geometry, glassMaterial);
         glassMesh.renderOrder = 1;
         chunkGroup.add(glassMesh);
@@ -1811,6 +1958,7 @@ function buildChunkMesh(cx, cz) {
         geometry.setAttribute('aBiomeTint', new THREE.Float32BufferAttribute(waterBiomeTints, 3));
         geometry.setAttribute('aFluidType', new THREE.Float32BufferAttribute(waterFluidTypes, 1));
         geometry.setAttribute('aFlowDir', new THREE.Float32BufferAttribute(waterFlowDirs, 2));
+        geometry.computeBoundingSphere();
         const waterMesh_ = new THREE.Mesh(geometry, waterMaterial);
         waterMesh_.renderOrder = 2;
         chunkGroup.add(waterMesh_);
@@ -1826,6 +1974,7 @@ function buildChunkMesh(cx, cz) {
         lavaGeo.setAttribute('aBiomeTint', new THREE.Float32BufferAttribute(lavaTints, 3));
         lavaGeo.setAttribute('aFluidType', new THREE.Float32BufferAttribute(lavaFluidTypes, 1));
         lavaGeo.setAttribute('aFlowDir', new THREE.Float32BufferAttribute(lavaFlowDirs, 2));
+        lavaGeo.computeBoundingSphere();
         const lavaMesh_ = new THREE.Mesh(lavaGeo, lavaMaterial);
         chunkGroup.add(lavaMesh_);
     }
@@ -1837,6 +1986,7 @@ function buildChunkMesh(cx, cz) {
         fireGeo.setAttribute('uv', new THREE.Float32BufferAttribute(fireUvs, 2));
         fireGeo.setAttribute('color', new THREE.Float32BufferAttribute(fireColors, 3));
         fireGeo.setAttribute('aBiomeTint', new THREE.Float32BufferAttribute(fireBiomeTints, 3));
+        fireGeo.computeBoundingSphere();
         
         // Use window.fireMaterial to ensure it's found
         if (window.fireMaterial) {
@@ -1853,6 +2003,7 @@ function buildChunkMesh(cx, cz) {
         portalGeo.setAttribute('uv', new THREE.Float32BufferAttribute(portalUvs, 2));
         portalGeo.setAttribute('color', new THREE.Float32BufferAttribute(portalColors, 3));
         portalGeo.setAttribute('aBiomeTint', new THREE.Float32BufferAttribute(portalBiomeTints, 3));
+        portalGeo.computeBoundingSphere();
         
         if (window.portalMaterial) {
             const pMesh = new THREE.Mesh(portalGeo, window.portalMaterial);
@@ -1861,29 +2012,190 @@ function buildChunkMesh(cx, cz) {
         }
     }
 
+    // --- AETHER PORTAL MESH ---
+    if (aetherPortalPositions.length > 0) {
+        const aPortalGeo = new THREE.BufferGeometry();
+        aPortalGeo.setAttribute('position', new THREE.Float32BufferAttribute(aetherPortalPositions, 3));
+        aPortalGeo.setAttribute('uv', new THREE.Float32BufferAttribute(aetherPortalUvs, 2));
+        aPortalGeo.setAttribute('color', new THREE.Float32BufferAttribute(aetherPortalColors, 3));
+        aPortalGeo.setAttribute('aBiomeTint', new THREE.Float32BufferAttribute(aetherPortalBiomeTints, 3));
+        aPortalGeo.computeBoundingSphere();
+        
+        if (window.aetherPortalMaterial) {
+            const apMesh = new THREE.Mesh(aPortalGeo, window.aetherPortalMaterial);
+            apMesh.renderOrder = 6;
+            chunkGroup.add(apMesh);
+        }
+    }
+
     // --- FINAL ADDITION ---
     if (chunkGroup.children.length > 0) {
+        // Same visibility-at-assembly logic as the typed-array path: avoids
+        // chunks beyond render distance briefly flashing visible after meshing.
+        if (typeof player !== 'undefined' && typeof RENDER_DISTANCES !== 'undefined') {
+            const _pCx = Math.floor(player.x / CHUNK_SIZE);
+            const _pCz = Math.floor(player.z / CHUNK_SIZE);
+            const _r = RENDER_DISTANCES[currentRenderDistIndex];
+            const _ddx = cx - _pCx, _ddz = cz - _pCz;
+            chunkGroup.visible = (_ddx * _ddx + _ddz * _ddz) <= (_r * _r);
+        }
         scene.add(chunkGroup);
         chunkMeshes.set(chunkKey, chunkGroup);
     }
-} // End of buildChunkMesh
+} // End of _assembleChunkMeshFromArrays
+
+function _assembleChunkMeshFromTypedArrays(cx, cz, m) {
+    // Same as _assembleChunkMeshFromArrays but reads directly from a worker
+    // message object containing Float32Arrays. Avoids the per-element copy
+    // loops that were the #1 hottest function in the profiler.
+    const chunkKey = `${cx},${cz}`;
+    if (chunkMeshes.has(chunkKey)) {
+        const group = chunkMeshes.get(chunkKey);
+        scene.remove(group);
+        group.children.forEach(mesh => mesh.geometry.dispose());
+        chunkMeshes.delete(chunkKey);
+    }
+
+    const chunkGroup = new THREE.Group();
+    if (m.solidPos.length > 0) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(m.solidPos, 3));
+        geometry.setAttribute('normal', new THREE.BufferAttribute(m.solidNrm, 3));
+        geometry.setAttribute('uv', new THREE.BufferAttribute(m.solidUv, 2));
+        geometry.setAttribute('color', new THREE.BufferAttribute(m.solidCol, 3));
+        geometry.setAttribute('aBiomeTint', new THREE.BufferAttribute(m.solidBt, 3));
+        geometry.computeBoundingSphere();
+        chunkGroup.add(new THREE.Mesh(geometry, solidMaterial));
+    }
+    if (m.glassPos.length > 0) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(m.glassPos, 3));
+        geometry.setAttribute('normal', new THREE.BufferAttribute(m.glassNrm, 3));
+        geometry.setAttribute('uv', new THREE.BufferAttribute(m.glassUv, 2));
+        geometry.setAttribute('color', new THREE.BufferAttribute(m.glassCol, 3));
+        geometry.setAttribute('aBiomeTint', new THREE.BufferAttribute(m.glassBt, 3));
+        geometry.computeBoundingSphere();
+        const glassMesh = new THREE.Mesh(geometry, glassMaterial);
+        glassMesh.renderOrder = 1;
+        chunkGroup.add(glassMesh);
+    }
+    if (m.waterPos.length > 0) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(m.waterPos, 3));
+        geometry.setAttribute('normal', new THREE.BufferAttribute(m.waterNrm, 3));
+        geometry.setAttribute('uv', new THREE.BufferAttribute(m.waterUv, 2));
+        geometry.setAttribute('color', new THREE.BufferAttribute(m.waterCol, 3));
+        geometry.setAttribute('aBiomeTint', new THREE.BufferAttribute(m.waterBt, 3));
+        geometry.setAttribute('aFluidType', new THREE.BufferAttribute(m.waterFt, 1));
+        geometry.setAttribute('aFlowDir', new THREE.BufferAttribute(m.waterFd, 2));
+        geometry.computeBoundingSphere();
+        const waterMesh_ = new THREE.Mesh(geometry, waterMaterial);
+        waterMesh_.renderOrder = 2;
+        chunkGroup.add(waterMesh_);
+    }
+    if (m.lavaPos.length > 0) {
+        const lavaGeo = new THREE.BufferGeometry();
+        lavaGeo.setAttribute('position', new THREE.BufferAttribute(m.lavaPos, 3));
+        lavaGeo.setAttribute('normal', new THREE.BufferAttribute(m.lavaNrm, 3));
+        lavaGeo.setAttribute('uv', new THREE.BufferAttribute(m.lavaUv, 2));
+        lavaGeo.setAttribute('color', new THREE.BufferAttribute(m.lavaCol, 3));
+        const lavaTints = new Float32Array(m.lavaPos.length).fill(1);
+        lavaGeo.setAttribute('aBiomeTint', new THREE.BufferAttribute(lavaTints, 3));
+        lavaGeo.setAttribute('aFluidType', new THREE.BufferAttribute(m.lavaFt, 1));
+        lavaGeo.setAttribute('aFlowDir', new THREE.BufferAttribute(m.lavaFd, 2));
+        lavaGeo.computeBoundingSphere();
+        const lavaMesh_ = new THREE.Mesh(lavaGeo, lavaMaterial);
+        chunkGroup.add(lavaMesh_);
+    }
+    if (m.firePos.length > 0) {
+        const fireGeo = new THREE.BufferGeometry();
+        fireGeo.setAttribute('position', new THREE.BufferAttribute(m.firePos, 3));
+        fireGeo.setAttribute('uv', new THREE.BufferAttribute(m.fireUv, 2));
+        fireGeo.setAttribute('color', new THREE.BufferAttribute(m.fireCol, 3));
+        fireGeo.setAttribute('aBiomeTint', new THREE.BufferAttribute(m.fireBt, 3));
+        fireGeo.computeBoundingSphere();
+        if (window.fireMaterial) {
+            const fMesh = new THREE.Mesh(fireGeo, window.fireMaterial);
+            fMesh.renderOrder = 5;
+            chunkGroup.add(fMesh);
+        }
+    }
+    if (m.portalPos.length > 0) {
+        const portalGeo = new THREE.BufferGeometry();
+        portalGeo.setAttribute('position', new THREE.BufferAttribute(m.portalPos, 3));
+        portalGeo.setAttribute('uv', new THREE.BufferAttribute(m.portalUv, 2));
+        portalGeo.setAttribute('color', new THREE.BufferAttribute(m.portalCol, 3));
+        portalGeo.setAttribute('aBiomeTint', new THREE.BufferAttribute(m.portalBt, 3));
+        portalGeo.computeBoundingSphere();
+        if (window.portalMaterial) {
+            const pMesh = new THREE.Mesh(portalGeo, window.portalMaterial);
+            pMesh.renderOrder = 6;
+            chunkGroup.add(pMesh);
+        }
+    }
+    if (m.aPortalPos.length > 0) {
+        const aPortalGeo = new THREE.BufferGeometry();
+        aPortalGeo.setAttribute('position', new THREE.BufferAttribute(m.aPortalPos, 3));
+        aPortalGeo.setAttribute('uv', new THREE.BufferAttribute(m.aPortalUv, 2));
+        aPortalGeo.setAttribute('color', new THREE.BufferAttribute(m.aPortalCol, 3));
+        aPortalGeo.setAttribute('aBiomeTint', new THREE.BufferAttribute(m.aPortalBt, 3));
+        aPortalGeo.computeBoundingSphere();
+        if (window.aetherPortalMaterial) {
+            const apMesh = new THREE.Mesh(aPortalGeo, window.aetherPortalMaterial);
+            apMesh.renderOrder = 6;
+            chunkGroup.add(apMesh);
+        }
+    }
+    if (chunkGroup.children.length > 0) {
+        // Set initial visibility based on current player distance to avoid
+        // flicker: chunks at radius+1/+2 are generated and meshed but should
+        // not be visible until the player gets closer.
+        if (typeof player !== 'undefined' && typeof RENDER_DISTANCES !== 'undefined') {
+            const _pCx = Math.floor(player.x / CHUNK_SIZE);
+            const _pCz = Math.floor(player.z / CHUNK_SIZE);
+            const _r = RENDER_DISTANCES[currentRenderDistIndex];
+            const _ddx = cx - _pCx, _ddz = cz - _pCz;
+            chunkGroup.visible = (_ddx * _ddx + _ddz * _ddz) <= (_r * _r);
+        }
+        scene.add(chunkGroup);
+        chunkMeshes.set(chunkKey, chunkGroup);
+    }
+}
+window._assembleChunkMeshFromTypedArrays = _assembleChunkMeshFromTypedArrays;
+
+// Public entry point: builds the data and assembles the geometry, all on the
+// main thread. Used as the fallback path when the mesh worker isn't ready.
+function buildChunkMesh(cx, cz) {
+    _buildChunkMeshDataOnly(cx, cz);
+    _assembleChunkMeshFromArrays(cx, cz);
+}
 
 function updateChunks(x, y, z) {
     const cx = Math.floor(x / CHUNK_SIZE);
     const cz = Math.floor(z / CHUNK_SIZE);
     dirtyChunks.add(`${cx},${cz}`);
+    // Invalidate mesh worker's copy of this chunk (and edge neighbors)
+    if (typeof bumpChunkVersion === 'function') {
+        const scx = cx + (CHUNKS_X >> 1), scz = cz + (CHUNKS_Z >> 1);
+        bumpChunkVersion(scx, scz);
+    }
     const localX = x - cx * CHUNK_SIZE;
     const localZ = z - cz * CHUNK_SIZE;
-    if (localX === 0) dirtyChunks.add(`${cx - 1},${cz}`);
-    if (localX === CHUNK_SIZE - 1) dirtyChunks.add(`${cx + 1},${cz}`);
-    if (localZ === 0) dirtyChunks.add(`${cx},${cz - 1}`);
-    if (localZ === CHUNK_SIZE - 1) dirtyChunks.add(`${cx},${cz + 1}`);
+    if (localX === 0) { dirtyChunks.add(`${cx - 1},${cz}`); if (typeof bumpChunkVersion === 'function') bumpChunkVersion((cx-1)+(CHUNKS_X>>1), cz+(CHUNKS_Z>>1)); }
+    if (localX === CHUNK_SIZE - 1) { dirtyChunks.add(`${cx + 1},${cz}`); if (typeof bumpChunkVersion === 'function') bumpChunkVersion((cx+1)+(CHUNKS_X>>1), cz+(CHUNKS_Z>>1)); }
+    if (localZ === 0) { dirtyChunks.add(`${cx},${cz - 1}`); if (typeof bumpChunkVersion === 'function') bumpChunkVersion(cx+(CHUNKS_X>>1), (cz-1)+(CHUNKS_Z>>1)); }
+    if (localZ === CHUNK_SIZE - 1) { dirtyChunks.add(`${cx},${cz + 1}`); if (typeof bumpChunkVersion === 'function') bumpChunkVersion(cx+(CHUNKS_X>>1), (cz+1)+(CHUNKS_Z>>1)); }
 }
 
 function updateChunksInBounds(minX, maxX, minZ, maxZ) {
     const minCx = Math.floor(minX / CHUNK_SIZE), maxCx = Math.floor(maxX / CHUNK_SIZE);
     const minCz = Math.floor(minZ / CHUNK_SIZE), maxCz = Math.floor(maxZ / CHUNK_SIZE);
-    for (let cx = minCx; cx <= maxCx; cx++) for (let cz = minCz; cz <= maxCz; cz++) dirtyChunks.add(`${cx},${cz}`);
+    for (let cx = minCx; cx <= maxCx; cx++) {
+        for (let cz = minCz; cz <= maxCz; cz++) {
+            dirtyChunks.add(`${cx},${cz}`);
+            if (typeof bumpChunkVersion === 'function') bumpChunkVersion(cx+(CHUNKS_X>>1), cz+(CHUNKS_Z>>1));
+        }
+    }
 }
 
 function updateAllChunks() {

@@ -196,7 +196,7 @@ class Arrow {
             const cy = Math.floor(this.y + (ny - this.y) * t);
             const cz = Math.floor(this.z + (nz - this.z) * t);
             const bid = getVoxel(cx, cy, cz) & 0xFF;
-            if (bid !== 0 && !isFluidBlock(bid) && !isCrossBlock(bid) && bid !== 17 && bid !== 23 && bid !== 64 && bid !== 66 && bid !== 90) {
+            if (bid !== 0 && !isFluidBlock(bid) && !isCrossBlock(bid) && bid !== 17 && bid !== 23 && bid !== 64 && bid !== 66 && bid !== 90 && bid !== 209) {
                 this.stuck = true;
                 this._stuckBlock = [cx, cy, cz];
                 this.vx = 0; this.vy = 0; this.vz = 0;

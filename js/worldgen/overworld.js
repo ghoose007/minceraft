@@ -2,11 +2,20 @@
 // OVERWORLD GENERATION
 // ==========================================
 
+// Per-chunk cache for cave carving's getHighestBlock lookups (cleared at start of each chunk)
+let _caveSurfYCache = null;
+
 function generateChunkColumn(cx, cz) {
     if (_isChunkGenerated(cx, cz)) return;
     
     // Superflat world type
     if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 1) {
+        // 'overworld' preset uses normal generator with flattened heightmap
+        if (typeof GEN_SUPERFLAT_PRESET !== 'undefined' && GEN_SUPERFLAT_PRESET === 'overworld') {
+            _generateNormalChunk(cx, cz);
+            return;
+        }
+        // 'classic' preset uses the layer editor
         _generateSuperflatChunk(cx, cz);
         return;
     }
@@ -35,16 +44,40 @@ function _generateSuperflatChunk(cx, cz) {
         }
     }
     
-    // Superflat layers: bedrock at y=0, dirt at y=1-3, grass at y=4
+    // Read superflat layers from global config (top of list = top of world)
+    const layers = (typeof GEN_SUPERFLAT_LAYERS !== 'undefined' && GEN_SUPERFLAT_LAYERS.length > 0)
+        ? GEN_SUPERFLAT_LAYERS
+        : [{ id: 1, depth: 1 }, { id: 2, depth: 2 }, { id: 3, depth: 1 }, { id: 18, depth: 1 }];
+    
+    // Calculate total depth, cap at 128 for build room
+    let totalDepth = 0;
+    for (const layer of layers) totalDepth += layer.depth;
+    if (totalDepth > 128) totalDepth = 128;
+    
+    // Build column from bottom up: bottom of stack at y=0, top at y=totalDepth-1
+    // Layers are top-of-list = top-of-world, so iterate layers in order and assign Y from top down
+    const columnBlocks = new Array(totalDepth);
+    let yCursor = totalDepth - 1; // start at top
+    for (const layer of layers) {
+        for (let d = 0; d < layer.depth; d++) {
+            if (yCursor < 0) break;
+            columnBlocks[yCursor] = layer.id;
+            yCursor--;
+        }
+        if (yCursor < 0) break;
+    }
+    // Fill any remaining slots from bottom with the last layer's id (shouldn't happen normally)
+    for (let i = 0; i < totalDepth; i++) {
+        if (columnBlocks[i] === undefined) columnBlocks[i] = layers[layers.length - 1].id;
+    }
+    
     for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         for (let lz = 0; lz < CHUNK_SIZE; lz++) {
             const wx = startX + lx;
             const wz = startZ + lz;
-            setVoxel(wx, 0, wz, 18); // Bedrock
-            setVoxel(wx, 1, wz, 2);  // Dirt
-            setVoxel(wx, 2, wz, 2);  // Dirt
-            setVoxel(wx, 3, wz, 2);  // Dirt
-            setVoxel(wx, 4, wz, 1);  // Grass
+            for (let y = 0; y < totalDepth; y++) {
+                setVoxel(wx, y, wz, columnBlocks[y]);
+            }
         }
     }
 }
@@ -74,14 +107,44 @@ function _generateNormalChunk(cx, cz) {
     }
     
     // PHASE 1: 3D terrain density
+    const isOverworldPreset = (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 1
+        && typeof GEN_SUPERFLAT_PRESET !== 'undefined' && GEN_SUPERFLAT_PRESET === 'overworld');
+    
     for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         for (let lz = 0; lz < CHUNK_SIZE; lz++) {
             const x = startX + lx;
             const z = startZ + lz;
             const bIdx = lx + lz * CHUNK_SIZE;
             
-            let baseHeight = biomeData.heightMap[bIdx];
-            let volatility = biomeData.volMap[bIdx];
+            let baseHeight, volatility;
+            
+            if (isOverworldPreset) {
+                // Flat overworld: snap to sea level for land, keep depression for rivers/oceans
+                let h = biomeData.heightMap[bIdx];
+                // Threshold: anything within 2 of sea level becomes flat land at sea level.
+                // Anything more than 2 below stays as river/ocean bed (but must leave at least 1 water block).
+                if (h >= GEN_SEA_LEVEL - 1) {
+                    h = GEN_SEA_LEVEL;
+                } else {
+                    // Keep depression but cap so there's always at least 1 stone below water
+                    if (h < 1) h = 1;
+                }
+                baseHeight = Math.floor(h);
+                volatility = 0;
+                
+                // Place bedrock at y=0, stone up to baseHeight, water above to sea level
+                setVoxel(x, 0, z, 18); // Bedrock
+                for (let y = 1; y <= baseHeight; y++) {
+                    setVoxel(x, y, z, 3); // Stone
+                }
+                for (let y = baseHeight + 1; y <= GEN_SEA_LEVEL; y++) {
+                    setVoxel(x, y, z, 4, 8, 0, 1); // Water source
+                }
+                continue;
+            }
+            
+            baseHeight = biomeData.heightMap[bIdx];
+            volatility = biomeData.volMap[bIdx];
             
             // --- NEW: SHORELINE DAMPENING MULTIPLIER ---
             // Fades from 1.0 (inland) to 0.0 (in the ocean)
@@ -116,7 +179,14 @@ function _generateNormalChunk(cx, cz) {
             volatility += _wgPerlinVolatility.fbm(x / 100, z / 100, 3) * 10;
             volatility *= _wgTerrainMult * (GEN_VOLATILITY_MULT / 100.0);
             
-            for (let y = 0; y < WORLD_HEIGHT; y++) {
+            // PERF: Cap Y to baseHeight + headroom. Above (baseHeight + 2*volatility + 16),
+            // the density calculation will essentially always be negative (= air), so we
+            // can skip the expensive 3D noise sampling for those Y levels entirely.
+            // The +16 buffer accounts for anomaly volatility boost.
+            const yMaxScan = Math.min(WORLD_HEIGHT - 1,
+                Math.ceil(baseHeight + Math.abs(volatility) * 2 + 16));
+            
+            for (let y = 0; y <= yMaxScan; y++) {
                 if (y === 0) { setVoxel(x, y, z, 18); continue; }
                 
                 let heightDiff = y - baseHeight;
@@ -140,6 +210,14 @@ function _generateNormalChunk(cx, cz) {
                 if (density > 0) {
                     setVoxel(x, y, z, 3);
                 } else if (y <= GEN_SEA_LEVEL) {
+                    setVoxel(x, y, z, 4, 8, 0, 1);
+                }
+            }
+            
+            // Fill water from yMaxScan+1 to GEN_SEA_LEVEL if we capped before reaching sea level
+            // (only relevant if baseHeight is below sea level — i.e., ocean or river)
+            if (yMaxScan < GEN_SEA_LEVEL) {
+                for (let y = yMaxScan + 1; y <= GEN_SEA_LEVEL; y++) {
                     setVoxel(x, y, z, 4, 8, 0, 1);
                 }
             }
@@ -172,8 +250,11 @@ function _generateNormalChunk(cx, cz) {
                             else if (biome === 'tundra') surfId = 39;
                             else if (biome === 'ocean') surfId = 15; // Sandy beaches right at the edge
                             
-                            if (y <= GEN_SEA_LEVEL + 1 && biome !== 'tundra' && biome !== 'taiga' && biome !== 'swamp') surfId = 15;
-                            else if (y <= GEN_SEA_LEVEL + 1 && (biome === 'tundra' || biome === 'taiga')) surfId = 5;
+                            // Beach override — skipped in flat overworld preset since ALL land is at sea level
+                            if (!isOverworldPreset) {
+                                if (y <= GEN_SEA_LEVEL + 1 && biome !== 'tundra' && biome !== 'taiga' && biome !== 'swamp') surfId = 15;
+                                else if (y <= GEN_SEA_LEVEL + 1 && (biome === 'tundra' || biome === 'taiga')) surfId = 5;
+                            }
                             
                             // Swamp: use dirt for blocks at or below water level
                             if (biome === 'swamp' && y <= GEN_SEA_LEVEL) {
@@ -290,6 +371,10 @@ function _generateNormalChunk(cx, cz) {
         const tunnelBranchChance = (typeof GEN_TUNNEL_BRANCH !== 'undefined' ? GEN_TUNNEL_BRANCH : 50) / 100;
         const caveSizeMult = (typeof GEN_CAVE_SIZE !== 'undefined' ? GEN_CAVE_SIZE : 100) / 100;
         
+        // PERF: Clear per-chunk surface Y cache for cave carving
+        if (_caveSurfYCache) _caveSurfYCache.clear();
+        else _caveSurfYCache = new Map();
+        
         // The chunk boundaries for carving — only carve blocks inside this chunk
         const chunkMinX = startX;
         const chunkMaxX = startX + CHUNK_SIZE - 1;
@@ -346,6 +431,7 @@ function _generateNormalChunk(cx, cz) {
                 if (sphereInChunk) {
                     // Carve sphere — only blocks inside this chunk
                     const rSq = r * r;
+                    
                     for (let dx = -ri; dx <= ri; dx++) {
                         for (let dy = -ri; dy <= ri; dy++) {
                             for (let dz = -ri; dz <= ri; dz++) {
@@ -364,10 +450,15 @@ function _generateNormalChunk(cx, cz) {
                                 if (blockId !== 3 && blockId !== 2 && blockId !== 1 && blockId !== 15 &&
                                     blockId !== 19 && blockId !== 5 && blockId !== 39) continue;
                                 
-                                // Don't carve the very top 1 block to preserve the grass layer,
-                                // but allow carving everything below — hillsides/slopes will
-                                // naturally expose cave entrances where terrain is uneven.
-                                const surfY = getHighestBlock(bx, bz);
+                                // Don't carve the very top 1 block to preserve the grass layer.
+                                // Cached: getHighestBlock scans the entire Y column each call,
+                                // but inside a sphere we hit the same (bx,bz) many times.
+                                const surfKey = bx * 65536 + (bz & 0xFFFF);
+                                let surfY = _caveSurfYCache.get(surfKey);
+                                if (surfY === undefined) {
+                                    surfY = getHighestBlock(bx, bz);
+                                    _caveSurfYCache.set(surfKey, surfY);
+                                }
                                 if (by >= surfY) continue;
                                 
                                 // Don't carve near ocean/river water
@@ -1272,6 +1363,13 @@ function ensureChunkGenerated(cx, cz) {
         const startX = cx * CHUNK_SIZE - Math.floor(WORLD_WIDTH / 2);
         const startZ = cz * CHUNK_SIZE - Math.floor(WORLD_DEPTH / 2);
         simulateChunkFluids(startX, startZ, startX + CHUNK_SIZE, startZ + CHUNK_SIZE);
+    } else if (currentDimension === 'aether') {
+        if (!_aetherNoise1) _initAetherNoise();
+        generateAetherChunkColumn(cx, cz);
+        // Simulate fluids for this chunk (aether water is at island heights)
+        const startX = cx * CHUNK_SIZE - Math.floor(WORLD_WIDTH / 2);
+        const startZ = cz * CHUNK_SIZE - Math.floor(WORLD_DEPTH / 2);
+        simulateAetherFluids(startX, startZ, startX + CHUNK_SIZE, startZ + CHUNK_SIZE);
     } else {
         generateChunkColumn(cx, cz);
     }
@@ -1300,7 +1398,10 @@ function updateNearbyChunks(playerX, playerZ, radiusChunks) {
 
 // Fluid simulation for a region
 function simulateChunkFluids(startX, startZ, endX, endZ) {
-    const fluidSimQueue = new Set();
+    // Seed phase: find all source fluid blocks in the region that touch
+    // air, cross-blocks, or a different fluid. These are the cells that
+    // need to start propagating. Add them directly to the live sim queues
+    // (updateLavaQueue / updateWaterQueue).
     for (let x = startX; x < endX; x++) {
         for (let z = startZ; z < endZ; z++) {
             for (let y = 1; y <= GEN_SEA_LEVEL; y++) {
@@ -1310,6 +1411,73 @@ function simulateChunkFluids(startX, startZ, endX, endZ) {
                 const src = (val >> 13) & 0x1;
                 if (!src) continue;
                 if (id === 4 && y >= (GEN_SEA_LEVEL - 2)) continue;
+                for (const [dx,dy,dz] of [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]) {
+                    const nId = getVoxel(x+dx,y+dy,z+dz) & 0xFF;
+                    if (nId === 0 || isCrossBlock(nId) || (isFluidBlock(nId) && nId !== id)) {
+                        if (id === 27) updateLavaQueue.add(getVoxelIndex(x, y, z));
+                        else updateWaterQueue.add(getVoxelIndex(x, y, z));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Drain the queues by repeatedly invoking the LIVE updateLava/updateWater
+    // functions on every queued index. The live functions will re-queue any
+    // affected neighbors via the same global queues, so we just keep looping
+    // until both are empty (or we hit the pass limit, just in case).
+    //
+    // This used to be a parallel reimplementation of the sim, but the worldgen
+    // copy diverged from the live code over time (different maxLevel, missing
+    // falling-onto-pool handling, etc), producing geometry artifacts that the
+    // live sim never produced. Mirroring the live sim here eliminates that
+    // entire class of bugs.
+    const dummyBounds = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity, dirty: false };
+    let passes = 0;
+    const MAX_PASSES = 256;
+    while ((updateWaterQueue.size > 0 || updateLavaQueue.size > 0) && passes < MAX_PASSES) {
+        // Snapshot the queues into arrays so we can iterate while updateLava/
+        // updateWater re-add to the live sets.
+        const waterBatch = Array.from(updateWaterQueue);
+        updateWaterQueue.clear();
+        const lavaBatch = Array.from(updateLavaQueue);
+        updateLavaQueue.clear();
+        
+        for (const idx of waterBatch) {
+            if (idx === -1) continue;
+            const ix = idx % WORLD_WIDTH, iy = Math.floor(idx / WORLD_WIDTH) % WORLD_HEIGHT;
+            const iz = Math.floor(idx / (WORLD_WIDTH * WORLD_HEIGHT));
+            const wx = ix - WORLD_WIDTH/2, wy = iy, wz = iz - WORLD_DEPTH/2;
+            updateWater(wx, wy, wz, dummyBounds);
+        }
+        for (const idx of lavaBatch) {
+            if (idx === -1) continue;
+            const ix = idx % WORLD_WIDTH, iy = Math.floor(idx / WORLD_WIDTH) % WORLD_HEIGHT;
+            const iz = Math.floor(idx / (WORLD_WIDTH * WORLD_HEIGHT));
+            const wx = ix - WORLD_WIDTH/2, wy = iy, wz = iz - WORLD_DEPTH/2;
+            updateLava(wx, wy, wz, dummyBounds);
+        }
+        passes++;
+    }
+    
+    // Make sure the queues are clean before returning so the live game
+    // doesn't immediately re-process everything we just did.
+    updateWaterQueue.clear();
+    updateLavaQueue.clear();
+}
+
+// Aether fluid simulation — scans full Y range since water is at island heights
+function simulateAetherFluids(startX, startZ, endX, endZ) {
+    const fluidSimQueue = new Set();
+    for (let x = startX; x < endX; x++) {
+        for (let z = startZ; z < endZ; z++) {
+            for (let y = 1; y <= 200; y++) {
+                const val = getVoxel(x, y, z);
+                const id = val & 0xFF;
+                if (!isFluidBlock(id)) continue;
+                const src = (val >> 13) & 0x1;
+                if (!src) continue;
                 for (const [dx,dy,dz] of [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]) {
                     const nId = getVoxel(x+dx,y+dy,z+dz) & 0xFF;
                     if (nId === 0 || isCrossBlock(nId) || (isFluidBlock(nId) && nId !== id)) {
@@ -1433,6 +1601,7 @@ async function generateWorld() {
     solidMaterial = new THREE.MeshBasicMaterial({ map: textureAtlas, alphaTest: 0.5, transparent: false, side: THREE.FrontSide, vertexColors: true });
     injectLightingShader(solidMaterial);
     if (typeof createPortalMaterial === 'function') createPortalMaterial(textureAtlas);
+    if (typeof createAetherPortalMaterial === 'function') createAetherPortalMaterial(textureAtlas);
     
     glassMaterial = new THREE.MeshBasicMaterial({ map: textureAtlas, transparent: true, opacity: 1.0, alphaTest: 0.0, side: THREE.FrontSide, vertexColors: true, depthWrite: false });
     injectLightingShader(glassMaterial);

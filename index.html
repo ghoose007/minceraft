@@ -148,6 +148,8 @@
             color: #606060;
             text-shadow: 1px 1px 0px #3f3f3f;
             cursor: not-allowed;
+            pointer-events: none;
+            opacity: 0.5;
         }
 
         /* MC-style slider button (looks like a button with a draggable thumb) */
@@ -551,9 +553,9 @@
             image-rendering: pixelated;
         }
 
-        .heart.empty { background-image: url('textures/ui.png?v=115'); background-position: 0px 0px; }
-        .heart.full { background-image: url('textures/ui.png?v=115'), url('textures/ui.png?v=115'); background-size: 144px 144px, 144px 144px; background-position: -16px 0px, 0px 0px; }
-        .heart.half { background-image: url('textures/ui.png?v=115'), url('textures/ui.png?v=115'); background-size: 144px 144px, 144px 144px; background-position: -32px 0px, 0px 0px; }
+        .heart.empty { background-image: url('textures/ui.png?v=250'); background-position: 0px 0px; }
+        .heart.full { background-image: url('textures/ui.png?v=250'), url('textures/ui.png?v=250'); background-size: 144px 144px, 144px 144px; background-position: -16px 0px, 0px 0px; }
+        .heart.half { background-image: url('textures/ui.png?v=250'), url('textures/ui.png?v=250'); background-size: 144px 144px, 144px 144px; background-position: -32px 0px, 0px 0px; }
 
         .hotbar-container {
             display: flex;
@@ -572,7 +574,7 @@
             gap: 0;
             width: 364px;
             height: 44px;
-            background-image: url('textures/gui.png?v=115');
+            background-image: url('textures/gui.png?v=250');
             background-size: 512px 512px;
             background-position: 0px 0px;
             background-repeat: no-repeat;
@@ -605,7 +607,7 @@
             left: -4px;
             width: 48px;
             height: 48px;
-            background-image: url('textures/gui.png?v=115');
+            background-image: url('textures/gui.png?v=250');
             background-size: 512px 512px;
             background-position: 0px -44px;
             background-repeat: no-repeat;
@@ -1338,7 +1340,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
-    <script src="js/mobile/device-prompt.js?v=115"></script>
+    <script src="js/mobile/device-prompt.js?v=250"></script>
 
     <div id="main-menu" class="mc-screen">
         <canvas id="dirt-bg" width="1" height="1"></canvas>
@@ -1429,12 +1431,14 @@
 
             <!-- CATEGORY BUTTONS -->
             <div class="mc-setting-group" style="text-align:center;">
-                <button class="mc-button adv-cat-btn" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('terrain')">Terrain Settings</button>
-                <button class="mc-button adv-cat-btn" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('biomes')">Biome Tuning</button>
-                <button class="mc-button adv-cat-btn" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('caves')">Caves &amp; Underground</button>
-                <button class="mc-button adv-cat-btn" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('nature')">Structures &amp; Nature</button>
-                <button class="mc-button adv-cat-btn" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('mobs')">Mobs &amp; Gameplay</button>
-                <button class="mc-button adv-cat-btn" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('nether')">Nether Settings</button>
+                <button class="mc-button adv-cat-btn" id="adv-cat-btn-terrain" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('terrain')">Terrain Settings</button>
+                <button class="mc-button adv-cat-btn" id="adv-cat-btn-biomes" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('biomes')">Biome Tuning</button>
+                <button class="mc-button adv-cat-btn" id="adv-cat-btn-caves" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('caves')">Caves &amp; Underground</button>
+                <button class="mc-button adv-cat-btn" id="adv-cat-btn-nature" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('nature')">Structures &amp; Nature</button>
+                <button class="mc-button adv-cat-btn" id="adv-cat-btn-mobs" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('mobs')">Mobs &amp; Gameplay</button>
+                <button class="mc-button adv-cat-btn" id="adv-cat-btn-nether" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('nether')">Nether Settings</button>
+                <button class="mc-button adv-cat-btn" id="adv-cat-btn-aether" style="width:100%; height:30px; margin-bottom:4px;" onclick="showAdvCategory('aether')">Aether Settings</button>
+                <button class="mc-button adv-cat-btn" id="adv-cat-btn-superflat" style="width:100%; height:30px; margin-bottom:4px; display:none;" onclick="showAdvCategory('superflat')">Superflat Settings</button>
             </div>
 
             <!-- TERRAIN SETTINGS -->
@@ -1739,12 +1743,132 @@
                 </div>
             </div>
 
+            <!-- AETHER SETTINGS -->
+            <div id="adv-aether" class="adv-category" style="display:none;">
+                <div class="mc-separator"></div>
+                <div style="color:#fff; font-size:13px; margin-bottom:8px; text-shadow:1px 1px 0 #222;">— Aether (Sky Dimension) —</div>
+
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Aether Dimension</div>
+                    <button class="mc-button" style="width: 100%; height: 32px;" id="opt-aetherEnabled" onclick="toggleOption('aetherEnabled')">ON</button>
+                </div>
+
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Island Density</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-aether-density" type="range" min="25" max="200" value="130" oninput="updateSliderVal(this, 'val-aether-density')">
+                        <div class="mc-slider-val" id="val-aether-density">130%</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Island Size</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-aether-size" type="range" min="25" max="200" value="180" oninput="updateSliderVal(this, 'val-aether-size')">
+                        <div class="mc-slider-val" id="val-aether-size">180%</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Island Height</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-aether-height" type="range" min="25" max="200" value="180" oninput="updateSliderVal(this, 'val-aether-height')">
+                        <div class="mc-slider-val" id="val-aether-height">180%</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Smoothness</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-aether-smooth" type="range" min="25" max="200" value="130" oninput="updateSliderVal(this, 'val-aether-smooth')">
+                        <div class="mc-slider-val" id="val-aether-smooth">130%</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Volatility</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-aether-volatility" type="range" min="25" max="200" value="100" oninput="updateSliderVal(this, 'val-aether-volatility')">
+                        <div class="mc-slider-val" id="val-aether-volatility">100%</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Cave Size</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-aether-cavesize" type="range" min="0" max="200" value="120" oninput="updateSliderVal(this, 'val-aether-cavesize')">
+                        <div class="mc-slider-val" id="val-aether-cavesize">120%</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Cave Density</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-aether-cavedensity" type="range" min="0" max="200" value="50" oninput="updateSliderVal(this, 'val-aether-cavedensity')">
+                        <div class="mc-slider-val" id="val-aether-cavedensity">50%</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Tree Density</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-aether-trees" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-aether-trees')">
+                        <div class="mc-slider-val" id="val-aether-trees">100%</div>
+                    </div>
+                </div>
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Grass &amp; Flower Density</div>
+                    <div class="mc-slider-row">
+                        <input class="mc-slider" id="sl-aether-grass" type="range" min="0" max="200" value="100" oninput="updateSliderVal(this, 'val-aether-grass')">
+                        <div class="mc-slider-val" id="val-aether-grass">100%</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SUPERFLAT SETTINGS -->
+            <div id="adv-superflat" class="adv-category" style="display:none;">
+                <div class="mc-separator"></div>
+                <div style="color:#fff; font-size:13px; margin-bottom:8px; text-shadow:1px 1px 0 #222;">— Superflat Preset —</div>
+                
+                <div class="mc-setting-group">
+                    <div class="mc-setting-label">Preset</div>
+                    <button class="mc-button" style="width: 100%; height: 32px;" id="opt-superflat-preset" onclick="toggleSuperflatPreset()">Classic Flat</button>
+                </div>
+                
+                <div id="superflat-overworld-info" style="display:none; color:#bbb; font-size:11px; padding:8px; background:#1a1a1a; border:2px solid #555; margin-bottom:8px; line-height:1.4;">
+                    Flat overworld with natural biomes (plains, desert, taiga, jungle, etc.), oceans, rivers, caves, ores, trees, flowers, sugarcane, and grass. Just like a normal world — but completely flat at sea level.
+                </div>
+                
+                <div id="superflat-classic-section">
+                    <div style="color:#fff; font-size:13px; margin-bottom:8px; text-shadow:1px 1px 0 #222;">— Superflat Layers —</div>
+                    <div style="color:#bbb; font-size:10px; margin-bottom:8px;">Top of list = top of world. Max total depth: 128 blocks.</div>
+                    
+                    <div id="superflat-layer-list" style="max-height:280px; overflow-y:auto; background:#1a1a1a; border:2px solid #555; padding:6px; margin-bottom:8px;">
+                        <!-- Layer entries inserted by JS -->
+                    </div>
+                    
+                    <div style="text-align:center; margin-bottom:6px;">
+                        <button class="mc-button" style="width:100%; height:32px;" onclick="openSuperflatBlockPicker()">+ Add Block Layer</button>
+                    </div>
+                    <div style="text-align:center; margin-bottom:6px;">
+                        <button class="mc-button" style="width:100%; height:32px;" onclick="resetSuperflatLayers()">Reset to Default</button>
+                    </div>
+                    <div id="superflat-total-depth" style="color:#aaa; font-size:11px; text-align:center; margin-top:4px;">Total depth: 0 / 128</div>
+                </div>
+            </div>
+
         </div>
         <div style="height: 10px;"></div>
         <div class="btn-grid" style="width:440px; max-width:85vw;">
             <button class="mc-button" onclick="hideAdvancedSettings()">Done</button>
         </div>
         <div style="height: 16px;"></div>
+    </div>
+    
+    <!-- SUPERFLAT BLOCK PICKER MODAL -->
+    <div id="superflat-block-picker" class="hidden" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:9999; display:flex; align-items:center; justify-content:center;">
+        <div style="background:#1a1a1a; border:3px solid #555; padding:16px; max-width:560px; max-height:80vh; display:flex; flex-direction:column;">
+            <div style="color:#fff; font-size:14px; margin-bottom:8px; text-shadow:1px 1px 0 #222;">Select a Block</div>
+            <div id="superflat-picker-grid" style="display:grid; grid-template-columns:repeat(8,1fr); gap:4px; overflow-y:auto; padding:4px; max-height:60vh;">
+                <!-- Block icons inserted by JS -->
+            </div>
+            <div style="text-align:center; margin-top:10px;">
+                <button class="mc-button" style="width:140px; height:32px;" onclick="closeSuperflatBlockPicker()">Cancel</button>
+            </div>
+        </div>
     </div>
 
     <div id="loading-screen" class="mc-screen hidden">
@@ -1967,88 +2091,89 @@
 
     <div id="item-tooltip" class="hidden">Tooltip</div>
 
-    <script src="js/config/constants.js?v=115"></script>
-    <script src="js/config/state.js?v=115"></script>
-    <script src="js/config/blocks.js?v=115"></script>
-    <script src="js/config/tools.js?v=115"></script>
-    <script src="js/config/recipes.js?v=115"></script>
+    <script src="js/config/constants.js?v=250"></script>
+    <script src="js/config/state.js?v=250"></script>
+    <script src="js/config/blocks.js?v=250"></script>
+    <script src="js/config/tools.js?v=250"></script>
+    <script src="js/config/recipes.js?v=250"></script>
 
-    <script src="js/ui/menu.js?v=115"></script>
-    <script src="js/render/lighting-shader.js?v=115"></script>
-    <script src="js/render/fabulous-shader.js?v=115"></script>
-    <script src="js/ui/pause-menu.js?v=115"></script>
+    <script src="js/ui/menu.js?v=250"></script>
+    <script src="js/render/lighting-shader.js?v=250"></script>
+    <script src="js/render/fabulous-shader.js?v=250"></script>
+    <script src="js/ui/pause-menu.js?v=250"></script>
 
-    <script src="js/world/voxel.js?v=115"></script>
-    <script src="js/world/block-helpers.js?v=115"></script>
-    <script src="js/world/block-updates.js?v=115"></script>
-    <script src="js/world/fluid-interaction.js?v=115"></script>
-    <script src="js/world/lighting.js?v=115"></script>
-    <script src="js/world/trees.js?v=115"></script>
-    <script src="js/world/random-ticks.js?v=115"></script>
-    <script src="js/world/fire.js?v=115"></script>
+    <script src="js/world/voxel.js?v=250"></script>
+    <script src="js/world/block-helpers.js?v=250"></script>
+    <script src="js/world/block-updates.js?v=250"></script>
+    <script src="js/world/fluid-interaction.js?v=250"></script>
+    <script src="js/world/lighting.js?v=250"></script>
+    <script src="js/world/trees.js?v=250"></script>
+    <script src="js/world/random-ticks.js?v=250"></script>
+    <script src="js/world/fire.js?v=250"></script>
 
-    <script src="js/render/textures.js?v=115"></script>
-    <script src="js/render/mc-font.js?v=115"></script>
-    <script src="js/render/faces.js?v=115"></script>
-    <script src="js/render/particles.js?v=115"></script>
-    <script src="js/render/chunk-mesh.js?v=115"></script>
-    <script src="js/render/item-mesh.js?v=115"></script>
+    <script src="js/render/textures.js?v=250"></script>
+    <script src="js/render/mc-font.js?v=250"></script>
+    <script src="js/render/faces.js?v=250"></script>
+    <script src="js/render/particles.js?v=250"></script>
+    <script src="js/render/chunk-mesh.js?v=250"></script>
+    <script src="js/render/item-mesh.js?v=250"></script>
 
-    <script src="js/world/fluids.js?v=115"></script>
-    <script src="js/world/noise.js?v=115"></script>
+    <script src="js/world/fluids.js?v=250"></script>
+    <script src="js/world/noise.js?v=250"></script>
 
-    <script src="js/worldgen/noise-init.js?v=115"></script>
-    <script src="js/worldgen/biomes.js?v=115"></script>
-    <script src="js/worldgen/overworld.js?v=115"></script>
-    <script src="js/worldgen/nether.js?v=115"></script>
+    <script src="js/worldgen/noise-init.js?v=250"></script>
+    <script src="js/worldgen/biomes.js?v=250"></script>
+    <script src="js/worldgen/overworld.js?v=250"></script>
+    <script src="js/worldgen/nether.js?v=250"></script>
+    <script src="js/worldgen/aether.js?v=250"></script>
 
-    <script src="js/ui/hud.js?v=115"></script>
-    <script src="js/ui/crafting.js?v=115"></script>
-    <script src="js/ui/furnace.js?v=115"></script>
-    <script src="js/ui/inventory.js?v=115"></script>
-    <script src="js/ui/inventory-doll.js?v=115"></script>
-    <script src="js/ui/chest.js?v=115"></script>
-    <script src="js/ui/enchanting.js?v=115"></script>
-    <script src="js/ui/death-screen.js?v=115"></script>
+    <script src="js/ui/hud.js?v=250"></script>
+    <script src="js/ui/crafting.js?v=250"></script>
+    <script src="js/ui/furnace.js?v=250"></script>
+    <script src="js/ui/inventory.js?v=250"></script>
+    <script src="js/ui/inventory-doll.js?v=250"></script>
+    <script src="js/ui/chest.js?v=250"></script>
+    <script src="js/ui/enchanting.js?v=250"></script>
+    <script src="js/ui/death-screen.js?v=250"></script>
 
-    <script src="js/core/physics.js?v=115"></script>
+    <script src="js/core/physics.js?v=250"></script>
 
-    <script src="js/gameplay/block-breaking.js?v=115"></script>
-    <script src="js/gameplay/portals-detect.js?v=115"></script>
-    <script src="js/gameplay/dropped-items.js?v=115"></script>
-    <script src="js/gameplay/tnt.js?v=115"></script>
-    <script src="js/gameplay/dimension-switch.js?v=115"></script>
-    <script src="js/gameplay/spawners.js?v=115"></script>
-    <script src="js/gameplay/structures.js?v=115"></script>
-    <script src="js/gameplay/experience.js?v=115"></script>
-    <script src="js/gameplay/redstone.js?v=115"></script>
+    <script src="js/gameplay/block-breaking.js?v=250"></script>
+    <script src="js/gameplay/portals-detect.js?v=250"></script>
+    <script src="js/gameplay/dropped-items.js?v=250"></script>
+    <script src="js/gameplay/tnt.js?v=250"></script>
+    <script src="js/gameplay/dimension-switch.js?v=250"></script>
+    <script src="js/gameplay/spawners.js?v=250"></script>
+    <script src="js/gameplay/structures.js?v=250"></script>
+    <script src="js/gameplay/experience.js?v=250"></script>
+    <script src="js/gameplay/redstone.js?v=250"></script>
 
-    <script src="js/core/init.js?v=115"></script>
-    <script src="js/core/game-loop.js?v=115"></script>
+    <script src="js/core/init.js?v=250"></script>
+    <script src="js/core/game-loop.js?v=250"></script>
 
-    <script src="js/mobs/mob-core.js?v=115"></script>
-    <script src="js/mobs/pathfinding.js?v=115"></script>
-    <script src="js/mobs/pig.js?v=115"></script>
-    <script src="js/mobs/zombie.js?v=115"></script>
-    <script src="js/mobs/zombie-pigman.js?v=115"></script>
-    <script src="js/mobs/cow.js?v=115"></script>
-    <script src="js/mobs/creeper.js?v=115"></script>
-    <script src="js/mobs/sheep.js?v=115"></script>
-    <script src="js/mobs/skeleton.js?v=115"></script>
-    <script src="js/mobs/mob-spawning.js?v=115"></script>
-    <script src="js/mobs/mob-particles.js?v=115"></script>
+    <script src="js/mobs/mob-core.js?v=250"></script>
+    <script src="js/mobs/pathfinding.js?v=250"></script>
+    <script src="js/mobs/pig.js?v=250"></script>
+    <script src="js/mobs/zombie.js?v=250"></script>
+    <script src="js/mobs/zombie-pigman.js?v=250"></script>
+    <script src="js/mobs/cow.js?v=250"></script>
+    <script src="js/mobs/creeper.js?v=250"></script>
+    <script src="js/mobs/sheep.js?v=250"></script>
+    <script src="js/mobs/skeleton.js?v=250"></script>
+    <script src="js/mobs/mob-spawning.js?v=250"></script>
+    <script src="js/mobs/mob-particles.js?v=250"></script>
 
-    <script src="js/core/save-load.js?v=115"></script>
+    <script src="js/core/save-load.js?v=250"></script>
 
-    <script src="js/player/model.js?v=115"></script>
-    <script src="js/player/camera.js?v=115"></script>
-    <script src="js/player/death-anim.js?v=115"></script>
-    <script src="js/player/fire-effects.js?v=115"></script>
+    <script src="js/player/model.js?v=250"></script>
+    <script src="js/player/camera.js?v=250"></script>
+    <script src="js/player/death-anim.js?v=250"></script>
+    <script src="js/player/fire-effects.js?v=250"></script>
 
-    <script src="js/entities/herobrine.js?v=115"></script>
-    <script src="js/entities/arrow.js?v=115"></script>
+    <script src="js/entities/herobrine.js?v=250"></script>
+    <script src="js/entities/arrow.js?v=250"></script>
 
-    <script src="js/core/sounds.js?v=115"></script>
-    <script src="js/mobile/touch-controls.js?v=115"></script>
+    <script src="js/core/sounds.js?v=250"></script>
+    <script src="js/mobile/touch-controls.js?v=250"></script>
 </body>
 </html>

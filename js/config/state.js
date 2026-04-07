@@ -9,7 +9,141 @@ const generatedChunks = { _arr: null };
 let useLazyGeneration = false;
 
 // --- DIMENSION SYSTEM ---
+//
+// REDESIGNED (v5): all per-dimension state lives in a single `dimensionData`
+// table keyed by dimension name. The active globals (chunkStorageArr,
+// generatedChunksArr, biomeMap, CHUNKS_X, CHUNKS_Z, WORLD_WIDTH, WORLD_DEPTH,
+// _halfW, _halfD) are VIEW POINTERS that get rebound by _bindActiveDimension
+// whenever the player switches dimensions. Save/load and dimension-switch
+// touch dimensionData directly; they never have to swap arrays mid-stream.
+//
+// The legacy per-dimension globals below (overworldChunkStorage etc) still
+// exist as backwards-compat aliases — _bindActiveDimension keeps them in
+// sync so any old code reading them still gets the right values. New code
+// should read from dimensionData[name] directly.
 let currentDimension = 'overworld';
+
+const dimensionData = {
+    overworld: {
+        chunks: null,             // Array of Int32Array | null
+        generatedFlags: null,     // Uint8Array
+        biomeMap: null,           // Array of biome name strings
+        chunksX: 0,
+        chunksZ: 0,
+        worldWidth: 0,
+        worldDepth: 0,
+        generated: false,
+        playerPos: null,          // {x, y, z, yaw, pitch}
+    },
+    nether: {
+        chunks: null,
+        generatedFlags: null,
+        biomeMap: null,
+        chunksX: 0,
+        chunksZ: 0,
+        worldWidth: 0,
+        worldDepth: 0,
+        generated: false,
+        playerPos: null,
+    },
+    aether: {
+        chunks: null,
+        generatedFlags: null,
+        biomeMap: null,
+        chunksX: 0,
+        chunksZ: 0,
+        worldWidth: 0,
+        worldDepth: 0,
+        generated: false,
+        playerPos: null,
+    },
+};
+
+// Snapshot the player's current position into the active dimension's
+// playerPos slot. Call this BEFORE rebinding so we don't lose the position.
+function _snapshotPlayerPosToCurrentDim() {
+    if (typeof currentDimension === 'undefined' || !currentDimension) return;
+    const d = dimensionData[currentDimension];
+    if (!d) return;
+    if (typeof player === 'undefined' || !player) return;
+    d.playerPos = {
+        x: player.x, y: player.y, z: player.z,
+        yaw: player.yaw, pitch: player.pitch,
+        flying: player.flying
+    };
+}
+
+// Bind the active globals (chunkStorageArr, biomeMap, CHUNKS_X, etc.) to
+// point at a dimension's data. This is the ONLY place that swaps these
+// pointers — all other code (save/load/dimension-switch) goes through here.
+//
+// Does NOT call notifyDimensionChange — caller is responsible for that
+// (so the caller can decide whether the worker reset is wanted).
+function _bindActiveDimension(name) {
+    const d = dimensionData[name];
+    if (!d) {
+        console.error('[dimension] _bindActiveDimension: unknown dimension', name);
+        return;
+    }
+    chunkStorageArr = d.chunks;
+    generatedChunksArr = d.generatedFlags;
+    biomeMap = d.biomeMap;
+    CHUNKS_X = d.chunksX;
+    CHUNKS_Z = d.chunksZ;
+    WORLD_WIDTH = d.worldWidth;
+    WORLD_DEPTH = d.worldDepth;
+    if (typeof _updateWorldHalves === 'function') _updateWorldHalves();
+    currentDimension = name;
+    
+    // Keep legacy aliases in sync for any code that still reads them
+    if (name === 'overworld') {
+        overworldChunkStorage = d.chunks;
+        overworldGeneratedChunks = d.generatedFlags;
+        overworldBiomeMap = d.biomeMap;
+        overworldChunksX = d.chunksX;
+        overworldChunksZ = d.chunksZ;
+    } else if (name === 'nether') {
+        netherChunkStorage = d.chunks;
+        netherGeneratedChunks = d.generatedFlags;
+        netherChunksX = d.chunksX;
+        netherChunksZ = d.chunksZ;
+    } else if (name === 'aether') {
+        aetherChunkStorage = d.chunks;
+        aetherGeneratedChunks = d.generatedFlags;
+        aetherBiomeMap = d.biomeMap;
+        aetherChunksX = d.chunksX;
+        aetherChunksZ = d.chunksZ;
+    }
+}
+
+// Allocate dimensionData[name] arrays if not already done. Sizes must be
+// stored on dimensionData[name] BEFORE calling this (or it will use the
+// CURRENT global CHUNKS_X/Z/WORLD_WIDTH/DEPTH as a fallback). Returns the
+// dimensionData entry.
+function _ensureDimensionAllocated(name) {
+    const d = dimensionData[name];
+    if (!d) return null;
+    // Fall back to current globals if sizes weren't pre-set
+    if (!d.chunksX) d.chunksX = CHUNKS_X;
+    if (!d.chunksZ) d.chunksZ = CHUNKS_Z;
+    if (!d.worldWidth) d.worldWidth = d.chunksX * CHUNK_SIZE;
+    if (!d.worldDepth) d.worldDepth = d.chunksZ * CHUNK_SIZE;
+    const total = d.chunksX * d.chunksZ;
+    if (!d.chunks || d.chunks.length !== total) {
+        d.chunks = new Array(total);
+        for (let i = 0; i < total; i++) d.chunks[i] = null;
+    }
+    if (!d.generatedFlags || d.generatedFlags.length !== total) {
+        d.generatedFlags = new Uint8Array(total);
+    }
+    if (!d.biomeMap || d.biomeMap.length !== d.worldWidth * d.worldDepth) {
+        d.biomeMap = new Array(d.worldWidth * d.worldDepth);
+    }
+    return d;
+}
+
+// --- LEGACY DIMENSION GLOBALS (kept for backwards compat — read-only views) ---
+// These stay in sync via _bindActiveDimension. New code should use dimensionData directly.
 let overworldChunkStorage = null;
 let overworldGeneratedChunks = null;
 let overworldBiomeMap = null;
@@ -18,6 +152,14 @@ let netherGeneratedChunks = null;
 let netherGenerated = false;
 let overworldPlayerPos = null;
 let netherPlayerPos = null;
+
+// --- AETHER STATE ---
+let aetherChunkStorage = null;
+let aetherGeneratedChunks = null;
+let aetherBiomeMap = null;
+let aetherGenerated = false;
+let aetherPlayerPos = null;
+let aetherChunksX = 0, aetherChunksZ = 0;
 
 // Overworld/Nether dimension sizes (saved/restored on dimension switch)
 let overworldChunksX = 0, overworldChunksZ = 0;

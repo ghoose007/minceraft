@@ -349,12 +349,18 @@
                     // Check if clicking inside a valid obsidian portal frame
                     const portalResult = detectPortalFrame(px, py, pz);
                     if (portalResult) {
+                        // Nether portals can't be lit in the aether
+                        if (typeof currentDimension !== 'undefined' && currentDimension === 'aether') {
+                            swingAnimation = 1.0;
+                            return;
+                        }
                         // Fill portal interior with portal blocks
                         for (const pos of portalResult.interior) {
                             setVoxel(pos.x, pos.y, pos.z, 90, portalResult.axis); // axis: 0=X-aligned, 1=Z-aligned
                             pendingBlockUpdates.push({x: pos.x, y: pos.y, z: pos.z});
                         }
                         if (typeof window.damageHeldTool === 'function') window.damageHeldTool(1);
+                        if (typeof window.playFlintAndSteelSound === 'function') window.playFlintAndSteelSound(px, py, pz);
                         if (typeof buildUI === 'function') buildUI();
                         swingAnimation = 1.0;
                         return;
@@ -377,6 +383,7 @@
                     pendingBlockUpdates.push({x: px, y: py, z: pz});
                     
                     if (typeof window.damageHeldTool === 'function') window.damageHeldTool(1);
+                    if (typeof window.playFlintAndSteelSound === 'function') window.playFlintAndSteelSound(px, py, pz);
                     if (typeof buildUI === 'function') buildUI();
                 }
                 swingAnimation = 1.0;
@@ -596,8 +603,14 @@
                               
             if (!intersect || currentBuildBlock === 17 || currentBuildBlock === 116 || currentBuildBlock === 117 || currentBuildBlock === 118 || currentBuildBlock === 137) {
                 if (currentBuildBlock === 4) {
-                    setVoxel(px, py, pz, 4, 8, 0, 1); 
-                    updateWaterQueue.add(getVoxelIndex(px, py, pz));
+                    // Water can't exist in the nether — it would evaporate
+                    // instantly. Block placement entirely.
+                    if (typeof currentDimension !== 'undefined' && currentDimension === 'nether') {
+                        // No-op — silently refuse the placement
+                    } else {
+                        setVoxel(px, py, pz, 4, 8, 0, 1); 
+                        updateWaterQueue.add(getVoxelIndex(px, py, pz));
+                    }
                 } else if (currentBuildBlock === 27) {
                     setVoxel(px, py, pz, 27, 4, 0, 1); 
                     updateLavaQueue.add(getVoxelIndex(px, py, pz));

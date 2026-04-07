@@ -74,24 +74,24 @@ function dbGetAll() {
 }
 
 // --- Chunk data compression (RLE on block IDs) ---
+//
+// REDESIGNED (v5): the primary entry points now take an explicit chunks
+// array argument so they don't depend on the active globals. The old
+// wrappers below preserve backwards compat for anything else that calls them.
 
-function compressChunks() {
-    // RLE compress each non-null chunk to dramatically reduce size
-    // Most chunks are 90%+ air or repeated stone, so RLE is very effective
-    const total = CHUNKS_X * CHUNKS_Z;
+function compressChunksFromArray(chunks) {
+    if (!chunks) return [];
     const chunkEntries = [];
-    for (let i = 0; i < total; i++) {
-        const chunk = chunkStorageArr[i];
+    for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
         if (!chunk) continue;
         
-        // Check if chunk is entirely empty (all zeros) - skip it
         let hasData = false;
         for (let j = 0; j < chunk.length; j++) {
             if (chunk[j] !== 0) { hasData = true; break; }
         }
         if (!hasData) continue;
         
-        // RLE encode: [value, runLength, value, runLength, ...]
         const rle = [];
         let runVal = chunk[0];
         let runLen = 1;
@@ -105,14 +105,13 @@ function compressChunks() {
             }
         }
         rle.push(runVal, runLen);
-        
-        // Store as Int32Array buffer (pairs of value,count)
         chunkEntries.push({ idx: i, rle: new Int32Array(rle).buffer });
     }
     return chunkEntries;
 }
 
-function decompressChunks(entries) {
+function decompressChunksIntoArray(entries, chunks) {
+    if (!entries || !chunks) return;
     for (const entry of entries) {
         const rle = new Int32Array(entry.rle);
         const chunk = new Int32Array(CHUNK_SIZE * WORLD_HEIGHT * CHUNK_SIZE);
@@ -124,16 +123,94 @@ function decompressChunks(entries) {
                 chunk[pos++] = val;
             }
         }
-        chunkStorageArr[entry.idx] = chunk;
+        if (entry.idx < chunks.length) chunks[entry.idx] = chunk;
     }
 }
 
-// --- Save world to a slot ---
+// Legacy wrappers — operate on the active globals.
+function compressChunks() {
+    return compressChunksFromArray(chunkStorageArr);
+}
+function decompressChunks(entries) {
+    decompressChunksIntoArray(entries, chunkStorageArr);
+}
+
+// --- Biome map RLE (biomes compress well — adjacent cells share biomes) ---
+
+function compressBiomeMap(biomeMap) {
+    if (!biomeMap || biomeMap.length === 0) return null;
+    const nameToId = new Map();
+    const table = [];
+    function getId(name) {
+        if (name === undefined || name === null) name = '';
+        let id = nameToId.get(name);
+        if (id === undefined) {
+            id = table.length;
+            table.push(name);
+            nameToId.set(name, id);
+        }
+        return id;
+    }
+    
+    const rle = [];
+    let runId = getId(biomeMap[0]);
+    let runLen = 1;
+    for (let i = 1; i < biomeMap.length; i++) {
+        const id = getId(biomeMap[i]);
+        if (id === runId && runLen < 0x7FFFFFFF) {
+            runLen++;
+        } else {
+            rle.push(runId, runLen);
+            runId = id;
+            runLen = 1;
+        }
+    }
+    rle.push(runId, runLen);
+    
+    return {
+        table: table,
+        rle: new Int32Array(rle).buffer,
+        length: biomeMap.length
+    };
+}
+
+function decompressBiomeMap(compressed) {
+    if (!compressed || !compressed.table || !compressed.rle) return null;
+    const out = new Array(compressed.length);
+    const rle = new Int32Array(compressed.rle);
+    const table = compressed.table;
+    let pos = 0;
+    for (let i = 0; i < rle.length; i += 2) {
+        const id = rle[i];
+        const count = rle[i + 1];
+        const name = table[id] || '';
+        for (let j = 0; j < count; j++) {
+            out[pos++] = (name === '') ? undefined : name;
+        }
+    }
+    return out;
+}
+
+// --- IndexedDB key helpers ---
+function _dimChunksKey(slot, dimName, batchIdx) { return slot + '_dim_' + dimName + '_chunks_' + batchIdx; }
+function _dimBiomesKey(slot, dimName) { return slot + '_dim_' + dimName + '_biomes'; }
+
+// --- Save world to a slot (v5 format) ---
+//
+// New design: walks dimensionData directly. For each dimension that's been
+// generated, RLE-compresses chunks and biomes, writes batches to IndexedDB.
+// No more swap dance — each dimension's data is independently accessible
+// from dimensionData[name].
 
 async function saveWorld(slot) {
     const saveStart = performance.now();
     
-    // Delete any old chunk batches for this slot (both dimensions)
+    // 1. Snapshot the player's current position into the active dimension
+    if (typeof _snapshotPlayerPosToCurrentDim === 'function') {
+        _snapshotPlayerPosToCurrentDim();
+    }
+    
+    // 2. Delete ALL existing keys for this slot (clears v4 + v5 keys)
     const db = await openSaveDB();
     const tx1 = db.transaction(SAVE_STORE, 'readwrite');
     const store1 = tx1.objectStore(SAVE_STORE);
@@ -142,77 +219,72 @@ async function saveWorld(slot) {
         req.onsuccess = () => res(req.result);
         req.onerror = rej;
     });
+    const slotPrefix = slot + '_';
     for (const key of allKeys) {
-        if (typeof key === 'string' && (key.startsWith(slot + '_chunks_') || key.startsWith(slot + '_nether_chunks_'))) {
+        if (typeof key === 'string' && key.startsWith(slotPrefix)) {
             store1.delete(key);
         }
     }
     await new Promise((res, rej) => { tx1.oncomplete = res; tx1.onerror = rej; });
     
+    // 3. Walk dimensionData. For each generated dimension, write its chunks and biomes.
     const BATCH_SIZE = 128;
+    const dimsMeta = {};
+    let totalChunksSaved = 0;
     
-    // Determine which arrays hold overworld vs nether data right now
-    let owChunkArr, owGenFlags;
-    let ntChunkArr, ntGenFlags;
-    
-    if (currentDimension === 'overworld') {
-        owChunkArr = chunkStorageArr;
-        owGenFlags = generatedChunksArr;
-        ntChunkArr = netherChunkStorage;
-        ntGenFlags = netherGeneratedChunks;
-    } else {
-        // Player is in nether — active arrays are nether, stored arrays are overworld
-        ntChunkArr = chunkStorageArr;
-        ntGenFlags = generatedChunksArr;
-        owChunkArr = overworldChunkStorage;
-        owGenFlags = overworldGeneratedChunks;
-    }
-    
-    // --- Save overworld chunks (key: slot_chunks_N) ---
-    const savedActive = chunkStorageArr;
-    chunkStorageArr = owChunkArr;
-    const owCompressed = compressChunks();
-    chunkStorageArr = savedActive;
-    
-    const numOwBatches = Math.ceil(owCompressed.length / BATCH_SIZE);
-    for (let b = 0; b < numOwBatches; b++) {
-        const batch = owCompressed.slice(b * BATCH_SIZE, (b + 1) * BATCH_SIZE);
-        await dbPut({ slot: slot + '_chunks_' + b, data: batch });
-    }
-    
-    // --- Save nether chunks if generated (key: slot_nether_chunks_N) ---
-    let numNtBatches = 0;
-    if (netherGenerated && ntChunkArr) {
-        chunkStorageArr = ntChunkArr;
-        const ntCompressed = compressChunks();
-        chunkStorageArr = savedActive;
-        
-        numNtBatches = Math.ceil(ntCompressed.length / BATCH_SIZE);
-        for (let b = 0; b < numNtBatches; b++) {
-            const batch = ntCompressed.slice(b * BATCH_SIZE, (b + 1) * BATCH_SIZE);
-            await dbPut({ slot: slot + '_nether_chunks_' + b, data: batch });
+    for (const dimName of ['overworld', 'nether', 'aether']) {
+        const d = dimensionData[dimName];
+        if (!d || !d.generated || !d.chunks) {
+            dimsMeta[dimName] = null;
+            continue;
         }
+        
+        const compressed = compressChunksFromArray(d.chunks);
+        const numBatches = Math.ceil(compressed.length / BATCH_SIZE);
+        for (let b = 0; b < numBatches; b++) {
+            const batch = compressed.slice(b * BATCH_SIZE, (b + 1) * BATCH_SIZE);
+            await dbPut({ slot: _dimChunksKey(slot, dimName, b), data: batch });
+        }
+        
+        let hasBiomes = false;
+        if (d.biomeMap && d.biomeMap.length > 0) {
+            const compressedBiomes = compressBiomeMap(d.biomeMap);
+            if (compressedBiomes) {
+                await dbPut({ slot: _dimBiomesKey(slot, dimName), data: compressedBiomes });
+                hasBiomes = true;
+            }
+        }
+        
+        dimsMeta[dimName] = {
+            chunksX: d.chunksX,
+            chunksZ: d.chunksZ,
+            worldWidth: d.worldWidth,
+            worldDepth: d.worldDepth,
+            numChunkBatches: numBatches,
+            hasBiomes: hasBiomes,
+            generatedFlags: d.generatedFlags ? Array.from(d.generatedFlags) : null,
+            playerPos: d.playerPos || null,
+            generated: true,
+        };
+        
+        totalChunksSaved += compressed.length;
     }
     
-    // Save metadata (small - no chunk data here)
+    // 4. Write metadata blob (everything except chunks/biomes)
     const saveData = {
         slot: slot,
-        version: 4,
+        version: 5,
         timestamp: Date.now(),
         worldName: currentWorldName || 'World ' + (slot + 1),
         seed: _worldSeed,
         gameMode: gameMode,
-        chunksX: CHUNKS_X,
-        chunksZ: CHUNKS_Z,
-        overworldChunksX: overworldChunksX || CHUNKS_X,
-        overworldChunksZ: overworldChunksZ || CHUNKS_Z,
-        numChunkBatches: numOwBatches,
-        numNetherChunkBatches: numNtBatches,
-        
-        // --- DIMENSION STATE ---
+        // Display fields for world select screen (uses overworld dims)
+        chunksX: dimsMeta.overworld ? dimsMeta.overworld.chunksX : CHUNKS_X,
+        chunksZ: dimsMeta.overworld ? dimsMeta.overworld.chunksZ : CHUNKS_Z,
         currentDimension: currentDimension || 'overworld',
-        netherGenerated: netherGenerated || false,
+        dimensions: dimsMeta,
         portalLinks: window._portalLinks ? JSON.parse(JSON.stringify(window._portalLinks)) : [],
+        aetherPortalLinks: window._aetherPortalLinks ? JSON.parse(JSON.stringify(window._aetherPortalLinks)) : [],
         
         genParams: {
             seaLevel: GEN_SEA_LEVEL,
@@ -229,27 +301,26 @@ async function saveWorld(slot) {
             tempOffset: GEN_TEMP_OFFSET,
             humidOffset: GEN_HUMID_OFFSET,
             foliageDensity: GEN_FOLIAGE_DENSITY,
-            // Advanced cave settings
             caveSize: GEN_CAVE_SIZE,
             caveMinY: GEN_CAVE_MIN_Y,
             caveLavaY: GEN_CAVE_LAVA_Y,
-            // Tunnel settings
             tunnelFrequency: GEN_TUNNEL_FREQUENCY,
             tunnelLength: GEN_TUNNEL_LENGTH,
             tunnelRadius: GEN_TUNNEL_RADIUS,
             tunnelMaxY: GEN_TUNNEL_MAX_Y,
             tunnelBranch: GEN_TUNNEL_BRANCH,
-            // Ravine settings
             ravineFrequency: GEN_RAVINE_FREQUENCY,
             ravineDepth: GEN_RAVINE_DEPTH,
             ravineWidth: GEN_RAVINE_WIDTH,
-            // Mob/gameplay settings
             hostileSpawns: GEN_HOSTILE_SPAWNS,
             hostileCap: GEN_HOSTILE_CAP,
             hostileRate: GEN_HOSTILE_RATE,
             spawnDist: GEN_SPAWN_DIST,
             xpEnabled: GEN_XP_ENABLED,
-            // Per-biome overrides
+            aetherEnabled: (typeof GEN_AETHER_ENABLED !== 'undefined' ? GEN_AETHER_ENABLED : true),
+            superflatLayers: (typeof GEN_SUPERFLAT_LAYERS !== 'undefined' ? GEN_SUPERFLAT_LAYERS : null),
+            superflatPreset: (typeof GEN_SUPERFLAT_PRESET !== 'undefined' ? GEN_SUPERFLAT_PRESET : 'classic'),
+            worldType: (typeof worldOptions !== 'undefined' ? worldOptions.worldtype : 0),
             biomeOverrides: GEN_BIOME_OVERRIDES
         },
         worldSpawnX: window.worldSpawnX || 0,
@@ -264,9 +335,6 @@ async function saveWorld(slot) {
         },
         inventory: inventory.map(s => s.id !== 0 ? { id: s.id, count: s.count, durability: s.durability !== undefined ? s.durability : undefined } : null),
         armor: armorSlots.map(s => s.id !== 0 ? { id: s.id, count: s.count, durability: s.durability !== undefined ? s.durability : undefined } : null),
-        generatedFlags: owGenFlags ? Array.from(owGenFlags) : Array.from(generatedChunksArr),
-        netherGeneratedFlags: ntGenFlags ? Array.from(ntGenFlags) : null,
-        // Chest inventories
         chests: (() => {
             if (typeof activeChests === 'undefined') return [];
             const arr = [];
@@ -275,7 +343,6 @@ async function saveWorld(slot) {
             }
             return arr;
         })(),
-        // Furnace states
         furnaces: (() => {
             if (typeof activeFurnaces === 'undefined') return [];
             const arr = [];
@@ -286,7 +353,6 @@ async function saveWorld(slot) {
             }
             return arr;
         })(),
-        // Dropped items on the ground
         droppedItems: (() => {
             if (typeof droppedItems === 'undefined') return [];
             return droppedItems.map(item => ({
@@ -296,17 +362,21 @@ async function saveWorld(slot) {
                 durability: item.durability !== undefined ? item.durability : undefined
             }));
         })(),
-        // Experience state
         xpState: typeof window.getPlayerXPState === 'function' ? window.getPlayerXPState() : { level: 0, xp: 0, totalXP: 0 }
     };
     
     await dbPut(saveData);
     
     const elapsed = (performance.now() - saveStart).toFixed(0);
-    console.log(`World saved to slot ${slot} in ${elapsed}ms (${owCompressed.length} OW chunks, ${numNtBatches} nether batches, dim=${currentDimension})`);
+    console.log(`World saved to slot ${slot} in ${elapsed}ms (v5: ${totalChunksSaved} chunks total, current=${currentDimension})`);
 }
 
-// --- Load world from a slot ---
+// --- Load world from a slot (v5 + v4 migration) ---
+//
+// New design: reads metadata, populates dimensionData for each saved
+// dimension, then calls init() which binds the active dimension and runs
+// lighting/meshing. v4 saves are migrated by reading old keys into the
+// dimensionData structure; on next save they get written in v5 format.
 
 async function loadWorldFromSlot(slot) {
     const data = await dbGet(slot);
@@ -315,33 +385,24 @@ async function loadWorldFromSlot(slot) {
     activeWorldSlot = slot;
     currentWorldName = data.worldName || 'World ' + (slot + 1);
     
-    // Load overworld chunk batches (always stored as slot_chunks_N)
-    const numOwBatches = data.numChunkBatches || 0;
-    const owChunks = [];
-    for (let b = 0; b < numOwBatches; b++) {
-        const batch = await dbGet(slot + '_chunks_' + b);
-        if (batch && batch.data) {
-            for (const entry of batch.data) owChunks.push(entry);
-        }
+    // Branch on save format version
+    if ((data.version || 0) >= 5) {
+        await _loadV5IntoData(slot, data);
+    } else {
+        await _loadV4IntoData(slot, data);
     }
-    data.chunks = owChunks; // init() will decompress these into chunkStorageArr
     
-    // Load nether chunk batches if they exist
-    const numNtBatches = data.numNetherChunkBatches || 0;
-    const ntChunks = [];
-    for (let b = 0; b < numNtBatches; b++) {
-        const batch = await dbGet(slot + '_nether_chunks_' + b);
-        if (batch && batch.data) {
-            for (const entry of batch.data) ntChunks.push(entry);
-        }
+    // CRITICAL: set CHUNKS_X_ACTIVE / CHUNKS_Z_ACTIVE from the saved overworld
+    // dimensions BEFORE init() runs. init() reads these to set CHUNKS_X /
+    // WORLD_WIDTH, which determines whether useLazyGeneration is true and
+    // therefore which lighting code path runs. If these are wrong, init's
+    // full-world lighting can try to allocate a chunk for every storage slot
+    // and run out of memory.
+    const owDim = (dimensionData.overworld && dimensionData.overworld.generated) ? dimensionData.overworld : null;
+    if (owDim && owDim.chunksX) {
+        CHUNKS_X_ACTIVE = owDim.chunksX;
+        CHUNKS_Z_ACTIVE = owDim.chunksZ;
     }
-    data.netherChunks = ntChunks;
-    
-    // Restore world dimensions (always use overworld dimensions for init)
-    const owCX = data.overworldChunksX || data.chunksX;
-    const owCZ = data.overworldChunksZ || data.chunksZ;
-    CHUNKS_X_ACTIVE = owCX;
-    CHUNKS_Z_ACTIVE = owCZ;
     
     // Restore seed and RNG
     _worldSeed = data.seed;
@@ -350,11 +411,6 @@ async function loadWorldFromSlot(slot) {
     // Restore game mode
     gameMode = data.gameMode || 'survival';
     worldOptions.gamemode = gameMode;
-    
-    // Restore dimension state BEFORE init so init can use it
-    data._savedDimension = data.currentDimension || 'overworld';
-    data._netherGenerated = data.netherGenerated || false;
-    data._portalLinks = data.portalLinks || [];
     
     // Restore generation params
     if (data.genParams) {
@@ -372,33 +428,39 @@ async function loadWorldFromSlot(slot) {
         GEN_TEMP_OFFSET = data.genParams.tempOffset || 0;
         GEN_HUMID_OFFSET = data.genParams.humidOffset || 0;
         GEN_FOLIAGE_DENSITY = data.genParams.foliageDensity || 100;
-        // Advanced cave settings (fallback to defaults for old saves)
         GEN_CAVE_SIZE = data.genParams.caveSize || 120;
         GEN_CAVE_MIN_Y = data.genParams.caveMinY !== undefined ? data.genParams.caveMinY : 2;
         GEN_CAVE_LAVA_Y = data.genParams.caveLavaY !== undefined ? data.genParams.caveLavaY : 6;
-        // Tunnel settings (fallback to defaults for old saves)
         GEN_TUNNEL_FREQUENCY = data.genParams.tunnelFrequency || 200;
         GEN_TUNNEL_LENGTH = data.genParams.tunnelLength || 100;
         GEN_TUNNEL_RADIUS = data.genParams.tunnelRadius || 120;
         GEN_TUNNEL_MAX_Y = data.genParams.tunnelMaxY || 80;
         GEN_TUNNEL_BRANCH = data.genParams.tunnelBranch !== undefined ? data.genParams.tunnelBranch : 70;
-        // Ravine settings (fallback to defaults for old saves)
         GEN_RAVINE_FREQUENCY = data.genParams.ravineFrequency || 100;
         GEN_RAVINE_DEPTH = data.genParams.ravineDepth || 100;
         GEN_RAVINE_WIDTH = data.genParams.ravineWidth || 100;
-        // Mob/gameplay settings (fallback to defaults for old saves)
         GEN_HOSTILE_SPAWNS = data.genParams.hostileSpawns !== undefined ? data.genParams.hostileSpawns : true;
         GEN_HOSTILE_CAP = data.genParams.hostileCap || 32;
         GEN_HOSTILE_RATE = data.genParams.hostileRate || 100;
         GEN_SPAWN_DIST = data.genParams.spawnDist || 32;
         GEN_XP_ENABLED = data.genParams.xpEnabled !== undefined ? data.genParams.xpEnabled : true;
-        // Per-biome overrides (fallback to defaults for old saves)
+        if (typeof GEN_AETHER_ENABLED !== 'undefined') {
+            GEN_AETHER_ENABLED = data.genParams.aetherEnabled !== undefined ? data.genParams.aetherEnabled : true;
+        }
+        if (typeof GEN_SUPERFLAT_LAYERS !== 'undefined' && data.genParams.superflatLayers) {
+            GEN_SUPERFLAT_LAYERS = data.genParams.superflatLayers;
+        }
+        if (typeof GEN_SUPERFLAT_PRESET !== 'undefined' && data.genParams.superflatPreset) {
+            GEN_SUPERFLAT_PRESET = data.genParams.superflatPreset;
+        }
+        if (typeof worldOptions !== 'undefined' && data.genParams.worldType !== undefined) {
+            worldOptions.worldtype = data.genParams.worldType;
+        }
         if (data.genParams.biomeOverrides) {
             GEN_BIOME_OVERRIDES = data.genParams.biomeOverrides;
         } else {
             if (typeof _resetBiomeOverrides === 'function') _resetBiomeOverrides();
         }
-        // Apply mob settings to runtime globals
         if (typeof MOB_CAP_HOSTILE !== 'undefined') MOB_CAP_HOSTILE = GEN_HOSTILE_CAP;
     }
     
@@ -410,8 +472,226 @@ async function loadWorldFromSlot(slot) {
     
     await yieldToUI();
     
-    // Use the existing init() with loadedData to skip generation
+    // dimensionData is now populated. init() will bind the active dimension
+    // (data.currentDimension), run lighting/meshing, and call notifyDimensionChange.
+    data._loadedFromV5 = true;
     await init(data.seed, data);
+}
+
+// --- v5 load helper: read v5 save into dimensionData ---
+async function _loadV5IntoData(slot, data) {
+    // Reset dimensionData (in case there was a previous world loaded)
+    for (const dimName of ['overworld', 'nether', 'aether']) {
+        const d = dimensionData[dimName];
+        d.chunks = null;
+        d.generatedFlags = null;
+        d.biomeMap = null;
+        d.chunksX = 0;
+        d.chunksZ = 0;
+        d.worldWidth = 0;
+        d.worldDepth = 0;
+        d.generated = false;
+        d.playerPos = null;
+    }
+    
+    if (!data.dimensions) return;
+    
+    for (const dimName of ['overworld', 'nether', 'aether']) {
+        const dimMeta = data.dimensions[dimName];
+        if (!dimMeta) continue;
+        
+        const d = dimensionData[dimName];
+        d.chunksX = dimMeta.chunksX;
+        d.chunksZ = dimMeta.chunksZ;
+        d.worldWidth = dimMeta.worldWidth;
+        d.worldDepth = dimMeta.worldDepth;
+        d.generated = !!dimMeta.generated;
+        d.playerPos = dimMeta.playerPos || null;
+        
+        const total = d.chunksX * d.chunksZ;
+        d.chunks = new Array(total);
+        for (let i = 0; i < total; i++) d.chunks[i] = null;
+        d.generatedFlags = new Uint8Array(total);
+        if (dimMeta.generatedFlags) {
+            for (let i = 0; i < dimMeta.generatedFlags.length && i < total; i++) {
+                d.generatedFlags[i] = dimMeta.generatedFlags[i];
+            }
+        }
+        
+        // Load chunk batches
+        const numBatches = dimMeta.numChunkBatches || 0;
+        for (let b = 0; b < numBatches; b++) {
+            const batch = await dbGet(_dimChunksKey(slot, dimName, b));
+            if (batch && batch.data) {
+                decompressChunksIntoArray(batch.data, d.chunks);
+            }
+        }
+        
+        // Load biomes
+        if (dimMeta.hasBiomes) {
+            const biomeRec = await dbGet(_dimBiomesKey(slot, dimName));
+            if (biomeRec && biomeRec.data) {
+                const decoded = decompressBiomeMap(biomeRec.data);
+                if (decoded) d.biomeMap = decoded;
+            }
+        }
+        if (!d.biomeMap) {
+            d.biomeMap = new Array(d.worldWidth * d.worldDepth);
+        }
+    }
+    
+    // Update legacy generated flags
+    netherGenerated = !!(dimensionData.nether && dimensionData.nether.generated);
+    aetherGenerated = !!(dimensionData.aether && dimensionData.aether.generated);
+}
+
+// --- v4 migration: read old format keys into dimensionData ---
+async function _loadV4IntoData(slot, data) {
+    // Reset dimensionData
+    for (const dimName of ['overworld', 'nether', 'aether']) {
+        const d = dimensionData[dimName];
+        d.chunks = null;
+        d.generatedFlags = null;
+        d.biomeMap = null;
+        d.chunksX = 0;
+        d.chunksZ = 0;
+        d.worldWidth = 0;
+        d.worldDepth = 0;
+        d.generated = false;
+        d.playerPos = null;
+    }
+    
+    // --- Overworld ---
+    const owCX = data.overworldChunksX || data.chunksX;
+    const owCZ = data.overworldChunksZ || data.chunksZ;
+    if (owCX && owCZ) {
+        const od = dimensionData.overworld;
+        od.chunksX = owCX;
+        od.chunksZ = owCZ;
+        od.worldWidth = owCX * CHUNK_SIZE;
+        od.worldDepth = owCZ * CHUNK_SIZE;
+        od.generated = true;
+        const total = owCX * owCZ;
+        od.chunks = new Array(total);
+        for (let i = 0; i < total; i++) od.chunks[i] = null;
+        od.generatedFlags = new Uint8Array(total);
+        if (data.generatedFlags) {
+            for (let i = 0; i < data.generatedFlags.length && i < total; i++) {
+                od.generatedFlags[i] = data.generatedFlags[i];
+            }
+        }
+        od.biomeMap = new Array(od.worldWidth * od.worldDepth);
+        // Snapshot saved-player as overworld playerPos if save was in overworld
+        if ((data.currentDimension || 'overworld') === 'overworld' && data.player) {
+            od.playerPos = { x: data.player.x, y: data.player.y, z: data.player.z, yaw: data.player.yaw, pitch: data.player.pitch, flying: data.player.flying };
+        }
+        
+        const numOwBatches = data.numChunkBatches || 0;
+        for (let b = 0; b < numOwBatches; b++) {
+            const batch = await dbGet(slot + '_chunks_' + b);
+            if (batch && batch.data) {
+                decompressChunksIntoArray(batch.data, od.chunks);
+            }
+        }
+    }
+    
+    // --- Nether ---
+    if (data.netherGenerated && data.numNetherChunkBatches > 0) {
+        const nd = dimensionData.nether;
+        const netherChunksCount = (typeof _getNetherConfig === 'function') ? _getNetherConfig().netherChunks : owCX;
+        nd.chunksX = netherChunksCount;
+        nd.chunksZ = netherChunksCount;
+        nd.worldWidth = nd.chunksX * CHUNK_SIZE;
+        nd.worldDepth = nd.chunksZ * CHUNK_SIZE;
+        nd.generated = true;
+        const total = nd.chunksX * nd.chunksZ;
+        nd.chunks = new Array(total);
+        for (let i = 0; i < total; i++) nd.chunks[i] = null;
+        nd.generatedFlags = new Uint8Array(total);
+        if (data.netherGeneratedFlags) {
+            for (let i = 0; i < data.netherGeneratedFlags.length && i < total; i++) {
+                nd.generatedFlags[i] = data.netherGeneratedFlags[i];
+            }
+        }
+        nd.biomeMap = new Array(nd.worldWidth * nd.worldDepth);
+        if ((data.currentDimension || 'overworld') === 'nether' && data.player) {
+            nd.playerPos = { x: data.player.x, y: data.player.y, z: data.player.z, yaw: data.player.yaw, pitch: data.player.pitch, flying: data.player.flying };
+        }
+        
+        const numNtBatches = data.numNetherChunkBatches || 0;
+        for (let b = 0; b < numNtBatches; b++) {
+            const batch = await dbGet(slot + '_nether_chunks_' + b);
+            if (batch && batch.data) {
+                decompressChunksIntoArray(batch.data, nd.chunks);
+            }
+        }
+    }
+    
+    // --- Aether ---
+    if (data.aetherGenerated && data.numAetherChunkBatches > 0) {
+        const ad = dimensionData.aether;
+        ad.chunksX = owCX;
+        ad.chunksZ = owCZ;
+        ad.worldWidth = ad.chunksX * CHUNK_SIZE;
+        ad.worldDepth = ad.chunksZ * CHUNK_SIZE;
+        ad.generated = true;
+        const total = ad.chunksX * ad.chunksZ;
+        ad.chunks = new Array(total);
+        for (let i = 0; i < total; i++) ad.chunks[i] = null;
+        ad.generatedFlags = new Uint8Array(total);
+        if (data.aetherGeneratedFlags) {
+            for (let i = 0; i < data.aetherGeneratedFlags.length && i < total; i++) {
+                ad.generatedFlags[i] = data.aetherGeneratedFlags[i];
+            }
+        }
+        ad.biomeMap = new Array(ad.worldWidth * ad.worldDepth);
+        if ((data.currentDimension || 'overworld') === 'aether' && data.player) {
+            ad.playerPos = { x: data.player.x, y: data.player.y, z: data.player.z, yaw: data.player.yaw, pitch: data.player.pitch, flying: data.player.flying };
+        }
+        
+        const numAeBatches = data.numAetherChunkBatches || 0;
+        for (let b = 0; b < numAeBatches; b++) {
+            const batch = await dbGet(slot + '_aether_chunks_' + b);
+            if (batch && batch.data) {
+                decompressChunksIntoArray(batch.data, ad.chunks);
+            }
+        }
+    }
+    
+    // Synthesize the v5-style dimensions metadata so init can use one code path
+    data.dimensions = {
+        overworld: dimensionData.overworld.generated ? {
+            chunksX: dimensionData.overworld.chunksX,
+            chunksZ: dimensionData.overworld.chunksZ,
+            worldWidth: dimensionData.overworld.worldWidth,
+            worldDepth: dimensionData.overworld.worldDepth,
+            generated: true,
+            hasBiomes: false,  // v4 didn't persist biomes — init must reconstruct
+            playerPos: dimensionData.overworld.playerPos,
+        } : null,
+        nether: dimensionData.nether.generated ? {
+            chunksX: dimensionData.nether.chunksX,
+            chunksZ: dimensionData.nether.chunksZ,
+            worldWidth: dimensionData.nether.worldWidth,
+            worldDepth: dimensionData.nether.worldDepth,
+            generated: true,
+            hasBiomes: false,
+            playerPos: dimensionData.nether.playerPos,
+        } : null,
+        aether: dimensionData.aether.generated ? {
+            chunksX: dimensionData.aether.chunksX,
+            chunksZ: dimensionData.aether.chunksZ,
+            worldWidth: dimensionData.aether.worldWidth,
+            worldDepth: dimensionData.aether.worldDepth,
+            generated: true,
+            hasBiomes: false,
+            playerPos: dimensionData.aether.playerPos,
+        } : null,
+    };
+    data.currentDimension = data.currentDimension || 'overworld';
+    
+    netherGenerated = !!(dimensionData.nether && dimensionData.nether.generated);
+    aetherGenerated = !!(dimensionData.aether && dimensionData.aether.generated);
 }
 
 // --- Save & Quit (called from pause menu) ---
@@ -568,6 +848,10 @@ async function deleteSelectedWorld() {
     const numNetherBatches = save.numNetherChunkBatches || 0;
     for (let b = 0; b < numNetherBatches; b++) {
         await dbDelete(selectedWorldSlot + '_nether_chunks_' + b);
+    }
+    const numAetherBatches = save.numAetherChunkBatches || 0;
+    for (let b = 0; b < numAetherBatches; b++) {
+        await dbDelete(selectedWorldSlot + '_aether_chunks_' + b);
     }
     
     // Delete metadata

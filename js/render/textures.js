@@ -291,3 +291,57 @@ function createPortalMaterial(atlas) {
         depthWrite: false
     });
 }
+
+// --- AETHER PORTAL MATERIAL ---
+// Animated portal using atlas indices 170-173 (4 frames), cross-fading
+window.aetherPortalMaterial = null;
+
+function createAetherPortalMaterial(atlas) {
+    window.aetherPortalMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            map: { value: atlas },
+            uTime: { value: 0 }
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform sampler2D map;
+            uniform float uTime;
+            varying vec2 vUv;
+
+            vec4 sampleTile(float tileIdx, vec2 localUV) {
+                float tileSize = 1.0 / 16.0;
+                float gx = mod(tileIdx, 16.0);
+                float gy = floor(tileIdx / 16.0);
+                float eps = 0.002;
+                float lu = clamp(localUV.x, eps, 1.0 - eps);
+                float lv = clamp(localUV.y, eps, 1.0 - eps);
+                vec2 uv = vec2((gx + lu) * tileSize, 1.0 - (gy + 1.0 - lv) * tileSize);
+                return texture2D(map, uv);
+            }
+
+            void main() {
+                float t = mod(uTime * 0.8, 4.0);
+                float frame0 = floor(t);
+                float frame1 = mod(frame0 + 1.0, 4.0);
+                float blend = fract(t);
+
+                vec4 c0 = sampleTile(170.0 + frame0, vUv);
+                vec4 c1 = sampleTile(170.0 + frame1, vUv);
+                vec4 col = mix(c0, c1, blend);
+
+                if (col.a < 0.1) discard;
+
+                gl_FragColor = vec4(col.rgb, col.a * 0.8);
+            }
+        `,
+        transparent: true,
+        side: THREE.DoubleSide,
+        depthWrite: false
+    });
+}

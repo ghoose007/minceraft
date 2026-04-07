@@ -66,7 +66,14 @@ function setSunLight(x, y, z, val) {
     const iz = (z | 0) + _halfD;
     if ((ix >>> 0) >= WORLD_WIDTH || (iy >>> 0) >= WORLD_HEIGHT || (iz >>> 0) >= WORLD_DEPTH) return;
     const cx = ix >> 4, cz = iz >> 4;
-    const chunk = _getOrCreateChunkFast(cx, cz);
+    // Use _getChunkFast (returns null for missing chunks) instead of
+    // _getOrCreateChunkFast. Empty chunks have no blocks to render, so
+    // storing light data in them is wasted memory. Without this, lighting
+    // recalculation on a sparsely-loaded world (e.g. after loading a save)
+    // can OOM by allocating a 256KB Int32Array for every empty cell in the
+    // bounding box of generated chunks.
+    const chunk = _getChunkFast(cx, cz);
+    if (!chunk) return;
     const li = (ix & 15) + (iy << 4) + ((iz & 15) << 12);
     chunk[li] = (chunk[li] & ~(0xF << 14)) | (val << 14);
 }
@@ -77,7 +84,9 @@ function setTorchLight(x, y, z, val) {
     const iz = (z | 0) + _halfD;
     if ((ix >>> 0) >= WORLD_WIDTH || (iy >>> 0) >= WORLD_HEIGHT || (iz >>> 0) >= WORLD_DEPTH) return;
     const cx = ix >> 4, cz = iz >> 4;
-    const chunk = _getOrCreateChunkFast(cx, cz);
+    // Same fix as setSunLight: skip null chunks instead of allocating.
+    const chunk = _getChunkFast(cx, cz);
+    if (!chunk) return;
     const li = (ix & 15) + (iy << 4) + ((iz & 15) << 12);
     chunk[li] = (chunk[li] & ~(0xF << 18)) | (val << 18);
 }
