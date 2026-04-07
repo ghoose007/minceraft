@@ -597,6 +597,19 @@ function pushFace(x, y, z, face, positions, normals, uvs, colors, biomeTints, bl
     
     if (overlayTexIndex >= 0) {
         overlayColor = getSmoothedBiomeTint(x, z);
+        // SNOWY GRASS: if this is a grass block (id 1) side face and the
+        // cell directly above is a snow layer (40) or snow block (39), 
+        // replace the green grass overlay with the snow texture so the
+        // side of the grass block looks snow-covered, matching MC.
+        // The bottom face (face.dir[1] === -1) and top face (===1) don't
+        // need this — top is grass-tinted, bottom is plain dirt.
+        if (blockId === 1 && face.dir[1] === 0) {
+            const aboveId = getVoxel(x, y + 1, z) & 0xFF;
+            if (aboveId === 40 || aboveId === 39) {
+                overlayTexIndex = 42; // snow texture
+                overlayColor = [1, 1, 1]; // no biome tint on snow
+            }
+        }
     }
 
     const c0 = face.corners[0], c1 = face.corners[1], c2 = face.corners[2], c3 = face.corners[3];

@@ -1050,42 +1050,240 @@ function _generateNormalChunk(cx, cz) {
                         }
                         
                         if (seededRandom() < 0.1 && !isBirch) {
-                            const trunkHeight = 6 + Math.floor(seededRandom() * 5);
-                            for (let ly = 1; ly <= trunkHeight; ly++) setVoxel(x, y + ly, z, logId);
+                            // ----------------------------------------------------------
+                            // LARGE OAK — accurate to MC's BigTreeFeature.
+                            //
+                            // Algorithm summary (matches net.minecraft.world.gen.feature
+                            // BigTreeFeature in 1.6-1.12 era):
+                            //   1. Pick a tree size (height) — tall enough to look big.
+                            //   2. Pick a "trunk height" = floor(size * 0.618). Trunk is
+                            //      straight from base up to trunkTop.
+                            //   3. Generate foliage cluster positions: clusters are
+                            //      arranged in horizontal "rings" descending from the
+                            //      top, with each cluster offset randomly from the trunk
+                            //      axis (offset distance grows with size).
+                            //   4. For each cluster, trace a log line from cluster center
+                            //      back to the trunk axis (creating a branch).
+                            //   5. For each cluster, place an "oblate spheroid" of leaves
+                            //      (2 layers tall: a wide middle and narrower top/bottom).
+                            //
+                            // Result: tall straight trunk with several leaf balls floating
+                            // off to the sides, each connected by a diagonal branch.
+                            // ----------------------------------------------------------
                             
-                            const placeLeafCluster = (lcx, lcy, lcz) => {
-                                for (let ly = lcy - 2; ly <= lcy + 1; ly++) {
-                                    const yDist = ly - lcy;
-                                    const radius = (yDist >= 0) ? 1 : 2;
-                                    for (let llx = -radius; llx <= radius; llx++) {
-                                        for (let llz = -radius; llz <= radius; llz++) {
-                                            if (Math.abs(llx) === radius && Math.abs(llz) === radius && (yDist >= 0 || seededRandom() < 0.5)) continue;
-                                            if (llx === 0 && llz === 0 && ly <= lcy && lcx === x && lcz === z) continue;
-                                            const cur = getVoxel(lcx+llx, ly, lcz+llz) & 0xFF;
-                                            if (cur === 0) setVoxel(lcx+llx, ly, lcz+llz, leafId);
+                            const treeSize = 8 + Math.floor(seededRandom() * 6); // 8-13 blocks
+                            const trunkHeight = Math.floor(treeSize * 0.618);
+                            const baseY = y + 1;
+                            const topY = y + treeSize;
+                            
+                            // ---------- Helper: place leaf ball around (cx, cy, cz) ----------
+                            // 4 layers tall:
+                            //   yOff = -1: narrow bottom (radius 2)
+                            //   yOff =  0: wide middle (radius 3)
+                            //   yOff =  1: wide middle (radius 3)
+                            //   yOff =  2: narrow top (radius 2)
+                            // Each layer culls true corners with a probability so the
+                            // overall shape is round-ish rather than square.
+                            //
+                            // Individual leaf balls are capped at topY+2 — slightly above
+                            // the trunk top so clusters near the top can still extend
+                            // upward a bit. The TAPERED CAP pass below adds a separate
+                            // narrowing dome on top of the trunk to blend the canopy
+                            // upward smoothly.
+                            const placeLeafBall = (cx, cy, cz) => {
+                                for (let yOff = -1; yOff <= 2; yOff++) {
+                                    const ty = cy + yOff;
+                                    if (ty > topY + 4) continue;
+                                    const layerRadius = (yOff === 0 || yOff === 1) ? 3 : 2;
+                                    const rSq = layerRadius * layerRadius;
+                                    for (let lx = -layerRadius; lx <= layerRadius; lx++) {
+                                        for (let lz = -layerRadius; lz <= layerRadius; lz++) {
+                                            const ddSq = lx*lx + lz*lz;
+                                            // Hard outer bound — circular footprint
+                                            if (ddSq > rSq + 1) continue;
+                                            // Cull true corners with some chance to soften
+                                            if (ddSq > rSq && seededRandom() < 0.6) continue;
+                                            const tx = cx + lx, tz = cz + lz;
+                                            if ((getVoxel(tx, ty, tz) & 0xFF) === 0) {
+                                                setVoxel(tx, ty, tz, leafId);
+                                            }
                                         }
                                     }
                                 }
                             };
                             
-                            placeLeafCluster(x, y + trunkHeight, z);
-                            
-                            const numBranches = 3 + Math.floor(seededRandom() * 4);
-                            for (let b = 0; b < numBranches; b++) {
-                                let bx = x, by = y + 3 + Math.floor(seededRandom() * (trunkHeight - 4)), bz = z;
-                                let dirAngle = seededRandom() * Math.PI * 2;
-                                let dirRadius = 0.6 + seededRandom() * 0.4;
-                                let branchLen = 3 + Math.floor(seededRandom() * 3);
-                                
-                                for (let l = 0; l < branchLen; l++) {
-                                    bx += Math.cos(dirAngle) * dirRadius;
-                                    bz += Math.sin(dirAngle) * dirRadius;
-                                    by += 0.7 + seededRandom() * 0.4;
-                                    const ix = Math.round(bx), iy = Math.round(by), iz = Math.round(bz);
-                                    const cur = getVoxel(ix, iy, iz) & 0xFF;
-                                    if (cur === 0 || cur === 14) setVoxel(ix, iy, iz, logId);
+                            // ---------- Helper: dust leaves around a single log ----------
+                            // Used to leaf the BRANCH path so branches don't look bare.
+                            // Places a small +-shape of leaves around the log position,
+                            // capped slightly above the trunk top.
+                            const dustLeavesAround = (px, py, pz) => {
+                                if (py > topY + 4) return;
+                                const offsets = [
+                                    [1,0,0],[-1,0,0],[0,0,1],[0,0,-1],
+                                    [0,1,0],[0,-1,0],
+                                    [1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1]
+                                ];
+                                for (const [ox, oy, oz] of offsets) {
+                                    const ty = py + oy;
+                                    if (ty > topY + 4) continue;
+                                    // Skip diagonal corners with 30% chance
+                                    if ((ox !== 0 && oz !== 0) && seededRandom() < 0.3) continue;
+                                    const tx = px + ox, tz = pz + oz;
+                                    if ((getVoxel(tx, ty, tz) & 0xFF) === 0) {
+                                        setVoxel(tx, ty, tz, leafId);
+                                    }
                                 }
-                                placeLeafCluster(Math.round(bx), Math.round(by), Math.round(bz));
+                            };
+                            
+                            // ---------- Helper: trace a log line from (x0,y0,z0) to (x1,y1,z1) ----------
+                            // Used to draw branches from trunk to each foliage cluster.
+                            // Bresenham-style 3D line. Returns the list of placed log
+                            // positions so the caller can dust leaves around them later.
+                            const traceBranch = (x0, y0, z0, x1, y1, z1) => {
+                                const path = [];
+                                const dxL = x1 - x0, dyL = y1 - y0, dzL = z1 - z0;
+                                const steps = Math.max(Math.abs(dxL), Math.abs(dyL), Math.abs(dzL));
+                                if (steps === 0) return path;
+                                for (let s = 0; s <= steps; s++) {
+                                    const t = s / steps;
+                                    const px = Math.round(x0 + dxL * t);
+                                    const py = Math.round(y0 + dyL * t);
+                                    const pz = Math.round(z0 + dzL * t);
+                                    // Don't place branch logs above the trunk top — keeps
+                                    // the silhouette tidy.
+                                    if (py > topY) continue;
+                                    const cur = getVoxel(px, py, pz) & 0xFF;
+                                    if (cur === 0 || cur === leafId) {
+                                        setVoxel(px, py, pz, logId);
+                                        path.push([px, py, pz]);
+                                    }
+                                }
+                                return path;
+                            };
+                            
+                            // ---------- Generate foliage cluster positions ----------
+                            // MC: clusters are placed in descending Y order. The number of
+                            // clusters per Y level depends on how high in the tree we are.
+                            // Top cluster is right at the top, lower ones spiral around the
+                            // trunk. We approximate with: numClusters scaled by treeSize,
+                            // with cluster Y positions distributed from trunkTop down to
+                            // (trunkHeight + baseY) — i.e. clusters never go below where
+                            // the trunk's straight portion ends.
+                            
+                            const clusters = [];
+                            
+                            // Top cluster: directly on trunk axis at the top
+                            clusters.push({ x: x, y: topY, z: z });
+                            
+                            // Side clusters: scaled by treeSize. MC formula is roughly
+                            // numClusters = floor(1.382 + (treeSize/13)^2 * something).
+                            // For simplicity: 3-6 clusters depending on treeSize.
+                            const numSideClusters = 3 + Math.floor((treeSize - 8) * 0.5) + Math.floor(seededRandom() * 2);
+                            
+                            // Distribute clusters from topY-1 down to (baseY + trunkHeight - 2)
+                            // The lowest foliage cluster shouldn't be below 1/3 of tree height.
+                            const lowestClusterY = baseY + Math.floor(treeSize * 0.4);
+                            for (let i = 0; i < numSideClusters; i++) {
+                                // Random Y in the upper portion of the tree.
+                                // Cap at topY-1 so a cluster centered there still has room
+                                // for its top layer at topY (within the topY+1 cap).
+                                const cy = Math.min(topY - 1, lowestClusterY + Math.floor(seededRandom() * (topY - lowestClusterY - 1)));
+                                // Random angle and distance from trunk
+                                const angle = seededRandom() * Math.PI * 2;
+                                // Branch length grows with height-from-top: branches near
+                                // the top are longer (forming the wide canopy), branches
+                                // lower are shorter.
+                                const heightFromTop = topY - cy;
+                                const maxReach = 1 + heightFromTop * 0.5;
+                                const reach = 1.5 + seededRandom() * Math.max(0.5, maxReach - 1.5);
+                                const cx = x + Math.round(Math.cos(angle) * reach);
+                                const cz = z + Math.round(Math.sin(angle) * reach);
+                                // Skip if cluster center landed on the trunk itself
+                                if (cx === x && cz === z) continue;
+                                clusters.push({ x: cx, y: cy, z: cz });
+                            }
+                            
+                            // ---------- Place trunk ----------
+                            // Straight from baseY up to trunkTop. Some MC big oaks have
+                            // the trunk continuing past trunkTop in a small sliver to
+                            // join the top foliage; we include that with the topY logs.
+                            for (let ly = baseY; ly <= topY; ly++) {
+                                setVoxel(x, ly, z, logId);
+                            }
+                            
+                            // ---------- Place branches ----------
+                            // For each side cluster, draw a branch from trunk back to
+                            // the cluster center. The branch's trunk-side endpoint is at
+                            // the cluster's Y on the trunk axis (so branches angle outward).
+                            // Save the branch paths so we can dust leaves around them
+                            // after placing the leaf balls (so we don't overwrite leaves
+                            // that the balls already placed).
+                            const branchPaths = [];
+                            for (let ci = 1; ci < clusters.length; ci++) {
+                                const c = clusters[ci];
+                                // Branch starts at the trunk at cluster Y (or one below
+                                // for a more natural angle)
+                                const trunkAttachY = Math.max(baseY, c.y - 1);
+                                const path = traceBranch(x, trunkAttachY, z, c.x, c.y, c.z);
+                                branchPaths.push(path);
+                            }
+                            
+                            // ---------- Place foliage ----------
+                            for (const c of clusters) {
+                                placeLeafBall(c.x, c.y, c.z);
+                            }
+                            
+                            // ---------- Dust leaves along each branch ----------
+                            // Walk the saved branch paths and place a small + of leaves
+                            // around each log position. This makes branches appear leafy
+                            // along their length rather than only at the cluster ends.
+                            for (const path of branchPaths) {
+                                for (const [px, py, pz] of path) {
+                                    dustLeavesAround(px, py, pz);
+                                }
+                            }
+                            
+                            // ---------- Tapered top dome ----------
+                            // After all the leaf balls and branch dusting, lay down a few
+                            // narrowing leaf layers DIRECTLY ABOVE the trunk top. This
+                            // blends the canopy upward into a domed silhouette instead
+                            // of cutting off flat. Each layer is centered on the trunk
+                            // axis and shrinks as it goes up.
+                            //
+                            // Layer schedule (relative to topY):
+                            //   topY+1: radius 3 (full ring on top of the trunk)
+                            //   topY+2: radius 3
+                            //   topY+3: radius 2
+                            //   topY+4: radius 1 (always one narrower than the layer below)
+                            const capLayers = [
+                                { yOff: 1, r: 3 },
+                                { yOff: 2, r: 3 },
+                                { yOff: 3, r: 2 },
+                                { yOff: 4, r: 1 },
+                            ];
+                            for (const { yOff, r } of capLayers) {
+                                const ty = topY + yOff;
+                                if (r === 0) {
+                                    if ((getVoxel(x, ty, z) & 0xFF) === 0) {
+                                        setVoxel(x, ty, z, leafId);
+                                    }
+                                    continue;
+                                }
+                                const rSq = r * r;
+                                for (let lx = -r; lx <= r; lx++) {
+                                    for (let lz = -r; lz <= r; lz++) {
+                                        const ddSq = lx*lx + lz*lz;
+                                        // Circular footprint
+                                        if (ddSq > rSq + 1) continue;
+                                        // Cull true corners with some chance for a softer
+                                        // dome shape
+                                        if (ddSq > rSq && seededRandom() < 0.6) continue;
+                                        const tx = x + lx, tz = z + lz;
+                                        if ((getVoxel(tx, ty, tz) & 0xFF) === 0) {
+                                            setVoxel(tx, ty, tz, leafId);
+                                        }
+                                    }
+                                }
                             }
                         } else {
                             const trunkHeight = isBirch ? (5 + Math.floor(seededRandom() * 3)) : (4 + Math.floor(seededRandom() * 3));
@@ -1255,7 +1453,13 @@ function _generateNormalChunk(cx, cz) {
                     const sid = getVoxel(x, sy, z) & 0xFF;
                     if (sid === 0) continue;
                     if (sid !== 4 && sid !== 27 && !isFluidBlock(sid)) {
-                        if ((getVoxel(x, sy+1, z) & 0xFF) === 0) {
+                        // If the topmost non-air block is a cross block (tall
+                        // grass, flowers, dead bush, etc.) the snow layer
+                        // should REPLACE it rather than stack on top. Stacking
+                        // on top leaves visible grass poking through the snow.
+                        if (isCrossBlock(sid)) {
+                            setVoxel(x, sy, z, 40, 1);
+                        } else if ((getVoxel(x, sy+1, z) & 0xFF) === 0) {
                             setVoxel(x, sy+1, z, 40, 1);
                         }
                         break;
