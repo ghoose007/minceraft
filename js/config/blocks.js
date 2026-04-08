@@ -125,7 +125,50 @@ const BLOCK_DATA = {
     208: { name: 'Sticky Piston', atlasIdx: { top: 169, bottom: 165, side: 167 }, hardness: 1.5, dropId: 208 },
     210: { name: 'Emerald Ore', atlasIdx: 174, hardness: 25.0, dropId: 211 },
     212: { name: 'Cyan Flower', atlasIdx: 176, hardness: 0.0 },
-    213: { name: 'Orange Flower', atlasIdx: 177, hardness: 0.0 }
+    213: { name: 'Orange Flower', atlasIdx: 177, hardness: 0.0 },
+
+    // ----- NEW BUILDING BLOCKS (v258) -----
+    // Stone brick variants
+    226: { name: 'Chiseled Stone Bricks', atlasIdx: 178, hardness: 1.5, dropId: 226 },
+    227: { name: 'Cracked Stone Bricks', atlasIdx: 179, hardness: 1.5, dropId: 227 },
+    228: { name: 'Mossy Stone Bricks', atlasIdx: 180, hardness: 1.5, dropId: 228 },
+    // Sandstone variants — top/bottom share regular sandstone top texture (19)
+    229: { name: 'Chiseled Sandstone', atlasIdx: { top: 19, bottom: 19, side: 181 }, hardness: 0.8, dropId: 229 },
+    230: { name: 'Smooth Sandstone',   atlasIdx: { top: 19, bottom: 19, side: 182 }, hardness: 0.8, dropId: 230 },
+    // Smooth stone variants (granite/diorite/andesite)
+    231: { name: 'Smooth Granite',  atlasIdx: 183, hardness: 1.5, dropId: 231 },
+    232: { name: 'Smooth Diorite',  atlasIdx: 184, hardness: 1.5, dropId: 232 },
+    233: { name: 'Smooth Andesite', atlasIdx: 185, hardness: 1.5, dropId: 233 },
+    // Chiseled quartz — side and top/bottom textures differ
+    234: { name: 'Chiseled Quartz Block', atlasIdx: { top: 187, bottom: 187, side: 186 }, hardness: 0.8, dropId: 234 },
+    // Mineral storage blocks
+    235: { name: 'Lapis Lazuli Block', atlasIdx: 188, hardness: 3.0, dropId: 235 },
+    236: { name: 'Block of Redstone',  atlasIdx: 189, hardness: 5.0, dropId: 236 },
+    237: { name: 'Block of Coal',      atlasIdx: 190, hardness: 5.0, dropId: 237 },
+
+    // Slab variants for the new blocks (parentTex matches the source block)
+    238: { name: 'Cracked Stone Brick Slab', atlasIdx: 179, hardness: 1.5, type: 'slab', parentTex: 179 },
+    239: { name: 'Mossy Stone Brick Slab',   atlasIdx: 180, hardness: 1.5, type: 'slab', parentTex: 180 },
+    240: { name: 'Smooth Granite Slab',      atlasIdx: 183, hardness: 1.5, type: 'slab', parentTex: 183 },
+    241: { name: 'Smooth Diorite Slab',      atlasIdx: 184, hardness: 1.5, type: 'slab', parentTex: 184 },
+    242: { name: 'Smooth Andesite Slab',     atlasIdx: 185, hardness: 1.5, type: 'slab', parentTex: 185 },
+
+    // Stair variants for the new blocks
+    243: { name: 'Cracked Stone Brick Stairs', atlasIdx: 179, hardness: 1.5, type: 'stair', parentTex: 179 },
+    244: { name: 'Mossy Stone Brick Stairs',   atlasIdx: 180, hardness: 1.5, type: 'stair', parentTex: 180 },
+    245: { name: 'Smooth Granite Stairs',      atlasIdx: 183, hardness: 1.5, type: 'stair', parentTex: 183 },
+    246: { name: 'Smooth Diorite Stairs',      atlasIdx: 184, hardness: 1.5, type: 'stair', parentTex: 184 },
+    247: { name: 'Smooth Andesite Stairs',     atlasIdx: 185, hardness: 1.5, type: 'stair', parentTex: 185 },
+
+    // Sandstone slab and quartz slab — needed so chiseled-from-slab recipes work
+    // (also adds the slab variants the user requested be created)
+    248: { name: 'Sandstone Slab', atlasIdx: { top: 19, bottom: 19, side: 20 }, hardness: 0.8, type: 'slab', parentTex: 20 },
+    249: { name: 'Quartz Slab',    atlasIdx: 140, hardness: 0.8, type: 'slab', parentTex: 140 },
+
+    // v262: stair variants for sandstone (separate top/side textures via topTex)
+    // and quartz (single texture). The stair renderer reads topTex if present.
+    250: { name: 'Sandstone Stairs', atlasIdx: 20, topTex: 19, hardness: 0.8, type: 'stair', parentTex: 20 },
+    251: { name: 'Quartz Stairs',    atlasIdx: 140,            hardness: 0.8, type: 'stair', parentTex: 140 }
 };
 
 const blockRequirements = {
@@ -154,7 +197,34 @@ const blockRequirements = {
     157: { reqTool: 'pickaxe', reqTier: 0 },     // Smooth Stone Slab
     158: { reqTool: 'pickaxe', reqTier: 0 },      // Iron Bars
     200: { optTool: 'axe' },                         // Bookshelf
-    201: { reqTool: 'pickaxe', reqTier: 0 }             // Enchanting Table
+    201: { reqTool: 'pickaxe', reqTier: 0 },             // Enchanting Table
+    // ----- NEW BLOCKS (v258) -----
+    // Stone-brick variants and smooth granite/diorite/andesite — pickaxe tier 0 (wood)
+    226: { reqTool: 'pickaxe', reqTier: 0 },  // Chiseled Stone Bricks
+    227: { reqTool: 'pickaxe', reqTier: 0 },  // Cracked Stone Bricks
+    228: { reqTool: 'pickaxe', reqTier: 0 },  // Mossy Stone Bricks
+    229: { reqTool: 'pickaxe', reqTier: 0 },  // Chiseled Sandstone
+    230: { reqTool: 'pickaxe', reqTier: 0 },  // Smooth Sandstone
+    231: { reqTool: 'pickaxe', reqTier: 0 },  // Smooth Granite
+    232: { reqTool: 'pickaxe', reqTier: 0 },  // Smooth Diorite
+    233: { reqTool: 'pickaxe', reqTier: 0 },  // Smooth Andesite
+    234: { reqTool: 'pickaxe', reqTier: 0 },  // Chiseled Quartz Block
+    // Lapis block: stone tier (matches MC)
+    235: { reqTool: 'pickaxe', reqTier: 1 },  // Lapis Lazuli Block
+    // Redstone and coal blocks: wood pickaxe (matches MC — coal block needs wood, redstone needs wood)
+    236: { reqTool: 'pickaxe', reqTier: 0 },  // Block of Redstone
+    237: { reqTool: 'pickaxe', reqTier: 0 },  // Block of Coal
+    // Slab and stair variants — pickaxe tier 0
+    238: { reqTool: 'pickaxe', reqTier: 0 }, 239: { reqTool: 'pickaxe', reqTier: 0 },
+    240: { reqTool: 'pickaxe', reqTier: 0 }, 241: { reqTool: 'pickaxe', reqTier: 0 },
+    242: { reqTool: 'pickaxe', reqTier: 0 },
+    243: { reqTool: 'pickaxe', reqTier: 0 }, 244: { reqTool: 'pickaxe', reqTier: 0 },
+    245: { reqTool: 'pickaxe', reqTier: 0 }, 246: { reqTool: 'pickaxe', reqTier: 0 },
+    247: { reqTool: 'pickaxe', reqTier: 0 },
+    248: { reqTool: 'pickaxe', reqTier: 0 },  // Sandstone Slab
+    249: { reqTool: 'pickaxe', reqTier: 0 },   // Quartz Slab
+    250: { reqTool: 'pickaxe', reqTier: 0 },   // Sandstone Stairs
+    251: { reqTool: 'pickaxe', reqTier: 0 }    // Quartz Stairs
 };
 for (let id in blockRequirements) {
     if (BLOCK_DATA[id]) Object.assign(BLOCK_DATA[id], blockRequirements[id]);

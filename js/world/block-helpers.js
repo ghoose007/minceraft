@@ -11,8 +11,10 @@ const _transparentLUT = new Uint8Array(256);
 const _transparentFancyLUT = new Uint8Array(256);
 (function() {
     // Added 62, 63, 64 for Farming, 66 for Vine, 67 for Lily Pad, 70-76 Slabs, 80-86 Stairs
-    const transparentIds = [0, 4, 14, 16, 17, 20, 22, 23, 24, 26, 27, 38, 40, 42, 43, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 89, 90, 93, 94, 95, 97, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206, 209, 212, 213];
-    const transparentFastIds = [0, 4, 16, 17, 20, 23, 24, 26, 27, 38, 40, 42, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 90, 93, 94, 95, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206, 209, 212, 213]; // leaves opaque in Fast mode
+    // v258: also added 238-249 for new slab/stair variants and sandstone/quartz slabs
+    // v262: 250-251 sandstone/quartz stairs
+    const transparentIds = [0, 4, 14, 16, 17, 20, 22, 23, 24, 26, 27, 38, 40, 42, 43, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 89, 90, 93, 94, 95, 97, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206, 209, 212, 213, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251];
+    const transparentFastIds = [0, 4, 16, 17, 20, 23, 24, 26, 27, 38, 40, 42, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 90, 93, 94, 95, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206, 209, 212, 213, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251]; // leaves opaque in Fast mode
     for (const id of transparentIds) _transparentFancyLUT[id] = 1;
     for (const id of transparentFastIds) _transparentLUT[id] = 1;
 })();
@@ -36,10 +38,17 @@ function isSnowLayer(id) {
 
 const _slabLUT = new Uint8Array(256);
 _slabLUT[70] = 1; _slabLUT[71] = 1; _slabLUT[72] = 1; _slabLUT[73] = 1; _slabLUT[74] = 1; _slabLUT[75] = 1; _slabLUT[76] = 1; _slabLUT[77] = 1; _slabLUT[157] = 1;
+// v258: new slab variants
+_slabLUT[238] = 1; _slabLUT[239] = 1; _slabLUT[240] = 1; _slabLUT[241] = 1; _slabLUT[242] = 1;
+_slabLUT[248] = 1; _slabLUT[249] = 1;
 function isSlabBlock(id) { return _slabLUT[id]; }
 
 const _stairLUT = new Uint8Array(256);
 _stairLUT[80] = 1; _stairLUT[81] = 1; _stairLUT[82] = 1; _stairLUT[83] = 1; _stairLUT[84] = 1; _stairLUT[85] = 1; _stairLUT[86] = 1; _stairLUT[94] = 1; _stairLUT[152] = 1;
+// v258: new stair variants
+_stairLUT[243] = 1; _stairLUT[244] = 1; _stairLUT[245] = 1; _stairLUT[246] = 1; _stairLUT[247] = 1;
+// v262: sandstone and quartz stairs
+_stairLUT[250] = 1; _stairLUT[251] = 1;
 function isStairBlock(id) { return _stairLUT[id]; }
 
 const _fenceLUT = new Uint8Array(256);

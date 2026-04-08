@@ -76,6 +76,8 @@
             if (aid === 205 && ((aval >> 10) & 0x1)) maxPower = 15;
             // Redstone torch on
             if (aid === 206 && !((aval >> 12) & 0x1)) maxPower = 15;
+            // v258: Block of Redstone — always emits full power
+            if (aid === 236) maxPower = 15;
             // Strongly powered block
             const sp = getStrongPower(ax, ay, az);
             if (sp > maxPower) maxPower = sp;
@@ -175,6 +177,24 @@
             if ((lv&0xFF)===205 && ((lv>>10)&0x1)) {
                 for (const [ddx,ddy,ddz] of DIRS6) {
                     const ax = lx+ddx, ay = ly+ddy, az = lz+ddz;
+                    const aid = getVoxel(ax,ay,az) & 0xFF;
+                    if (aid !== 0 && aid !== 202 && !isFluidBlock(aid)) {
+                        const ak = ax+','+ay+','+az;
+                        const ex = _blockPower.get(ak) || {strong:0, weak:0};
+                        ex.strong = Math.max(ex.strong, 15);
+                        _blockPower.set(ak, ex);
+                    }
+                }
+            }
+        }
+
+        // v258: Block of Redstone — always-on source, powers adjacent blocks in all 6 directions
+        for (let dx=-R;dx<=R;dx++) for (let dy=-3;dy<=3;dy++) for (let dz=-R;dz<=R;dz++) {
+            const rx=sourceX+dx, ry=sourceY+dy, rz=sourceZ+dz;
+            const rv=getVoxel(rx,ry,rz);
+            if ((rv&0xFF)===236) {
+                for (const [ddx,ddy,ddz] of DIRS6) {
+                    const ax = rx+ddx, ay = ry+ddy, az = rz+ddz;
                     const aid = getVoxel(ax,ay,az) & 0xFF;
                     if (aid !== 0 && aid !== 202 && !isFluidBlock(aid)) {
                         const ak = ax+','+ay+','+az;
@@ -315,6 +335,12 @@
         // Clear scheduled set for processed entries
         for (const {x,y,z} of toProcess) _scheduled.delete(x+','+y+','+z);
 
+        // v263: process ONE piston update per redstone tick. This serializes
+        // parallel piston updates so each one observes the previous one's
+        // mutation. Done before the dust scan so dust changes from a piston
+        // extension propagate on the same tick.
+        _processPistonQueueStep();
+
         if (toProcess.length === 0) return;
 
         let anyChanged = false;
@@ -346,10 +372,26 @@
             }
         }
 
-        // Update doors/pistons after each tick if anything changed
+        // v263: when dust state changed during this tick, RE-SCAN nearby
+        // pistons and ADD them to the queue. They'll process serially over
+        // subsequent ticks. We don't extend them here directly.
         if (anyChanged && toProcess.length > 0) {
             const {x,y,z} = toProcess[0];
-            _updateDoorsAndPistons(x, y, z);
+            _scheduleNearbyPistonUpdates(x, y, z);
+        }
+    }
+    
+    // v263: helper used by _processOneTick — scan a small region around
+    // (sx, sy, sz) and schedule any pistons found for update. Same logic as
+    // updatePistons but uses the scheduling queue instead of immediate calls.
+    function _scheduleNearbyPistonUpdates(sx, sy, sz) {
+        const r = 16;
+        for (let dx = -r; dx <= r; dx++)
+        for (let dy = -3; dy <= 3; dy++)
+        for (let dz = -r; dz <= r; dz++) {
+            const px = sx+dx, py = sy+dy, pz = sz+dz;
+            const pid = getVoxel(px,py,pz) & 0xFF;
+            if (pid === 207 || pid === 208) _schedulePistonUpdate(px, py, pz);
         }
     }
 
@@ -365,6 +407,7 @@
                 if ((nid===203||nid===205)&&((nv>>10)&0x1)) return true;
                 if (nid===206&&!((nv>>12)&0x1)) return true;
                 if (nid===202&&((nv>>8)&0xF)>0) return true;
+                if (nid===236) return true; // v258: Block of Redstone
                 const bp=_blockPower.get(ax+','+ay+','+az);
                 if (bp&&(bp.strong>0||bp.weak>0)) return true;
             }
@@ -484,6 +527,52 @@
     // PISTONS (same as original)
     // ==========================================
     const _immovable = new Set([18,28,54,60,69,93,201]);
+    
+    // v263: Per-tick piston update queue for serialized processing.
+    // When a redstone state change schedules pistons for update, they go
+    // into this FIFO queue. _processOneTick drains ONE piston per tick step,
+    // calling tryExtendPiston/tryRetractPiston atomically. This means parallel
+    // pistons in the same circuit process in deterministic order, and each
+    // one's world mutation is visible to the next one's check — preventing
+    // two pistons from extending into the same voxel.
+    const _pistonUpdateQueue = [];
+    const _pistonQueueSet = new Set();
+    
+    function _schedulePistonUpdate(x, y, z) {
+        const key = x+','+y+','+z;
+        if (_pistonQueueSet.has(key)) return;
+        _pistonQueueSet.add(key);
+        _pistonUpdateQueue.push({x, y, z});
+    }
+    
+    // Check whether (fx, fy, fz) is already claimed by an extended piston head.
+    // We look at the 6 neighbors of the target voxel: if any of them is an
+    // extended piston whose direction points INTO our target, the target is
+    // visually occupied by that piston's head and we can't extend into it.
+    // This is the fix for the two-pistons-clipping-into-each-other bug.
+    function _isVoxelClaimedByPistonHead(fx, fy, fz, ignoreX, ignoreY, ignoreZ) {
+        const dvs = [[0,-1,0],[0,1,0],[0,0,-1],[0,0,1],[-1,0,0],[1,0,0]];
+        for (const [nx, ny, nz] of [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]) {
+            const px = fx + nx, py = fy + ny, pz = fz + nz;
+            // Skip the piston that's currently asking
+            if (px === ignoreX && py === ignoreY && pz === ignoreZ) continue;
+            const pv = getVoxel(px, py, pz);
+            const pid = pv & 0xFF;
+            if (pid !== 207 && pid !== 208) continue;
+            // Only extended pistons claim head voxels
+            if (!((pv >> 11) & 0x1)) continue;
+            const pdir = (pv >> 8) & 0x7;
+            const pdv = dvs[pdir];
+            if (!pdv) continue;
+            // Check whether this neighbor piston's head points INTO (fx, fy, fz).
+            // Head position is (px + pdv[0], py + pdv[1], pz + pdv[2]).
+            if (px + pdv[0] === fx && py + pdv[1] === fy && pz + pdv[2] === fz) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
     function _isBreakableByPiston(id) {
         if (!id) return false;
         if (typeof isCrossBlock==='function'&&isCrossBlock(id)) return true;
@@ -514,6 +603,7 @@
             if (nid===205&&((nv>>10)&0x1)) return true;
             if (nid===206&&!((nv>>12)&0x1)) return true;
             if (nid===202&&((nv>>8)&0xF)>0) return true;
+            if (nid===236) return true; // v258: Block of Redstone
             const bp=_blockPower.get(ax+','+ay+','+az);
             if (bp&&bp.strong>0) return true;
         }
@@ -525,6 +615,9 @@
         const dir=(val>>8)&0x7;if((val>>11)&0x1)return;
         const dvs=[[0,-1,0],[0,1,0],[0,0,-1],[0,0,1],[-1,0,0],[1,0,0]],dv=dvs[dir];
         const fx=x+dv[0],fy=y+dv[1],fz=z+dv[2],fid=getVoxel(fx,fy,fz)&0xFF;
+        // v263: don't extend if the front voxel is already claimed by another
+        // extended piston's head (visual occupancy check)
+        if (_isVoxelClaimedByPistonHead(fx, fy, fz, x, y, z)) return;
         const push=[],brk=[];
         if(fid!==0){for(let i=0;i<=12;i++){const cx2=fx+dv[0]*i,cy2=fy+dv[1]*i,cz2=fz+dv[2]*i,cv=getVoxel(cx2,cy2,cz2),cid=cv&0xFF;if(!cid)break;if(_immovable.has(cid))return;if((cid===207||cid===208)&&((cv>>11)&0x1))return;if(_isBreakableByPiston(cid)){brk.push({x:cx2,y:cy2,z:cz2});break;}push.push({x:cx2,y:cy2,z:cz2,val:cv});if(push.length>12)return;}}
         for(const b of brk)_breakBlockByPiston(b.x,b.y,b.z);
@@ -546,14 +639,35 @@
         if(typeof window.playNamedSoundAt==='function')window.playNamedSoundAt('piston_pull',0.5,0.9,1.1,x,y,z);
     }
     function updatePistons(sx,sy,sz) {
+        // v263: scan for pistons in range and SCHEDULE them for processing
+        // (one per tick) instead of extending them all at once. This makes
+        // the order deterministic and prevents two pistons from extending
+        // into the same voxel in one frame.
         const r=16;
         for(let dx=-r;dx<=r;dx++)for(let dy=-3;dy<=3;dy++)for(let dz=-r;dz<=r;dz++){
             const px=sx+dx,py=sy+dy,pz=sz+dz,pv=getVoxel(px,py,pz),pid=pv&0xFF;
             if(pid!==207&&pid!==208)continue;
-            const pow=isPistonPowered(px,py,pz),ext=(pv>>11)&0x1;
-            if(pow&&!ext)tryExtendPiston(px,py,pz);
-            else if(!pow&&ext)tryRetractPiston(px,py,pz);
+            _schedulePistonUpdate(px,py,pz);
         }
+    }
+    
+    // v263: drain ONE piston update per redstone tick. Each call processes
+    // a single piston atomically: re-check its powered state at THIS moment
+    // (not when scheduled) and extend or retract accordingly. Because each
+    // piston is processed serially with its world mutation visible to the
+    // next, parallel pistons can't clip into each other.
+    function _processPistonQueueStep() {
+        if (_pistonUpdateQueue.length === 0) return false;
+        const {x, y, z} = _pistonUpdateQueue.shift();
+        _pistonQueueSet.delete(x+','+y+','+z);
+        const pv = getVoxel(x, y, z);
+        const pid = pv & 0xFF;
+        if (pid !== 207 && pid !== 208) return true; // piston was removed
+        const pow = isPistonPowered(x, y, z);
+        const ext = (pv >> 11) & 0x1;
+        if (pow && !ext) tryExtendPiston(x, y, z);
+        else if (!pow && ext) tryRetractPiston(x, y, z);
+        return true;
     }
 
     function onRedstoneBlockChanged(x,y,z) { updateRedstonePower(x,y,z); }

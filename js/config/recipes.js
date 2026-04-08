@@ -214,7 +214,75 @@ const RECIPES = [
     { pattern: [['plank', 'plank', 'plank'], [33, 113, 33], [33, 202, 33]], output: { id: 207, count: 1 } },
 
     // --- Sticky Piston (cactus + piston) ---
-    { pattern: [[20], [207]], output: { id: 208, count: 1 } }
+    { pattern: [[20], [207]], output: { id: 208, count: 1 } },
+
+    // ====================================================================
+    // NEW BLOCKS (v258)
+    // ====================================================================
+
+    // --- Stone brick variants ---
+    // Chiseled Stone Bricks: 2 stone brick slabs stacked vertically (matches MC)
+    { pattern: [[75], [75]], output: { id: 226, count: 1 } },
+    // Mossy Stone Bricks: stone brick + vine (any 2-cell arrangement)
+    { pattern: [[32, 66]], output: { id: 228, count: 1 } },
+    { pattern: [[66, 32]], output: { id: 228, count: 1 } },
+    { pattern: [[32], [66]], output: { id: 228, count: 1 } },
+    { pattern: [[66], [32]], output: { id: 228, count: 1 } },
+    // (Cracked Stone Bricks comes from smelting — see SMELTING_RECIPES below)
+
+    // --- Sandstone variants ---
+    // Sandstone Slab: 3 sandstone in a row (so chiseled-from-slab works)
+    { pattern: [[19, 19, 19]], output: { id: 248, count: 6 } },
+    // Chiseled Sandstone: 2 sandstone slabs stacked (matches MC)
+    { pattern: [[248], [248]], output: { id: 229, count: 1 } },
+    // (Smooth Sandstone comes from smelting — see below)
+
+    // --- Smooth granite/diorite/andesite from smelting (see below) ---
+
+    // --- Quartz variants ---
+    // Quartz Slab: 3 quartz blocks in a row
+    { pattern: [[154, 154, 154]], output: { id: 249, count: 6 } },
+    // Chiseled Quartz Block: 2 quartz slabs stacked (matches MC)
+    { pattern: [[249], [249]], output: { id: 234, count: 1 } },
+
+    // --- Mineral storage blocks (3x3) ---
+    // Lapis Lazuli Block: 9 lapis lazuli items
+    { pattern: [[199, 199, 199], [199, 199, 199], [199, 199, 199]], output: { id: 235, count: 1 } },
+    // Block of Redstone: 9 redstone dust
+    { pattern: [[202, 202, 202], [202, 202, 202], [202, 202, 202]], output: { id: 236, count: 1 } },
+    // Block of Coal: 9 coal items
+    { pattern: [[119, 119, 119], [119, 119, 119], [119, 119, 119]], output: { id: 237, count: 1 } },
+
+    // --- Uncraft mineral blocks back to items ---
+    { pattern: [[235]], output: { id: 199, count: 9 } }, // Lapis Block -> Lapis Lazuli
+    { pattern: [[236]], output: { id: 202, count: 9 } }, // Redstone Block -> Redstone Dust
+    { pattern: [[237]], output: { id: 119, count: 9 } }, // Coal Block -> Coal
+
+    // --- New Slabs (3 in a row) ---
+    { pattern: [[227, 227, 227]], output: { id: 238, count: 6 } }, // Cracked Stone Brick Slab
+    { pattern: [[228, 228, 228]], output: { id: 239, count: 6 } }, // Mossy Stone Brick Slab
+    { pattern: [[231, 231, 231]], output: { id: 240, count: 6 } }, // Smooth Granite Slab
+    { pattern: [[232, 232, 232]], output: { id: 241, count: 6 } }, // Smooth Diorite Slab
+    { pattern: [[233, 233, 233]], output: { id: 242, count: 6 } }, // Smooth Andesite Slab
+
+    // --- New Stairs (L-shape, 4 output, mirrored versions) ---
+    { pattern: [[227, 0, 0], [227, 227, 0], [227, 227, 227]], output: { id: 243, count: 4 } }, // Cracked SB Stairs
+    { pattern: [[0, 0, 227], [0, 227, 227], [227, 227, 227]], output: { id: 243, count: 4 } },
+    { pattern: [[228, 0, 0], [228, 228, 0], [228, 228, 228]], output: { id: 244, count: 4 } }, // Mossy SB Stairs
+    { pattern: [[0, 0, 228], [0, 228, 228], [228, 228, 228]], output: { id: 244, count: 4 } },
+    { pattern: [[231, 0, 0], [231, 231, 0], [231, 231, 231]], output: { id: 245, count: 4 } }, // Smooth Granite Stairs
+    { pattern: [[0, 0, 231], [0, 231, 231], [231, 231, 231]], output: { id: 245, count: 4 } },
+    { pattern: [[232, 0, 0], [232, 232, 0], [232, 232, 232]], output: { id: 246, count: 4 } }, // Smooth Diorite Stairs
+    { pattern: [[0, 0, 232], [0, 232, 232], [232, 232, 232]], output: { id: 246, count: 4 } },
+    { pattern: [[233, 0, 0], [233, 233, 0], [233, 233, 233]], output: { id: 247, count: 4 } }, // Smooth Andesite Stairs
+    { pattern: [[0, 0, 233], [0, 233, 233], [233, 233, 233]], output: { id: 247, count: 4 } },
+
+    // v262: Sandstone Stairs (3 sandstone in L)
+    { pattern: [[19, 0, 0], [19, 19, 0], [19, 19, 19]], output: { id: 250, count: 4 } },
+    { pattern: [[0, 0, 19], [0, 19, 19], [19, 19, 19]], output: { id: 250, count: 4 } },
+    // Quartz Stairs (4 quartz blocks in L)
+    { pattern: [[154, 0, 0], [154, 154, 0], [154, 154, 154]], output: { id: 251, count: 4 } },
+    { pattern: [[0, 0, 154], [0, 154, 154], [154, 154, 154]], output: { id: 251, count: 4 } }
 
 ];
 
@@ -227,7 +295,13 @@ const SMELTING_RECIPES = {
     33: { id: 3, count: 1 },   // Cobblestone -> Stone
     87: { id: 142, count: 1 },  // Netherrack -> Nether Brick
     8: { id: 143, count: 1 },    // Gold Ore -> Gold Ingot
-    3: { id: 156, count: 1 }     // Stone -> Smooth Stone
+    3: { id: 156, count: 1 },     // Stone -> Smooth Stone
+    // v258: new smelting recipes
+    32: { id: 227, count: 1 },   // Stone Bricks -> Cracked Stone Bricks
+    19: { id: 230, count: 1 },   // Sandstone -> Smooth Sandstone
+    11: { id: 231, count: 1 },   // Granite -> Smooth Granite
+    10: { id: 232, count: 1 },   // Diorite -> Smooth Diorite
+    12: { id: 233, count: 1 }    // Andesite -> Smooth Andesite
 };
 
 // Burn time in seconds
@@ -237,5 +311,6 @@ const FUEL_DATA = {
     29: 15.0, 30: 15.0, 44: 15.0, 98: 15.0, // Planks 
     112: 5.0,  // Sticks
     144: 15.0, 145: 15.0, 146: 15.0, 147: 15.0,  // Wood Fences
-    149: 10.0, 150: 15.0, 151: 10.0  // Door, Trapdoor, Door Item
+    149: 10.0, 150: 15.0, 151: 10.0,  // Door, Trapdoor, Door Item
+    237: 800.0  // v258: Coal Block (10x coal)
 };

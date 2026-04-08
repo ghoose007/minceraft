@@ -1474,7 +1474,7 @@ function _handleTap(screenX, screenY) {
         // --- SLAB DOUBLING ---
         if (typeof isSlabBlock === 'function' && isSlabBlock(currentBuildBlock) && currentBuildBlock === targetId) {
             const existingIsTop = (targetVal >> 8) & 0x1;
-            const slabToFull = { 70: 29, 71: 44, 72: 30, 73: 3, 74: 33, 75: 32, 76: 31, 77: 98, 157: 156 };
+            const slabToFull = { 70: 29, 71: 44, 72: 30, 73: 3, 74: 33, 75: 32, 76: 31, 77: 98, 157: 156, 238: 227, 239: 228, 240: 231, 241: 232, 242: 233, 248: 19, 249: 154 };
             const fullBlock = slabToFull[currentBuildBlock];
             if (fullBlock) {
                 let shouldMerge = false;
@@ -1607,7 +1607,7 @@ function _handleTap(screenX, screenY) {
         pendingBlockUpdates.push({x: dx, y: dy, z: dz});
 
         // Piston/redstone: trigger redstone update and neighbor updates
-        if (currentBuildBlock === 207 || currentBuildBlock === 208) {
+        if (currentBuildBlock === 207 || currentBuildBlock === 208 || currentBuildBlock === 236) {
             if (typeof window.onRedstoneBlockChanged === 'function') window.onRedstoneBlockChanged(dx, dy, dz);
             if (typeof window.triggerNeighborUpdates === 'function') window.triggerNeighborUpdates(dx, dy, dz);
         }
@@ -1634,7 +1634,7 @@ function _isToolItem(id) {
 }
 
 // Items with IDs >= 100 that ARE valid placeable blocks (matches desktop init.js whitelist)
-const _placeableHighIds = [116, 117, 118, 128, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158, 190, 191, 192, 193, 194, 195, 196, 200, 201, 202, 203, 205, 206, 207, 208, 210, 212, 213];
+const _placeableHighIds = [116, 117, 118, 128, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158, 190, 191, 192, 193, 194, 195, 196, 200, 201, 202, 203, 205, 206, 207, 208, 210, 212, 213, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251];
 
 function _canPlaceItem(id) {
     if (id === 0) return false;

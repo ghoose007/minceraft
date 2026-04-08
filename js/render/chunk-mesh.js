@@ -125,7 +125,7 @@ function _buildChunkMeshDataOnly(cx, cz) {
         const lut = new Uint8Array(256);
         // All standard solid blocks are opaque full cubes. Cross blocks, fluids, slabs,
         // stairs, fences, doors, transparent blocks, etc. are NOT.
-        const opaqueFullCubes = [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 18, 19, 21, 25, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 41, 44, 45, 46, 47, 48, 49, 50, 51, 55, 56, 57, 58, 59, 60, 61, 65, 78, 79, 87, 88, 91, 92, 96, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 138, 139, 140, 141, 142, 143, 153, 154, 155, 156, 159, 160, 161, 162, 163, 199];
+        const opaqueFullCubes = [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 18, 19, 21, 25, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 41, 44, 45, 46, 47, 48, 49, 50, 51, 55, 56, 57, 58, 59, 60, 61, 65, 78, 79, 87, 88, 91, 92, 96, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 138, 139, 140, 141, 142, 143, 153, 154, 155, 156, 159, 160, 161, 162, 163, 199, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237];
         for (const id of opaqueFullCubes) lut[id] = 1;
         window._opaqueFullCubeLUT = lut;
     }
@@ -280,6 +280,15 @@ function _buildChunkMeshDataOnly(cx, cz) {
                     const v0 = 1 - (gy + 1 - e) / 16, v1 = 1 - (gy + e) / 16;
                     const vm = 1 - (gy + 0.5) / 16;
                     
+                    // v262: optional separate top texture (e.g. sandstone stairs)
+                    const topTexRaw = BLOCK_DATA[id].topTex;
+                    const topTexIdx = (topTexRaw !== undefined) ? topTexRaw : texIdx;
+                    const tgx = topTexIdx % 16, tgy = Math.floor(topTexIdx / 16);
+                    const tu0 = (tgx + e) / 16, tu1 = (tgx + 1 - e) / 16;
+                    const tum = (tgx + 0.5) / 16;
+                    const tv0 = 1 - (tgy + 1 - e) / 16, tv1 = 1 - (tgy + e) / 16;
+                    const tvm = 1 - (tgy + 0.5) / 16;
+                    
                     const nt=(dx,dy,dz)=>{const n=getVoxel(x+dx,y+dy,z+dz)&0xFF;return n===0||isBlockTransparent(n);};
                     
                     const Q=(ax,ay,az,bx,by,bz,cx,cy,cz,dx,dy,dz,a,b,c,d,n)=>{
@@ -319,9 +328,9 @@ function _buildChunkMeshDataOnly(cx, cz) {
                     const X=x,Y=y,Z=z,H=y+.5,X1=x+1,Y1=y+1,Z1=z+1,XH=x+.5,ZH=z+.5;
 
                     if(sd===0){// South: back=+Z, front=-Z
-                      if(nt(0,-1,0))Q(X,Y,Z1,X,Y,Z,X1,Y,Z,X1,Y,Z1,[u0,v1],[u0,v0],[u1,v0],[u1,v1],[0,-1,0]);
-                      if(nt(0,1,0))Q(X,Y1,ZH,X,Y1,Z1,X1,Y1,Z1,X1,Y1,ZH,[u0,vm],[u0,v0],[u1,v0],[u1,vm],[0,1,0]);
-                      Q(X,H,Z,X,H,ZH,X1,H,ZH,X1,H,Z,[u0,v1],[u0,vm],[u1,vm],[u1,v1],[0,1,0]); 
+                      if(nt(0,-1,0))Q(X,Y,Z1,X,Y,Z,X1,Y,Z,X1,Y,Z1,[tu0,tv1],[tu0,tv0],[tu1,tv0],[tu1,tv1],[0,-1,0]);
+                      if(nt(0,1,0))Q(X,Y1,ZH,X,Y1,Z1,X1,Y1,Z1,X1,Y1,ZH,[tu0,tvm],[tu0,tv0],[tu1,tv0],[tu1,tvm],[0,1,0]);
+                      Q(X,H,Z,X,H,ZH,X1,H,ZH,X1,H,Z,[tu0,tv1],[tu0,tvm],[tu1,tvm],[tu1,tv1],[0,1,0]); 
                       Q(X1,Y1,ZH,X1,H,ZH,X,H,ZH,X,Y1,ZH,[u0,v1],[u0,vm],[u1,vm],[u1,v1],[0,0,-1]);
                       if(nt(0,0,1))Q(X,Y1,Z1,X,Y,Z1,X1,Y,Z1,X1,Y1,Z1,[u0,v1],[u0,v0],[u1,v0],[u1,v1],[0,0,1]); 
                       if(nt(0,0,-1))Q(X1,H,Z,X1,Y,Z,X,Y,Z,X,H,Z,[u0,vm],[u0,v0],[u1,v0],[u1,vm],[0,0,-1]);
@@ -334,9 +343,9 @@ function _buildChunkMeshDataOnly(cx, cz) {
                           Q(X1,Y1,Z1,X1,H,Z1,X1,H,ZH,X1,Y1,ZH,[u0,v1],[u0,vm],[um,vm],[um,v1],[1,0,0]); 
                       }
                     }else if(sd===1){// North: back=-Z, front=+Z
-                      if(nt(0,-1,0))Q(X,Y,Z1,X,Y,Z,X1,Y,Z,X1,Y,Z1,[u0,v1],[u0,v0],[u1,v0],[u1,v1],[0,-1,0]);
-                      if(nt(0,1,0))Q(X,Y1,Z,X,Y1,ZH,X1,Y1,ZH,X1,Y1,Z,[u0,v1],[u0,vm],[u1,vm],[u1,v1],[0,1,0]); 
-                      Q(X,H,ZH,X,H,Z1,X1,H,Z1,X1,H,ZH,[u0,vm],[u0,v0],[u1,v0],[u1,vm],[0,1,0]); 
+                      if(nt(0,-1,0))Q(X,Y,Z1,X,Y,Z,X1,Y,Z,X1,Y,Z1,[tu0,tv1],[tu0,tv0],[tu1,tv0],[tu1,tv1],[0,-1,0]);
+                      if(nt(0,1,0))Q(X,Y1,Z,X,Y1,ZH,X1,Y1,ZH,X1,Y1,Z,[tu0,tv1],[tu0,tvm],[tu1,tvm],[tu1,tv1],[0,1,0]); 
+                      Q(X,H,ZH,X,H,Z1,X1,H,Z1,X1,H,ZH,[tu0,tvm],[tu0,tv0],[tu1,tv0],[tu1,tvm],[0,1,0]); 
                       Q(X,Y1,ZH,X,H,ZH,X1,H,ZH,X1,Y1,ZH,[u0,v1],[u0,vm],[u1,vm],[u1,v1],[0,0,1]); 
                       if(nt(0,0,-1))Q(X1,Y1,Z,X1,Y,Z,X,Y,Z,X,Y1,Z,[u0,v1],[u0,v0],[u1,v0],[u1,v1],[0,0,-1]); 
                       if(nt(0,0,1))Q(X,H,Z1,X,Y,Z1,X1,Y,Z1,X1,H,Z1,[u0,vm],[u0,v0],[u1,v0],[u1,vm],[0,0,1]); 
@@ -349,9 +358,9 @@ function _buildChunkMeshDataOnly(cx, cz) {
                           Q(X1,Y1,ZH,X1,H,ZH,X1,H,Z,X1,Y1,Z,[um,v1],[um,vm],[u1,vm],[u1,v1],[1,0,0]); 
                       }
                     }else if(sd===2){// East: back=+X, front=-X
-                      if(nt(0,-1,0))Q(X,Y,Z1,X,Y,Z,X1,Y,Z,X1,Y,Z1,[u0,v1],[u0,v0],[u1,v0],[u1,v1],[0,-1,0]);
-                      if(nt(0,1,0))Q(XH,Y1,Z,XH,Y1,Z1,X1,Y1,Z1,X1,Y1,Z,[um,v1],[um,v0],[u1,v0],[u1,v1],[0,1,0]); 
-                      Q(X,H,Z,X,H,Z1,XH,H,Z1,XH,H,Z,[u0,v1],[u0,v0],[um,v0],[um,v1],[0,1,0]); 
+                      if(nt(0,-1,0))Q(X,Y,Z1,X,Y,Z,X1,Y,Z,X1,Y,Z1,[tu0,tv1],[tu0,tv0],[tu1,tv0],[tu1,tv1],[0,-1,0]);
+                      if(nt(0,1,0))Q(XH,Y1,Z,XH,Y1,Z1,X1,Y1,Z1,X1,Y1,Z,[tum,tv1],[tum,tv0],[tu1,tv0],[tu1,tv1],[0,1,0]); 
+                      Q(X,H,Z,X,H,Z1,XH,H,Z1,XH,H,Z,[tu0,tv1],[tu0,tv0],[tum,tv0],[tum,tv1],[0,1,0]); 
                       Q(XH,Y1,Z,XH,H,Z,XH,H,Z1,XH,Y1,Z1,[u0,v1],[u0,vm],[u1,vm],[u1,v1],[-1,0,0]); 
                       if(nt(1,0,0))Q(X1,Y1,Z1,X1,Y,Z1,X1,Y,Z,X1,Y1,Z,[u0,v1],[u0,v0],[u1,v0],[u1,v1],[1,0,0]); 
                       if(nt(-1,0,0))Q(X,H,Z,X,Y,Z,X,Y,Z1,X,H,Z1,[u0,vm],[u0,v0],[u1,v0],[u1,vm],[-1,0,0]); 
@@ -364,9 +373,9 @@ function _buildChunkMeshDataOnly(cx, cz) {
                           Q(XH,Y1,Z1,XH,H,Z1,X1,H,Z1,X1,Y1,Z1,[um,v1],[um,vm],[u1,vm],[u1,v1],[0,0,1]); 
                       }
                     }else{// West: back=-X, front=+X
-                      if(nt(0,-1,0))Q(X,Y,Z1,X,Y,Z,X1,Y,Z,X1,Y,Z1,[u0,v1],[u0,v0],[u1,v0],[u1,v1],[0,-1,0]);
-                      if(nt(0,1,0))Q(X,Y1,Z,X,Y1,Z1,XH,Y1,Z1,XH,Y1,Z,[u0,v1],[u0,v0],[um,v0],[um,v1],[0,1,0]); 
-                      Q(XH,H,Z,XH,H,Z1,X1,H,Z1,X1,H,Z,[um,v1],[um,v0],[u1,v0],[u1,v1],[0,1,0]); 
+                      if(nt(0,-1,0))Q(X,Y,Z1,X,Y,Z,X1,Y,Z,X1,Y,Z1,[tu0,tv1],[tu0,tv0],[tu1,tv0],[tu1,tv1],[0,-1,0]);
+                      if(nt(0,1,0))Q(X,Y1,Z,X,Y1,Z1,XH,Y1,Z1,XH,Y1,Z,[tu0,tv1],[tu0,tv0],[tum,tv0],[tum,tv1],[0,1,0]); 
+                      Q(XH,H,Z,XH,H,Z1,X1,H,Z1,X1,H,Z,[tum,tv1],[tum,tv0],[tu1,tv0],[tu1,tv1],[0,1,0]); 
                       Q(XH,Y1,Z1,XH,H,Z1,XH,H,Z,XH,Y1,Z,[u0,v1],[u0,vm],[u1,vm],[u1,v1],[1,0,0]); 
                       if(nt(-1,0,0))Q(X,Y1,Z,X,Y,Z,X,Y,Z1,X,Y1,Z1,[u0,v1],[u0,v0],[u1,v0],[u1,v1],[-1,0,0]); 
                       if(nt(1,0,0))Q(X1,H,Z1,X1,Y,Z1,X1,Y,Z,X1,H,Z,[u0,vm],[u0,v0],[u1,v0],[u1,vm],[1,0,0]); 

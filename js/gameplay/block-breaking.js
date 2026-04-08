@@ -147,7 +147,7 @@ window.breakBlock = function(x, y, z, canHarvest = true) {
     triggerNeighborUpdates(x, y, z);
     
     // Redstone update when dust, button, lever, or piston component is broken
-    if ((targetId === 202 || targetId === 203 || targetId === 205 || targetId === 206 || targetId === 207 || targetId === 208) && typeof window.onRedstoneBlockChanged === 'function') {
+    if ((targetId === 202 || targetId === 203 || targetId === 205 || targetId === 206 || targetId === 207 || targetId === 208 || targetId === 236) && typeof window.onRedstoneBlockChanged === 'function') {
         window.onRedstoneBlockChanged(x, y, z);
     }
 

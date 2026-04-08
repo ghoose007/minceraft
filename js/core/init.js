@@ -1243,7 +1243,7 @@ window.getTargetedMob = function() {
             // Block placement of tools/items — only allow actual placeable blocks and saplings
             if (currentBuildBlock >= 100) {
                 // These are placeable despite being >= 100
-                const placeableHighIds = [116, 117, 118, 128, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158, 190, 191, 192, 193, 194, 195, 196, 200, 201, 202, 203, 205, 206, 207, 208, 210, 212, 213];
+                const placeableHighIds = [116, 117, 118, 128, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158, 190, 191, 192, 193, 194, 195, 196, 200, 201, 202, 203, 205, 206, 207, 208, 210, 212, 213, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251];
                 if (!placeableHighIds.includes(currentBuildBlock)) return;
             }
 
@@ -1293,7 +1293,7 @@ window.getTargetedMob = function() {
             // Side faces place adjacent, NOT merge.
             if (typeof isSlabBlock === 'function' && isSlabBlock(currentBuildBlock) && currentBuildBlock === targetId) {
                 const existingIsTop = (targetVal >> 8) & 0x1;
-                const slabToFull = { 70: 29, 71: 44, 72: 30, 73: 3, 74: 33, 75: 32, 76: 31, 77: 98, 157: 156 };
+                const slabToFull = { 70: 29, 71: 44, 72: 30, 73: 3, 74: 33, 75: 32, 76: 31, 77: 98, 157: 156, 238: 227, 239: 228, 240: 231, 241: 232, 242: 233, 248: 19, 249: 154 };
                 const fullBlock = slabToFull[currentBuildBlock];
                 if (fullBlock) {
                     // Only merge when clicking the open (exposed) face of the slab
@@ -1304,6 +1304,7 @@ window.getTargetedMob = function() {
                     if (shouldMerge) {
                         setVoxel(target.hit[0], target.hit[1], target.hit[2], fullBlock);
                         pendingBlockUpdates.push({x: target.hit[0], y: target.hit[1], z: target.hit[2]});
+                        if (typeof window._soundPlaceBlock === 'function') window._soundPlaceBlock(fullBlock, target.hit[0], target.hit[1], target.hit[2]);
                         
                         if (typeof gameMode !== 'undefined' && gameMode === 'survival' && inventory[activeSlot]) {
                             inventory[activeSlot].count--;
@@ -1327,7 +1328,7 @@ window.getTargetedMob = function() {
                 const placeId = placeVal & 0xFF;
                 if (placeId === currentBuildBlock) {
                     const existingIsTop = (placeVal >> 8) & 0x1;
-                    const slabToFull = { 70: 29, 71: 44, 72: 30, 73: 3, 74: 33, 75: 32, 76: 31, 77: 98, 157: 156 };
+                    const slabToFull = { 70: 29, 71: 44, 72: 30, 73: 3, 74: 33, 75: 32, 76: 31, 77: 98, 157: 156, 238: 227, 239: 228, 240: 231, 241: 232, 242: 233, 248: 19, 249: 154 };
                     const fullBlock = slabToFull[currentBuildBlock];
                     // Determine what half we'd place
                     let newIsTop = 0;
@@ -1341,6 +1342,7 @@ window.getTargetedMob = function() {
                     if (fullBlock && existingIsTop !== newIsTop) {
                         setVoxel(px, py, pz, fullBlock);
                         pendingBlockUpdates.push({x: px, y: py, z: pz});
+                        if (typeof window._soundPlaceBlock === 'function') window._soundPlaceBlock(fullBlock, px, py, pz);
                         
                         if (typeof gameMode !== 'undefined' && gameMode === 'survival' && inventory[activeSlot]) {
                             inventory[activeSlot].count--;
@@ -1761,7 +1763,7 @@ window.getTargetedMob = function() {
                 triggerNeighborUpdates(px, py, pz);
                 
                 // Trigger redstone update when placing redstone torch
-                if (currentBuildBlock === 206 && typeof window.onRedstoneBlockChanged === 'function') {
+                if ((currentBuildBlock === 206 || currentBuildBlock === 236) && typeof window.onRedstoneBlockChanged === 'function') {
                     window.onRedstoneBlockChanged(px, py, pz);
                 }
                 
