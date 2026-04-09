@@ -1514,6 +1514,89 @@ function _handleTap(screenX, screenY) {
 
         if (typeof canPlaceBlock === 'function' && !canPlaceBlock(currentBuildBlock, dx, dy, dz, target.normal)) return;
 
+        // v270: Door item (151) → place door block (149) as 2-block-tall structure.
+        // Without this branch the door item falls through to default placement
+        // which sets a voxel of id 151 (the item) and renders as a missing
+        // texture. Mirrors the desktop logic in init.js.
+        if (currentBuildBlock === 151) {
+            const aboveId = getVoxel(dx, dy + 1, dz) & 0xFF;
+            if (aboveId !== 0 && aboveId !== 4 && aboveId !== 27) return; // No room above
+            
+            // v277: doors require a solid support block beneath them
+            const belowId = getVoxel(dx, dy - 1, dz) & 0xFF;
+            if (typeof canSupport === 'function' && !canSupport(belowId)) return;
+            
+            // v277: top-face placement uses crosshair position to pick direction
+            let doorDir = 0;
+            if (target.normal[1] === 1 && target.exactHit) {
+                const localX = target.exactHit[0] - target.hit[0];
+                const localZ = target.exactHit[2] - target.hit[2];
+                const cxh = localX - 0.5;
+                const czh = localZ - 0.5;
+                if (Math.abs(cxh) > Math.abs(czh)) {
+                    doorDir = cxh > 0 ? 3 : 1;
+                } else {
+                    doorDir = czh > 0 ? 0 : 2;
+                }
+            } else {
+                let dirX = player.x - (dx + 0.5);
+                let dirZ = player.z - (dz + 0.5);
+                if (Math.abs(dirX) > Math.abs(dirZ)) {
+                    doorDir = dirX > 0 ? 1 : 3;
+                } else {
+                    doorDir = dirZ > 0 ? 0 : 2;
+                }
+            }
+            
+            // v275: detect adjacent same-dir door for double doors
+            let hinge = 0;
+            {
+                function _isSameDirDoor(cx, cy, cz, wantDir) {
+                    const v = getVoxel(cx, cy, cz);
+                    if ((v & 0xFF) !== 149) return false;
+                    return ((v >> 8) & 0x3) === wantDir;
+                }
+                if (doorDir === 0 || doorDir === 2) {
+                    const negX = _isSameDirDoor(dx - 1, dy, dz, doorDir);
+                    const posX = _isSameDirDoor(dx + 1, dy, dz, doorDir);
+                    if (doorDir === 0) {
+                        if (negX) hinge = 1;
+                        else if (posX) hinge = 0;
+                    } else {
+                        if (negX) hinge = 0;
+                        else if (posX) hinge = 1;
+                    }
+                } else {
+                    const negZ = _isSameDirDoor(dx, dy, dz - 1, doorDir);
+                    const posZ = _isSameDirDoor(dx, dy, dz + 1, doorDir);
+                    if (doorDir === 1) {
+                        if (negZ) hinge = 1;
+                        else if (posZ) hinge = 0;
+                    } else {
+                        if (negZ) hinge = 0;
+                        else if (posZ) hinge = 1;
+                    }
+                }
+            }
+            const bottomVal = (doorDir) | (0 << 2) | (0 << 3) | (hinge << 4);
+            const topVal    = (doorDir) | (0 << 2) | (1 << 3) | (hinge << 4);
+            
+            setVoxel(dx, dy, dz, 149, bottomVal);
+            setVoxel(dx, dy + 1, dz, 149, topVal);
+            pendingBlockUpdates.push({x: dx, y: dy, z: dz});
+            pendingBlockUpdates.push({x: dx, y: dy + 1, z: dz});
+            
+            if (typeof window._soundPlaceBlock === 'function') window._soundPlaceBlock(149, dx, dy, dz);
+            
+            if (gameMode === 'survival' && inventory[activeSlot]) {
+                inventory[activeSlot].count--;
+                if (inventory[activeSlot].count <= 0) { inventory[activeSlot].id = 0; inventory[activeSlot].count = 0; }
+                if (typeof buildUI === 'function') buildUI();
+                if (typeof selectSlot === 'function') selectSlot(activeSlot);
+            }
+            return;
+        }
+
         let placeLevel = 0;
         if (currentBuildBlock === 17 || currentBuildBlock === 206) {
             // Torch
@@ -1539,6 +1622,38 @@ function _handleTap(screenX, screenY) {
             else if (target.normal[2] === 1) placeLevel = 3;
             else if (target.normal[2] === -1) placeLevel = 4;
             else placeLevel = 1;
+        } else if (currentBuildBlock === 150) {
+            // v273: Trapdoor — direction depends on placement face.
+            // Side face: hinge on the clicked face. Top/bottom face: hinge based
+            // on player facing.
+            let tdDir = 0;
+            if (target.normal[2] === 1) tdDir = 0;        // Side: -Z hinge
+            else if (target.normal[0] === -1) tdDir = 1;  // Side: +X hinge
+            else if (target.normal[2] === -1) tdDir = 2;  // Side: +Z hinge
+            else if (target.normal[0] === 1) tdDir = 3;   // Side: -X hinge
+            else {
+                let dirX = player.x - (dx + 0.5);
+                let dirZ = player.z - (dz + 0.5);
+                if (Math.abs(dirX) > Math.abs(dirZ)) {
+                    tdDir = dirX > 0 ? 3 : 1;
+                } else {
+                    tdDir = dirZ > 0 ? 0 : 2;
+                }
+            }
+            
+            let isTop = 0;
+            if (target.normal[1] === -1) {
+                isTop = 1; // tapped bottom of block above → top trapdoor
+            } else if (target.normal[1] === 1) {
+                isTop = 0; // tapped top of block below → bottom trapdoor
+            } else {
+                if (target.exactHit) {
+                    const localY = target.exactHit[1] - target.hit[1];
+                    if (localY >= 0.5) isTop = 1;
+                }
+            }
+            // Encode: bits 8-9 = dir, bit 10 = open(0), bit 11 = isTop
+            placeLevel = tdDir | (0 << 2) | (isTop << 3);
         } else if (typeof isSlabBlock === 'function' && isSlabBlock(currentBuildBlock)) {
             // Slab placement
             if (target.normal[1] === 1) { placeLevel = 0; }

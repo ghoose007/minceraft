@@ -186,6 +186,31 @@ window.breakBlock = function(x, y, z, canHarvest = true) {
         }
     }
     
+    // v277: Door support cascade — if a door (149) sits directly above the
+    // broken block, the door loses its support and breaks (both halves drop
+    // as a single door item like the existing door-break logic in this file).
+    var _aboveVal = getVoxel(x, y + 1, z);
+    var _aboveId = _aboveVal & 0xFF;
+    if (_aboveId === 149) {
+        var _isTop = (_aboveVal >> 11) & 0x1;
+        var _bottomY = _isTop ? y + 1 - 1 : y + 1; // door bottom half Y
+        var _topY = _bottomY + 1;
+        // Spawn one door item at the bottom position
+        if (typeof spawnParticles === 'function') {
+            spawnParticles(x, _bottomY, z, 149);
+            spawnParticles(x, _topY, z, 149);
+        }
+        if (typeof window.spawnDroppedItem === 'function') {
+            window.spawnDroppedItem(x + 0.5, _bottomY + 0.5, z + 0.5, 151);
+        }
+        setVoxel(x, _bottomY, z, 0);
+        setVoxel(x, _topY, z, 0);
+        pendingBlockUpdates.push({x: x, y: _bottomY, z: z});
+        pendingBlockUpdates.push({x: x, y: _topY, z: z});
+        queueNeighbors(x, _bottomY, z);
+        queueNeighbors(x, _topY, z);
+    }
+    
     // Also: if ANY broken block was adjacent to redstone dust, the broken block
     // could have been a strongly-powered block — trigger update
     if (!_needsRedstoneUpdate && typeof window.onRedstoneBlockChanged === 'function') {

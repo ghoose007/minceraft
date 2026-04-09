@@ -531,19 +531,62 @@
                 const aboveId = getVoxel(px, py + 1, pz) & 0xFF;
                 if (aboveId !== 0 && aboveId !== 4 && aboveId !== 27) return; // No room above
                 
-                // Direction based on player yaw (face toward player)
-                let dirX = player.x - (px + 0.5);
-                let dirZ = player.z - (pz + 0.5);
+                // v277: Doors require a solid support block beneath them.
+                const belowId = getVoxel(px, py - 1, pz) & 0xFF;
+                if (typeof canSupport === 'function' && !canSupport(belowId)) return;
+                
+                // v277: top-face placement uses crosshair position to pick direction
                 let doorDir = 0;
-                if (Math.abs(dirX) > Math.abs(dirZ)) {
-                    doorDir = dirX > 0 ? 1 : 3;
+                if (target.normal[1] === 1 && target.exactHit) {
+                    const localX = target.exactHit[0] - target.hit[0];
+                    const localZ = target.exactHit[2] - target.hit[2];
+                    const cx = localX - 0.5;
+                    const cz = localZ - 0.5;
+                    if (Math.abs(cx) > Math.abs(cz)) {
+                        doorDir = cx > 0 ? 3 : 1;
+                    } else {
+                        doorDir = cz > 0 ? 0 : 2;
+                    }
                 } else {
-                    doorDir = dirZ > 0 ? 0 : 2;
+                    let dirX = player.x - (px + 0.5);
+                    let dirZ = player.z - (pz + 0.5);
+                    if (Math.abs(dirX) > Math.abs(dirZ)) {
+                        doorDir = dirX > 0 ? 1 : 3;
+                    } else {
+                        doorDir = dirZ > 0 ? 0 : 2;
+                    }
                 }
                 
-                // Hinge side: check for adjacent blocks to pick hinge
-                // Default left hinge (0), switch to right (1) if block on left
+                // Hinge: detect adjacent same-dir door for double doors (v275)
                 let hinge = 0;
+                {
+                    function _isSameDirDoor(cx, cy, cz, wantDir) {
+                        const v = getVoxel(cx, cy, cz);
+                        if ((v & 0xFF) !== 149) return false;
+                        return ((v >> 8) & 0x3) === wantDir;
+                    }
+                    if (doorDir === 0 || doorDir === 2) {
+                        const negX = _isSameDirDoor(px - 1, py, pz, doorDir);
+                        const posX = _isSameDirDoor(px + 1, py, pz, doorDir);
+                        if (doorDir === 0) {
+                            if (negX) hinge = 1;
+                            else if (posX) hinge = 0;
+                        } else {
+                            if (negX) hinge = 0;
+                            else if (posX) hinge = 1;
+                        }
+                    } else {
+                        const negZ = _isSameDirDoor(px, py, pz - 1, doorDir);
+                        const posZ = _isSameDirDoor(px, py, pz + 1, doorDir);
+                        if (doorDir === 1) {
+                            if (negZ) hinge = 1;
+                            else if (posZ) hinge = 0;
+                        } else {
+                            if (negZ) hinge = 0;
+                            else if (posZ) hinge = 1;
+                        }
+                    }
+                }
                 
                 // Encode: bits 8-9 = dir, bit 10 = open(0), bit 11 = half(0=bottom,1=top), bit 12 = hinge
                 const bottomVal = (doorDir) | (0 << 2) | (0 << 3) | (hinge << 4);
@@ -569,20 +612,38 @@
             }
             // Trapdoor directional placement
             else if (currentBuildBlock === 150) {
-                // Direction = which face the trapdoor attaches to
+                // Direction = which face the trapdoor attaches to.
+                // For top/bottom-face placement, no clicked side exists so use
+                // player facing instead.
                 let tdDir = 0;
-                if (target.normal[2] === 1) tdDir = 0;       // Attached to -Z face
-                else if (target.normal[0] === -1) tdDir = 1;  // Attached to +X face
-                else if (target.normal[2] === -1) tdDir = 2;  // Attached to +Z face
-                else if (target.normal[0] === 1) tdDir = 3;   // Attached to -X face
+                if (target.normal[2] === 1) tdDir = 0;        // Side: -Z hinge
+                else if (target.normal[0] === -1) tdDir = 1;  // Side: +X hinge
+                else if (target.normal[2] === -1) tdDir = 2;  // Side: +Z hinge
+                else if (target.normal[0] === 1) tdDir = 3;   // Side: -X hinge
+                else {
+                    // v273: top or bottom face — use player facing
+                    let dirX = player.x - (px + 0.5);
+                    let dirZ = player.z - (pz + 0.5);
+                    if (Math.abs(dirX) > Math.abs(dirZ)) {
+                        tdDir = dirX > 0 ? 3 : 1;
+                    } else {
+                        tdDir = dirZ > 0 ? 0 : 2;
+                    }
+                }
                 
-                // Top or bottom placement based on click position
+                // Top or bottom placement based on click position.
+                // v272: use target.exactHit Y to decide (was using player eye
+                // height which always returned the same answer).
                 let isTop = 0;
                 if (target.normal[1] === -1) {
-                    isTop = 1; // Clicking bottom of block above = top trapdoor
-                } else if (target.normal[1] === 0) {
-                    const clickY = target.hit[1] + 0.5;
-                    if (player.y + player.eyeLevel > clickY + 0.5) isTop = 1;
+                    isTop = 1; // Clicked bottom of block above → top trapdoor
+                } else if (target.normal[1] === 1) {
+                    isTop = 0; // Clicked top of block below → bottom trapdoor
+                } else {
+                    if (target.exactHit) {
+                        const localY = target.exactHit[1] - target.hit[1];
+                        if (localY >= 0.5) isTop = 1;
+                    }
                 }
                 
                 // Encode: bits 8-9 = dir, bit 10 = open(0), bit 11 = isTop

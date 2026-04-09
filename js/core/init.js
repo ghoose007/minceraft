@@ -299,6 +299,37 @@ async function init(seed, loadedData) {
         // Determine which dimension the player should be in
         const targetDim = loadedData.currentDimension || 'overworld';
         
+        // v265: Superflat biome repair pass — runs unconditionally on load
+        // (regardless of hasBiomes), because existing broken superflat saves
+        // have wrong biomes baked into the persistent map. The bug was that
+        // the worldgen worker's biomeMap proxy dropped writes from
+        // _generateSuperflatChunk, so the worker sent back all-zero biome
+        // IDs which the main thread interpreted as 'desert'. We force-repair
+        // by overwriting all generated cells with 'plains'. New saves with
+        // the v265 worldgen fix will already be correct, so this is a no-op
+        // for them.
+        if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 1) {
+            const od = dimensionData['overworld'];
+            if (od && od.biomeMap && od.generatedFlags) {
+                const ohW = od.worldWidth / 2;
+                const ohD = od.worldDepth / 2;
+                for (let cx = 0; cx < od.chunksX; cx++) {
+                    for (let cz = 0; cz < od.chunksZ; cz++) {
+                        if (od.generatedFlags[cx * od.chunksZ + cz] !== 1) continue;
+                        const sx = cx * CHUNK_SIZE - ohW, sz = cz * CHUNK_SIZE - ohD;
+                        for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+                            for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+                                const gIdx = (sx + lx + ohW) + (sz + lz + ohD) * od.worldWidth;
+                                if (gIdx >= 0 && gIdx < od.worldWidth * od.worldDepth) {
+                                    od.biomeMap[gIdx] = 'plains';
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
         // Reconstruct biomes for dimensions that don't have them persisted.
         // v5 saves persist biomes — only v4-migrated saves need this.
         updateLoadingBar(35, 'Rebuilding biome data...');
@@ -600,7 +631,11 @@ async function init(seed, loadedData) {
     
     // Spawn the worldgen worker for background chunk generation.
     // Falls back to inline gen on the main thread if worker fails.
-    if (typeof spawnWorldgenWorker === 'function') {
+    // v267: generateWorld() now spawns the worker early for fresh worlds.
+    // This call only runs for the load path (where generateWorld isn't called)
+    // or as a defensive re-spawn if the early spawn somehow failed.
+    const alreadySpawned = (typeof window.isWorldgenWorkerSpawned === 'function' && window.isWorldgenWorkerSpawned());
+    if (typeof spawnWorldgenWorker === 'function' && !alreadySpawned) {
         try { spawnWorldgenWorker(); } catch(e) { console.warn('worker spawn failed:', e); }
     }
     // Spawn the mesh builder worker for background mesh building.
@@ -1537,19 +1572,77 @@ window.getTargetedMob = function() {
                 const aboveId = getVoxel(px, py + 1, pz) & 0xFF;
                 if (aboveId !== 0 && aboveId !== 4 && aboveId !== 27) return; // No room above
                 
-                // Direction based on player yaw (face toward player)
-                let dirX = player.x - (px + 0.5);
-                let dirZ = player.z - (pz + 0.5);
+                // v277: Doors require a solid support block beneath them.
+                // Check the block below the bottom half of the door.
+                const belowId = getVoxel(px, py - 1, pz) & 0xFF;
+                if (typeof canSupport === 'function' && !canSupport(belowId)) return;
+                
+                // v277: Direction logic — if placing on a top face, use the
+                // crosshair's local position on that face to determine which
+                // way the door faces (lets you place doors facing all 4
+                // directions just by aiming). Otherwise fall back to player
+                // facing.
                 let doorDir = 0;
-                if (Math.abs(dirX) > Math.abs(dirZ)) {
-                    doorDir = dirX > 0 ? 1 : 3;
+                if (target.normal[1] === 1 && target.exactHit) {
+                    // Local position within the top face (0..1 on each axis)
+                    const localX = target.exactHit[0] - target.hit[0];
+                    const localZ = target.exactHit[2] - target.hit[2];
+                    // Center around 0.5 and pick dominant axis
+                    const cx = localX - 0.5;
+                    const cz = localZ - 0.5;
+                    if (Math.abs(cx) > Math.abs(cz)) {
+                        doorDir = cx > 0 ? 3 : 1; // +X half → faces +X (dir 3); -X half → faces -X (dir 1)
+                    } else {
+                        doorDir = cz > 0 ? 0 : 2; // +Z half → faces +Z (dir 0); -Z half → faces -Z (dir 2)
+                    }
                 } else {
-                    doorDir = dirZ > 0 ? 0 : 2;
+                    // Fallback: direction based on player position
+                    let dirX = player.x - (px + 0.5);
+                    let dirZ = player.z - (pz + 0.5);
+                    if (Math.abs(dirX) > Math.abs(dirZ)) {
+                        doorDir = dirX > 0 ? 1 : 3;
+                    } else {
+                        doorDir = dirZ > 0 ? 0 : 2;
+                    }
                 }
                 
-                // Hinge side: check for adjacent blocks to pick hinge
-                // Default left hinge (0), switch to right (1) if block on left
+                // Hinge side: detect adjacent door of same direction to form
+                // a double door. For doors facing ±Z, check ±X neighbors.
+                // For doors facing ±X, check ±Z neighbors.
+                // v275: when an existing same-direction door is found on one
+                // side, the new door takes the opposite hinge so the two
+                // panels mirror and open outward from the center.
                 let hinge = 0;
+                {
+                    function _isSameDirDoor(cx, cy, cz, wantDir) {
+                        const v = getVoxel(cx, cy, cz);
+                        if ((v & 0xFF) !== 149) return false;
+                        return ((v >> 8) & 0x3) === wantDir;
+                    }
+                    if (doorDir === 0 || doorDir === 2) {
+                        // Faces ±Z — check ±X neighbors
+                        const negX = _isSameDirDoor(px - 1, py, pz, doorDir);
+                        const posX = _isSameDirDoor(px + 1, py, pz, doorDir);
+                        if (doorDir === 0) {
+                            if (negX) hinge = 1;       // existing door at -X → mine on +X
+                            else if (posX) hinge = 0;  // existing door at +X → mine on -X
+                        } else { // doorDir === 2
+                            if (negX) hinge = 0;       // existing door at -X → mine on +X (hinge 0 for dir 2)
+                            else if (posX) hinge = 1;  // existing door at +X → mine on -X (hinge 1 for dir 2)
+                        }
+                    } else {
+                        // Faces ±X — check ±Z neighbors
+                        const negZ = _isSameDirDoor(px, py, pz - 1, doorDir);
+                        const posZ = _isSameDirDoor(px, py, pz + 1, doorDir);
+                        if (doorDir === 1) {
+                            if (negZ) hinge = 1;
+                            else if (posZ) hinge = 0;
+                        } else { // doorDir === 3
+                            if (negZ) hinge = 0;
+                            else if (posZ) hinge = 1;
+                        }
+                    }
+                }
                 
                 // Encode: bits 8-9 = dir, bit 10 = open(0), bit 11 = half(0=bottom,1=top), bit 12 = hinge
                 const bottomVal = (doorDir) | (0 << 2) | (0 << 3) | (hinge << 4);
@@ -1575,20 +1668,50 @@ window.getTargetedMob = function() {
             }
             // Trapdoor directional placement
             else if (currentBuildBlock === 150) {
-                // Direction = which face the trapdoor attaches to
+                // Direction = which face the trapdoor attaches to.
+                // For side-face placement, the hinge is on the face you clicked.
+                // For top/bottom-face placement, there's no clicked side, so use
+                // player facing (the trapdoor's hinge points away from the player
+                // so it opens toward the player).
                 let tdDir = 0;
-                if (target.normal[2] === 1) tdDir = 0;       // Attached to -Z face
-                else if (target.normal[0] === -1) tdDir = 1;  // Attached to +X face
-                else if (target.normal[2] === -1) tdDir = 2;  // Attached to +Z face
-                else if (target.normal[0] === 1) tdDir = 3;   // Attached to -X face
+                if (target.normal[2] === 1) tdDir = 0;        // Side: -Z hinge
+                else if (target.normal[0] === -1) tdDir = 1;  // Side: +X hinge
+                else if (target.normal[2] === -1) tdDir = 2;  // Side: +Z hinge
+                else if (target.normal[0] === 1) tdDir = 3;   // Side: -X hinge
+                else {
+                    // v273: Top or bottom face — use player facing.
+                    // Hinge plate goes on the side OPPOSITE the player so when
+                    // the trapdoor opens it swings out toward the player.
+                    // dir 0 = -Z plate (opens +Z), 1 = +X plate (opens -X),
+                    // 2 = +Z plate (opens -Z), 3 = -X plate (opens +X).
+                    let dirX = player.x - (px + 0.5);
+                    let dirZ = player.z - (pz + 0.5);
+                    if (Math.abs(dirX) > Math.abs(dirZ)) {
+                        tdDir = dirX > 0 ? 3 : 1; // player +X → opens +X (dir 3); -X → opens -X (dir 1)
+                    } else {
+                        tdDir = dirZ > 0 ? 0 : 2; // player +Z → opens +Z (dir 0); -Z → opens -Z (dir 2)
+                    }
+                }
                 
-                // Top or bottom placement based on click position
+                // Top or bottom placement based on click position.
+                // v272: previously this used player eye height which was wrong —
+                // it would return the same answer regardless of where on the face
+                // you actually clicked. Now we use the actual click Y from
+                // target.exactHit, comparing against the midpoint of the block
+                // we clicked on (target.hit[1]).
                 let isTop = 0;
                 if (target.normal[1] === -1) {
-                    isTop = 1; // Clicking bottom of block above = top trapdoor
-                } else if (target.normal[1] === 0) {
-                    const clickY = target.hit[1] + 0.5;
-                    if (player.y + player.eyeLevel > clickY + 0.5) isTop = 1;
+                    // Clicked the bottom face of the block above → top trapdoor
+                    isTop = 1;
+                } else if (target.normal[1] === 1) {
+                    // Clicked the top face of the block below → bottom trapdoor
+                    isTop = 0;
+                } else {
+                    // Side face — decide by where on the face the click landed
+                    if (target.exactHit) {
+                        const localY = target.exactHit[1] - target.hit[1];
+                        if (localY >= 0.5) isTop = 1;
+                    }
                 }
                 
                 // Encode: bits 8-9 = dir, bit 10 = open(0), bit 11 = isTop

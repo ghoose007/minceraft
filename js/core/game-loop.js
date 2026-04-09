@@ -19,6 +19,17 @@ const _pendingWorkerChunks = new Set(); // Set of "cx,cz" keys currently being g
 const _pendingLightingChunks = []; // Array of {cx_center, cz_center} added when worker chunks come back
 let _workerCompletedThisFrame = 0; // Diagnostic: chunks completed by worker this frame
 
+// v267: async readiness handshake. Resolves when the worker emits 'initDone'.
+// init() awaits this before scheduling initial chunk gen so all gen goes
+// through the worker (the inline gen path is now a fallback only).
+let _workerReadyResolve = null;
+let _workerReadyReject = null;
+let _workerReadyPromise = null;
+
+// v267: per-chunk completion resolvers. Keyed by "cx,cz". When _onWorkerChunkDone
+// runs for that key, all queued resolvers fire.
+const _pendingChunkResolvers = new Map();
+
 // Cross-chunk writes from worker chunks (e.g. tree leaves spilling into neighbor).
 // Keyed by "cx,cz" of the TARGET chunk. Each value is a flat array of 7-tuples
 // [wx, wy, wz, id, level, falling, source, ...]. When that chunk gets generated
@@ -36,9 +47,17 @@ function spawnWorldgenWorker() {
     _workerInitInFlight = false;
     _pendingWorkerChunks.clear();
     _pendingLightingChunks.length = 0;
+    _pendingChunkResolvers.clear();
+    
+    // v267: build a fresh readiness promise for this spawn cycle.
+    _workerReadyPromise = new Promise((resolve, reject) => {
+        _workerReadyResolve = resolve;
+        _workerReadyReject = reject;
+    });
     
     if (typeof Worker === 'undefined') {
         console.warn('Web Workers not supported, falling back to inline worldgen');
+        if (_workerReadyReject) _workerReadyReject(new Error('Worker API unavailable'));
         return;
     }
     
@@ -47,12 +66,14 @@ function spawnWorldgenWorker() {
     } catch (e) {
         console.warn('Failed to spawn worldgen worker, falling back to inline gen:', e);
         _worldgenWorker = null;
+        if (_workerReadyReject) _workerReadyReject(e);
         return;
     }
     
     _worldgenWorker.onerror = function(ev) {
         console.error('[worldgen-worker] error:', ev.message, ev.filename, ev.lineno);
         _workerReady = false;
+        if (_workerReadyReject) _workerReadyReject(new Error(ev.message || 'worker error'));
     };
     
     _worldgenWorker.onmessage = function(ev) {
@@ -61,21 +82,40 @@ function spawnWorldgenWorker() {
             _workerReady = true;
             _workerInitInFlight = false;
             console.log('[worldgen-worker] ready');
+            if (_workerReadyResolve) _workerReadyResolve();
             return;
         }
         if (msg.type === 'error') {
             console.error('[worldgen-worker] init error:', msg.error);
             _workerReady = false;
             _workerInitInFlight = false;
+            if (_workerReadyReject) _workerReadyReject(new Error(msg.error));
             return;
         }
         if (msg.type === 'genError') {
             console.error('[worldgen-worker] gen error for chunk', msg.cx, msg.cz, ':', msg.error);
-            _pendingWorkerChunks.delete(msg.cx + ',' + msg.cz);
+            const errKey = msg.cx + ',' + msg.cz;
+            _pendingWorkerChunks.delete(errKey);
+            // v267: resolve any pending async resolvers for this chunk so the
+            // batch helper doesn't hang. Caller can detect failure by checking
+            // _isChunkGenerated after the await resolves.
+            const errResolvers = _pendingChunkResolvers.get(errKey);
+            if (errResolvers) {
+                _pendingChunkResolvers.delete(errKey);
+                for (const r of errResolvers) r();
+            }
             return;
         }
         if (msg.type === 'genDone') {
             _onWorkerChunkDone(msg);
+            // v267: drain async resolvers for this chunk after the chunk has
+            // been adopted into chunkStorageArr.
+            const dKey = msg.cx + ',' + msg.cz;
+            const resolvers = _pendingChunkResolvers.get(dKey);
+            if (resolvers) {
+                _pendingChunkResolvers.delete(dKey);
+                for (const r of resolvers) r();
+            }
             return;
         }
     };
@@ -93,6 +133,87 @@ function spawnWorldgenWorker() {
         settings: _gatherWorldgenSettings()
     });
 }
+
+// v267: Async helper — request a chunk via the worker and return a promise
+// that resolves when it's done (or immediately if already generated).
+// Returns null if the worker isn't available — caller should fall back.
+function requestWorkerChunkGenAsync(cx, cz) {
+    if (cx < 0 || cx >= CHUNKS_X || cz < 0 || cz >= CHUNKS_Z) return Promise.resolve();
+    if (_isChunkGenerated(cx, cz)) return Promise.resolve();
+    if (!_worldgenWorker || !_workerReady) return null;
+    
+    const key = cx + ',' + cz;
+    return new Promise((resolve) => {
+        // Add resolver to the list for this chunk
+        let arr = _pendingChunkResolvers.get(key);
+        if (!arr) {
+            arr = [];
+            _pendingChunkResolvers.set(key, arr);
+        }
+        arr.push(resolve);
+        
+        // Dispatch the gen request if not already pending
+        if (!_pendingWorkerChunks.has(key)) {
+            _pendingWorkerChunks.add(key);
+            _worldgenWorker.postMessage({ type: 'gen', cx: cx, cz: cz });
+        }
+    });
+}
+window.requestWorkerChunkGenAsync = requestWorkerChunkGenAsync;
+
+// v267: Batch helper — schedule a list of chunks via the worker and await
+// all of their completions. Calls onProgress(done, total) periodically.
+// If the worker is unavailable, falls back to inline gen via the provided
+// fallback function (or generateChunkColumn if not provided).
+async function ensureChunksGeneratedBatch(coords, onProgress, fallbackFn) {
+    if (!coords || coords.length === 0) return;
+    const total = coords.length;
+    let done = 0;
+    
+    // If worker isn't ready, use inline fallback for everything
+    if (!_worldgenWorker || !_workerReady) {
+        const fb = fallbackFn || (typeof generateChunkColumn === 'function' ? generateChunkColumn : null);
+        if (!fb) return;
+        for (const c of coords) {
+            if (!_isChunkGenerated(c.cx, c.cz)) fb(c.cx, c.cz);
+            done++;
+            if (onProgress && (done % 8 === 0 || done === total)) {
+                onProgress(done, total);
+                await new Promise(r => setTimeout(r, 0));
+            }
+        }
+        return;
+    }
+    
+    // Worker path — fire all requests, then await each in turn
+    const promises = [];
+    for (const c of coords) {
+        const p = requestWorkerChunkGenAsync(c.cx, c.cz);
+        if (p) promises.push(p.then(() => {
+            done++;
+            if (onProgress && (done % 4 === 0 || done === total)) {
+                onProgress(done, total);
+            }
+        }));
+    }
+    await Promise.all(promises);
+    if (onProgress) onProgress(total, total);
+}
+window.ensureChunksGeneratedBatch = ensureChunksGeneratedBatch;
+
+// v267: Wait for the worker to be ready. Returns a promise that resolves
+// when the worker emits 'initDone', or rejects if spawn fails. If the
+// worker hasn't been spawned yet, returns a resolved promise (no worker
+// to wait for — caller will fall back to inline).
+function awaitWorkerReady() {
+    if (!_worldgenWorker) return Promise.resolve();
+    if (_workerReady) return Promise.resolve();
+    return _workerReadyPromise || Promise.resolve();
+}
+window.awaitWorkerReady = awaitWorkerReady;
+
+// v267: helper for init.js to check if the worker is already spawned
+window.isWorldgenWorkerSpawned = function() { return !!_worldgenWorker; };
 
 // Gather all GEN_* settings into a plain object for sending to worker
 function _gatherWorldgenSettings() {
@@ -239,13 +360,22 @@ function _onWorkerChunkDone(msg) {
     const halfD = WORLD_DEPTH / 2;
     const startX = cx * CHUNK_SIZE - halfW;
     const startZ = cz * CHUNK_SIZE - halfD;
+    // v266: For superflat overworld, force biomeMap cells to plains regardless
+    // of what the worker sent. The worker's biomeMap proxy drops writes from
+    // _generateSuperflatChunk so it sends back all-zero biome IDs which would
+    // otherwise become 'desert' in the main thread biomeMap.
+    const isSuperflatOverworld = (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 1);
     for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         for (let lz = 0; lz < CHUNK_SIZE; lz++) {
             const wx = startX + lx;
             const wz = startZ + lz;
             const gIdx = (wx + halfW) + (wz + halfD) * WORLD_WIDTH;
             if (gIdx >= 0 && gIdx < WORLD_WIDTH * WORLD_DEPTH) {
-                biomeMap[gIdx] = BIOME_NAMES[biomes[lx + lz * CHUNK_SIZE]];
+                if (isSuperflatOverworld) {
+                    biomeMap[gIdx] = 'plains';
+                } else {
+                    biomeMap[gIdx] = BIOME_NAMES[biomes[lx + lz * CHUNK_SIZE]];
+                }
             }
         }
     }
@@ -964,8 +1094,21 @@ function _syncChunkToMeshWorker(scx, scz) {
         if (typeof currentDimension !== 'undefined' && currentDimension === 'aether') {
             defaultId = 10; // aether_skyforest
         }
+        // v266: For superflat overworld, force ALL cells to plains regardless
+        // of what's in biomeMap. This guarantees superflat worlds always
+        // render with plains tint, even if biomeMap has stale wrong data
+        // baked in from previous broken worker-generated chunks.
+        const isSuperflatOverworld = (typeof GEN_WORLD_TYPE !== 'undefined'
+            && GEN_WORLD_TYPE === 1
+            && typeof currentDimension !== 'undefined'
+            && currentDimension === 'overworld');
         for (let lx = 0; lx < CHUNK_SIZE; lx++) {
             for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+                if (isSuperflatOverworld) {
+                    biomeStrip[lx + lz * CHUNK_SIZE] = 4; // plains
+                    realCount++;
+                    continue;
+                }
                 const ix = startX + lx;
                 const iz = startZ + lz;
                 const gIdx = ix + iz * WORLD_WIDTH;

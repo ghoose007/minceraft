@@ -641,14 +641,21 @@ function _buildChunkMeshDataOnly(cx, cz) {
                     const isTopHalf = (val >> 11) & 0x1;
                     const hinge = (val >> 12) & 0x1;
                     
-                    // Front face texture (faces the player who placed the door)
-                    const frontTexIdx = isTopHalf ? BLOCK_DATA[149].atlasIdx.top : BLOCK_DATA[149].atlasIdx.bottom;
+                    // v276: when hinge=1 (right-hinge door, e.g. the second
+                    // panel of a double door), mirror by swapping front and
+                    // back textures. The atlas has dedicated pre-flipped
+                    // versions for each side, so swapping them gives the
+                    // correct mirrored appearance.
+                    const frontTexIdx = (hinge === 1)
+                        ? (isTopHalf ? BLOCK_DATA[149].atlasIdx.backTop : BLOCK_DATA[149].atlasIdx.backBottom)
+                        : (isTopHalf ? BLOCK_DATA[149].atlasIdx.top : BLOCK_DATA[149].atlasIdx.bottom);
                     const fTX = frontTexIdx % 16, fTY = Math.floor(frontTexIdx / 16);
                     const FU = (px) => (fTX + px/16) / 16;
                     const FV = (py) => 1 - (fTY + py/16) / 16;
                     
-                    // Back face texture (dedicated pre-flipped backside texture)
-                    const backTexIdx = isTopHalf ? BLOCK_DATA[149].atlasIdx.backTop : BLOCK_DATA[149].atlasIdx.backBottom;
+                    const backTexIdx = (hinge === 1)
+                        ? (isTopHalf ? BLOCK_DATA[149].atlasIdx.top : BLOCK_DATA[149].atlasIdx.bottom)
+                        : (isTopHalf ? BLOCK_DATA[149].atlasIdx.backTop : BLOCK_DATA[149].atlasIdx.backBottom);
                     const bTX = backTexIdx % 16, bTY = Math.floor(backTexIdx / 16);
                     const BU = (px) => (bTX + px/16) / 16;
                     const BV = (py) => 1 - (bTY + py/16) / 16;
@@ -796,26 +803,32 @@ function _buildChunkMeshDataOnly(cx, cz) {
                         else if (dir === 2) { tx0=x; tx1=x+1; tz0=z+1-D; tz1=z+1-E; }
                         else { tx0=x+E; tx1=x+D; tz0=z; tz1=z+1; }
                         
+                        // v274: inset Y by E so the bottom and top faces of an
+                        // open trapdoor don't z-fight with the adjacent block
+                        // faces above/below.
+                        const ty0 = y + E;
+                        const ty1 = y + 1 - E;
+                        
                         const isXal = (tx1-tx0) > (tz1-tz0);
                         
                         if (isXal) {
-                            TQ(tx0,y+1,tz1, tx0,y,tz1, tx1,y,tz1, tx1,y+1,tz1, fu0,fv1,fu0,fv0,fu1,fv0,fu1,fv1, 0,0,1);
-                            TQ(tx1,y+1,tz0, tx1,y,tz0, tx0,y,tz0, tx0,y+1,tz0, fu0,fv1,fu0,fv0,fu1,fv0,fu1,fv1, 0,0,-1);
+                            TQ(tx0,ty1,tz1, tx0,ty0,tz1, tx1,ty0,tz1, tx1,ty1,tz1, fu0,fv1,fu0,fv0,fu1,fv0,fu1,fv1, 0,0,1);
+                            TQ(tx1,ty1,tz0, tx1,ty0,tz0, tx0,ty0,tz0, tx0,ty1,tz0, fu0,fv1,fu0,fv0,fu1,fv0,fu1,fv1, 0,0,-1);
                             // Top/bottom: 16x3
-                            TQ(tx0,y+1,tz0, tx0,y+1,tz1, tx1,y+1,tz1, tx1,y+1,tz0, U(0),V(3),U(0),V(0),U(16),V(0),U(16),V(3), 0,1,0);
-                            TQ(tx0,y,tz1, tx0,y,tz0, tx1,y,tz0, tx1,y,tz1, U(0),V(3),U(0),V(0),U(16),V(0),U(16),V(3), 0,-1,0);
+                            TQ(tx0,ty1,tz0, tx0,ty1,tz1, tx1,ty1,tz1, tx1,ty1,tz0, U(0),V(3),U(0),V(0),U(16),V(0),U(16),V(3), 0,1,0);
+                            TQ(tx0,ty0,tz1, tx0,ty0,tz0, tx1,ty0,tz0, tx1,ty0,tz1, U(0),V(3),U(0),V(0),U(16),V(0),U(16),V(3), 0,-1,0);
                             // Side edges: 3x16
-                            TQ(tx0,y+1,tz0, tx0,y,tz0, tx0,y,tz1, tx0,y+1,tz1, U(0),fv1,U(0),fv0,U(3),fv0,U(3),fv1, -1,0,0);
-                            TQ(tx1,y+1,tz1, tx1,y,tz1, tx1,y,tz0, tx1,y+1,tz0, U(0),fv1,U(0),fv0,U(3),fv0,U(3),fv1, 1,0,0);
+                            TQ(tx0,ty1,tz0, tx0,ty0,tz0, tx0,ty0,tz1, tx0,ty1,tz1, U(0),fv1,U(0),fv0,U(3),fv0,U(3),fv1, -1,0,0);
+                            TQ(tx1,ty1,tz1, tx1,ty0,tz1, tx1,ty0,tz0, tx1,ty1,tz0, U(0),fv1,U(0),fv0,U(3),fv0,U(3),fv1, 1,0,0);
                         } else {
-                            TQ(tx1,y+1,tz0, tx1,y,tz0, tx1,y,tz1, tx1,y+1,tz1, fu0,fv1,fu0,fv0,fu1,fv0,fu1,fv1, 1,0,0);
-                            TQ(tx0,y+1,tz1, tx0,y,tz1, tx0,y,tz0, tx0,y+1,tz0, fu0,fv1,fu0,fv0,fu1,fv0,fu1,fv1, -1,0,0);
+                            TQ(tx1,ty1,tz0, tx1,ty0,tz0, tx1,ty0,tz1, tx1,ty1,tz1, fu0,fv1,fu0,fv0,fu1,fv0,fu1,fv1, 1,0,0);
+                            TQ(tx0,ty1,tz1, tx0,ty0,tz1, tx0,ty0,tz0, tx0,ty1,tz0, fu0,fv1,fu0,fv0,fu1,fv0,fu1,fv1, -1,0,0);
                             // Top/bottom: 3x16
-                            TQ(tx0,y+1,tz0, tx0,y+1,tz1, tx1,y+1,tz1, tx1,y+1,tz0, U(0),V(16),U(0),V(0),U(3),V(0),U(3),V(16), 0,1,0);
-                            TQ(tx0,y,tz1, tx0,y,tz0, tx1,y,tz0, tx1,y,tz1, U(0),V(16),U(0),V(0),U(3),V(0),U(3),V(16), 0,-1,0);
+                            TQ(tx0,ty1,tz0, tx0,ty1,tz1, tx1,ty1,tz1, tx1,ty1,tz0, U(0),V(16),U(0),V(0),U(3),V(0),U(3),V(16), 0,1,0);
+                            TQ(tx0,ty0,tz1, tx0,ty0,tz0, tx1,ty0,tz0, tx1,ty0,tz1, U(0),V(16),U(0),V(0),U(3),V(0),U(3),V(16), 0,-1,0);
                             // Side edges: 3x16
-                            TQ(tx0,y+1,tz0, tx0,y,tz0, tx1,y,tz0, tx1,y+1,tz0, U(0),fv1,U(0),fv0,U(3),fv0,U(3),fv1, 0,0,-1);
-                            TQ(tx1,y+1,tz1, tx1,y,tz1, tx0,y,tz1, tx0,y+1,tz1, U(0),fv1,U(0),fv0,U(3),fv0,U(3),fv1, 0,0,1);
+                            TQ(tx0,ty1,tz0, tx0,ty0,tz0, tx1,ty0,tz0, tx1,ty1,tz0, U(0),fv1,U(0),fv0,U(3),fv0,U(3),fv1, 0,0,-1);
+                            TQ(tx1,ty1,tz1, tx1,ty0,tz1, tx0,ty0,tz1, tx0,ty1,tz1, U(0),fv1,U(0),fv0,U(3),fv0,U(3),fv1, 0,0,1);
                         }
                     }
                     continue;

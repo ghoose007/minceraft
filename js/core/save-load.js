@@ -455,6 +455,13 @@ async function loadWorldFromSlot(slot) {
         }
         if (typeof worldOptions !== 'undefined' && data.genParams.worldType !== undefined) {
             worldOptions.worldtype = data.genParams.worldType;
+            // v264: ALSO update GEN_WORLD_TYPE so the worldgen workers see the
+            // right preset. Without this, loading a superflat (or amplified, or
+            // single-biome) world reverts to default overworld generation
+            // because the workers only check GEN_WORLD_TYPE, not worldOptions.
+            if (typeof GEN_WORLD_TYPE !== 'undefined') {
+                GEN_WORLD_TYPE = data.genParams.worldType;
+            }
         }
         if (data.genParams.biomeOverrides) {
             GEN_BIOME_OVERRIDES = data.genParams.biomeOverrides;

@@ -32,6 +32,21 @@ function _generateSuperflatChunk(cx, cz) {
     const startX = cx * CHUNK_SIZE - halfW;
     const startZ = cz * CHUNK_SIZE - halfD;
     
+    // v265: Populate chunkBiomeCache so the worker's send-back path picks up
+    // the correct biome data. Without this, when this function runs in the
+    // worldgen worker, the writes to biomeMap[gIdx] = 'plains' below are
+    // dropped by the worker's biomeMap proxy, and the worker sends back
+    // all-zero biome IDs which the main thread interprets as 'desert' (the
+    // first entry in BIOME_NAMES). On the main thread the biomeMap writes
+    // succeed too — populating the cache here is harmless extra work.
+    if (typeof chunkBiomeCache !== 'undefined') {
+        const PLAINS_ID = 4; // BIOME_NAMES.indexOf('plains')
+        const cellCount = CHUNK_SIZE * CHUNK_SIZE;
+        const sfBiomes = new Uint8Array(cellCount);
+        sfBiomes.fill(PLAINS_ID);
+        chunkBiomeCache.set(cx + ',' + cz, { biomes: sfBiomes });
+    }
+    
     // Store biome as plains for all superflat
     for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         for (let lz = 0; lz < CHUNK_SIZE; lz++) {
@@ -1736,19 +1751,51 @@ async function generateWorld() {
     
     biomeMap = new Array(WORLD_WIDTH * WORLD_DEPTH);
     
+    // v267: spawn the worldgen worker FIRST so initial chunk generation
+    // can route through it. Inline gen is now a fallback that only runs
+    // if the worker fails to spawn or initialize. This fixes the inline
+    // superflat biome bug because the worker path correctly handles
+    // biome data for all worldgen presets.
+    let workerAvailable = false;
+    if (typeof spawnWorldgenWorker === 'function') {
+        try {
+            spawnWorldgenWorker();
+            if (typeof awaitWorkerReady === 'function') {
+                await awaitWorkerReady();
+                workerAvailable = (typeof _workerReady !== 'undefined') ? _workerReady : true;
+            }
+        } catch (e) {
+            console.warn('[generateWorld] worker spawn/ready failed, using inline fallback:', e);
+            workerAvailable = false;
+        }
+    }
+    
     if (!useLazyGeneration) {
         // EAGER GENERATION (small worlds <= 64 chunks/side)
         updateLoadingBar(2, 'Generating terrain...');
         await yieldToUI();
         
-        const totalChunks = CHUNKS_X * CHUNKS_Z;
-        let chunksGenerated = 0;
-        
+        // Build the coordinate list for the entire world
+        const coords = [];
         for (let cx = 0; cx < CHUNKS_X; cx++) {
             for (let cz = 0; cz < CHUNKS_Z; cz++) {
-                generateChunkColumn(cx, cz);
+                coords.push({ cx, cz });
+            }
+        }
+        const totalChunks = coords.length;
+        
+        if (workerAvailable && typeof ensureChunksGeneratedBatch === 'function') {
+            // v267: route through the worker
+            await ensureChunksGeneratedBatch(coords, (done, total) => {
+                const pct = 2 + (done / total) * 48;
+                updateLoadingBar(pct, `Generating terrain... ${Math.round((done / total) * 100)}%`);
+            });
+        } else {
+            // Inline fallback
+            let chunksGenerated = 0;
+            for (const c of coords) {
+                generateChunkColumn(c.cx, c.cz);
                 chunksGenerated++;
-                
                 if (chunksGenerated % 64 === 0) {
                     const pct = 2 + (chunksGenerated / totalChunks) * 48;
                     updateLoadingBar(pct, `Generating terrain... ${Math.round((chunksGenerated / totalChunks) * 100)}%`);
@@ -1772,12 +1819,25 @@ async function generateWorld() {
         const spawnMinCZ = Math.max(0, Math.floor(CHUNKS_Z / 2) - spawnGenRadius);
         const spawnMaxCZ = Math.min(CHUNKS_Z - 1, Math.floor(CHUNKS_Z / 2) + spawnGenRadius);
         
-        let total = (spawnMaxCX - spawnMinCX + 1) * (spawnMaxCZ - spawnMinCZ + 1);
-        let count = 0;
-        
+        // Build the coordinate list for the spawn area
+        const coords = [];
         for (let cx = spawnMinCX; cx <= spawnMaxCX; cx++) {
             for (let cz = spawnMinCZ; cz <= spawnMaxCZ; cz++) {
-                generateChunkColumn(cx, cz);
+                coords.push({ cx, cz });
+            }
+        }
+        
+        if (workerAvailable && typeof ensureChunksGeneratedBatch === 'function') {
+            // v267: route through the worker
+            await ensureChunksGeneratedBatch(coords, (done, total) => {
+                updateLoadingBar(2 + (done / total) * 48, `Generating spawn area... ${Math.round((done / total) * 100)}%`);
+            });
+        } else {
+            // Inline fallback
+            let count = 0;
+            const total = coords.length;
+            for (const c of coords) {
+                generateChunkColumn(c.cx, c.cz);
                 count++;
                 if (count % 32 === 0) {
                     updateLoadingBar(2 + (count / total) * 48, `Generating spawn area... ${Math.round((count / total) * 100)}%`);

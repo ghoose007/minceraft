@@ -2,7 +2,7 @@
 // CONFIGURATION CONSTANTS
 // ==========================================
 
-const ASSET_VERSION = "263";
+const ASSET_VERSION = "277";
 
 const CHUNK_SIZE = 16;
 const CHUNK_HEIGHT = 256; 
@@ -44,7 +44,13 @@ const PORTAL_COOLDOWN_TIME = 80; // ~4 seconds at 20tps
 const NETHER_HEIGHT = 128;
 
 // --- LAZY GENERATION ---
-const LAZY_GEN_THRESHOLD = 64; 
+// v269: lowered to 0 so ALL worlds use the lazy spawn-area-only path,
+// including mobile sizes. Mobile Large (512×512 / 32 chunks) sometimes
+// crashed during eager init because the worker queue was overwhelmed
+// generating every chunk up front. Lazy gen only generates the spawn
+// area (~25×25 chunks max) and streams in the rest as the player walks.
+// Setting to 0 means CHUNKS_X > 0 is always true → always lazy.
+const LAZY_GEN_THRESHOLD = 0;
 
 // --- CLOUD CONFIGURATION ---
 const CLOUD_W = 12; 
