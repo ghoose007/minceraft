@@ -329,5 +329,20 @@ function recalculateLighting(ux, uy, uz) {
                 }
             }
         }
+    } else {
+        // v312: Global lighting pass — mark ALL loaded chunks for remesh.
+        // Without this, torch/lava/glowstone light values get written to
+        // chunk data but the meshes still show pre-light geometry. This
+        // was especially bad for the nether where lava is the main light
+        // source but the dimension looked completely dark after load.
+        if (typeof dirtyChunks !== 'undefined' && dirtyChunks) {
+            for (let ci = 0; ci < generatedChunksArr.length; ci++) {
+                if (generatedChunksArr[ci]) {
+                    const cx = (ci / CHUNKS_Z) | 0;
+                    const cz = ci % CHUNKS_Z;
+                    dirtyChunks.add(cx + ',' + cz);
+                }
+            }
+        }
     }
 }

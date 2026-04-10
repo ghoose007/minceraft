@@ -124,3 +124,21 @@ const TOOL_DATA = {
     221: { name: 'Emerald Leggings', atlasIdx: 44, type: 'armor', armorSlot: 'leggings', defense: 6, maxDurability: 990, bonusHealth: 2 },
     222: { name: 'Emerald Boots', atlasIdx: 43, type: 'armor', armorSlot: 'boots', defense: 3, maxDurability: 858, bonusHealth: 2 }
 };
+
+// v284: Hunger system food data. Values match Minecraft's food
+// restoration / saturation for each item. Also preserves the legacy
+// "heal" value used when hunger is disabled (the old instant-heal
+// behavior). eatTime is in seconds (MC uses 1.6s for all foods).
+const FOOD_DATA = {
+    115: { hunger: 4, saturation: 2.4, legacyHeal: 4, eatTime: 1.6, alwaysEdible: false }, // Apple
+    122: { hunger: 3, saturation: 1.8, legacyHeal: 3, eatTime: 1.6, alwaysEdible: false }, // Raw Porkchop
+    123: { hunger: 8, saturation: 12.8, legacyHeal: 8, eatTime: 1.6, alwaysEdible: false }, // Cooked Porkchop
+    134: { hunger: 5, saturation: 6.0, legacyHeal: 5, eatTime: 1.6, alwaysEdible: false }, // Bread
+    187: { hunger: 3, saturation: 1.8, legacyHeal: 3, eatTime: 1.6, alwaysEdible: false }, // Raw Beef
+    188: { hunger: 8, saturation: 12.8, legacyHeal: 8, eatTime: 1.6, alwaysEdible: false }  // Cooked Beef
+};
+
+// v290: helper so eat handlers don't have to hardcode food IDs
+window.isFoodItem = function(id) {
+    return typeof FOOD_DATA !== 'undefined' && FOOD_DATA[id] !== undefined;
+};

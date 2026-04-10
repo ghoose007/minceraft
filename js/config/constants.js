@@ -2,7 +2,7 @@
 // CONFIGURATION CONSTANTS
 // ==========================================
 
-const ASSET_VERSION = "277";
+const ASSET_VERSION = "312";
 
 const CHUNK_SIZE = 16;
 const CHUNK_HEIGHT = 256; 
@@ -70,7 +70,8 @@ const BIOME_COLORS = {
     'ocean': [60/255, 100/255, 160/255],
     'swamp': [106/255, 112/255, 57/255],
     'jungle': [89/255, 174/255, 48/255],
-    'extreme_hills': [0x8A/255, 0xB6/255, 0x89/255]
+    'extreme_hills': [0x8A/255, 0xB6/255, 0x89/255],
+    'alpha_forest': [199/255, 255/255, 140/255]
 };
 
 // MC-accurate foliage (leaf) tint colors per biome
@@ -84,7 +85,8 @@ const BIOME_FOLIAGE_COLORS = {
     'ocean': [113/255, 168/255, 48/255],
     'swamp': [106/255, 112/255, 57/255],
     'jungle': [48/255, 150/255, 22/255],
-    'extreme_hills': [0x6D/255, 0xA3/255, 0x6B/255]
+    'extreme_hills': [0x6D/255, 0xA3/255, 0x6B/255],
+    'alpha_forest': [199/255, 255/255, 140/255]
 };
 
 // MC-accurate water tint colors per biome

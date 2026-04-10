@@ -26,7 +26,7 @@ function _loadDirtTile() {
     if (_dirtTileImg) return;
     _dirtTileImg = new Image();
     _dirtTileImg.crossOrigin = 'anonymous';
-    _dirtTileImg.src = 'textures/terrain.png';
+    _dirtTileImg.src = 'textures/terrain.png?v=' + (typeof ASSET_VERSION !== 'undefined' ? ASSET_VERSION : Date.now());
     _dirtTileImg.onload = () => {
         if (!document.getElementById('main-menu').classList.contains('hidden')) drawDirtBg('dirt-bg');
         if (!document.getElementById('create-world').classList.contains('hidden')) drawDirtBg('dirt-bg-2');
@@ -90,6 +90,9 @@ var worldOptions = {
     gamemode: 'survival',
     hostilespawns: true,
     xpenabled: true,
+    hungerEnabled: true,
+    monolithsEnabled: false,
+    monolithChance: 0.1,
     aetherEnabled: true
 };
 
@@ -101,7 +104,7 @@ var worldSizeChunksMobile = [16, 32];
 function _getWorldSizeLabels() { return (window._deviceChoice === 'mobile') ? worldSizeLabelsMobile : worldSizeLabelsDesktop; }
 function _getWorldSizeChunks() { return (window._deviceChoice === 'mobile') ? worldSizeChunksMobile : worldSizeChunksDesktop; }
 
-const worldTypeLabels = ['Default', 'Superflat', 'Amplified', 'Single Biome'];
+const worldTypeLabels = ['Default', 'Superflat', 'Amplified', 'Single Biome', 'Alpha'];
 const singleBiomeList = ['plains', 'forest', 'desert', 'tundra', 'taiga', 'rainforest', 'swamp', 'jungle', 'extreme_hills'];
 const singleBiomeLabels = ['Plains', 'Forest', 'Desert', 'Tundra', 'Taiga', 'Rainforest', 'Swamp', 'Jungle', 'Extreme Hills'];
 
@@ -114,15 +117,21 @@ function toggleOption(key) {
         worldOptions.gamemode = worldOptions.gamemode === 'survival' ? 'creative' : 'survival';
         document.getElementById('opt-gamemode').textContent = worldOptions.gamemode === 'survival' ? 'Survival' : 'Creative';
     } else if (key === 'worldtype') {
-        worldOptions.worldtype = (worldOptions.worldtype + 1) % 4;
+        worldOptions.worldtype = (worldOptions.worldtype + 1) % 5;
         document.getElementById('opt-worldtype').textContent = worldTypeLabels[worldOptions.worldtype];
         const biomeGroup = document.getElementById('single-biome-group');
         if (biomeGroup) biomeGroup.style.display = worldOptions.worldtype === 3 ? 'block' : 'none';
         if (typeof _applySuperflatGreyout === 'function') _applySuperflatGreyout();
+        // v310: Alpha preset disables Advanced Settings button
+        const advBtn = document.getElementById('btn-advanced-settings');
+        if (advBtn) {
+            if (worldOptions.worldtype === 4) advBtn.classList.add('disabled');
+            else advBtn.classList.remove('disabled');
+        }
     } else if (key === 'singlebiome') {
         worldOptions.singleBiome = (worldOptions.singleBiome + 1) % singleBiomeList.length;
         document.getElementById('opt-singlebiome').textContent = singleBiomeLabels[worldOptions.singleBiome];
-    } else if (key === 'hostilespawns' || key === 'xpenabled' || key === 'structures' || key === 'caves' || key === 'lava' || key === 'aetherEnabled') {
+    } else if (key === 'hostilespawns' || key === 'xpenabled' || key === 'hungerEnabled' || key === 'monolithsEnabled' || key === 'structures' || key === 'caves' || key === 'lava' || key === 'aetherEnabled') {
         worldOptions[key] = !worldOptions[key];
         var el = document.getElementById('opt-' + key);
         if (el) el.textContent = worldOptions[key] ? 'ON' : 'OFF';
@@ -166,6 +175,8 @@ function showCreateWorld() {
 }
 
 function showAdvancedSettings() {
+    // v310: Alpha preset locks advanced settings (all values forced by preset)
+    if (worldOptions.worldtype === 4) return;
     document.getElementById('create-world').classList.add('hidden');
     var adv = document.getElementById('advanced-settings');
     adv.classList.remove('hidden');
@@ -317,6 +328,11 @@ let GEN_HOSTILE_CAP = 32;
 let GEN_HOSTILE_RATE = 100;
 let GEN_SPAWN_DIST = 32;
 let GEN_XP_ENABLED = true;
+let GEN_HUNGER_ENABLED = true;
+// v293: Alpha-style monoliths — random 2x2 chunk areas get lifted so their
+// bedrock block sits at sea level, leaving a void below.
+let GEN_MONOLITHS_ENABLED = false;
+let GEN_MONOLITH_CHANCE = 0.1; // percent 0-2, default 0.1 (rare)
 
 // Per-biome overrides (NEW) — percentage multipliers, 100 = default
 var GEN_BIOME_OVERRIDES = {};
@@ -402,6 +418,10 @@ async function startWorldCreation() {
     GEN_WORLD_TYPE = worldOptions.worldtype;
     GEN_SINGLE_BIOME = worldOptions.worldtype === 3 ? singleBiomeList[worldOptions.singleBiome] : '';
     GEN_SEA_LEVEL = _readSlider('sl-sealevel', 62);
+    {
+        const el = document.getElementById('sl-monolithchance');
+        GEN_MONOLITH_CHANCE = el ? parseFloat(el.value) : 0.1;
+    }
     GEN_TERRAIN_HEIGHT = _readSlider('sl-terrainheight', 80);
     GEN_CAVE_DENSITY = _readSlider('sl-cavedensity', 50);
     GEN_TREE_DENSITY = _readSlider('sl-treedensity', 100);
@@ -439,6 +459,9 @@ async function startWorldCreation() {
     GEN_HOSTILE_RATE = _readSlider('sl-hostilerate', 100);
     GEN_SPAWN_DIST = _readSlider('sl-spawndist', 32);
     GEN_XP_ENABLED = worldOptions.xpenabled;
+    GEN_HUNGER_ENABLED = worldOptions.hungerEnabled !== false;
+    GEN_MONOLITHS_ENABLED = worldOptions.monolithsEnabled === true;
+    GEN_MONOLITH_CHANCE = (typeof worldOptions.monolithChance === 'number') ? worldOptions.monolithChance : 0.1;
 
     // Per-biome overrides
     _readBiomeOverrides();
@@ -469,6 +492,16 @@ async function startWorldCreation() {
     if (GEN_WORLD_TYPE === 2) {
         GEN_TERRAIN_HEIGHT = Math.min(240, GEN_TERRAIN_HEIGHT * 2);
         GEN_VOLATILITY_MULT = Math.max(GEN_VOLATILITY_MULT, 200);
+    }
+    // Alpha preset override: slight smoothness bump, single alpha_forest
+    // biome, monoliths forced on, ravines disabled, hunger and XP off.
+    if (GEN_WORLD_TYPE === 4) {
+        GEN_SMOOTHNESS = Math.max(GEN_SMOOTHNESS, 130);
+        GEN_MONOLITHS_ENABLED = true;
+        GEN_MONOLITH_CHANCE = Math.max(GEN_MONOLITH_CHANCE, 0.2);
+        GEN_RAVINE_FREQUENCY = 0;
+        GEN_HUNGER_ENABLED = false;
+        GEN_XP_ENABLED = false;
     }
 
     // Apply mob settings to runtime globals

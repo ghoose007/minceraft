@@ -316,7 +316,8 @@ function movePlayer(dt) {
 
     const fluid = checkFluidLevel(player.x, player.y, player.z, player.height);
     const isSneaking = keys.ShiftLeft && !player.flying && isPlaying;
-    const isSprinting = (keys.ControlLeft || wDoubleTapped) && !isSneaking && keys.KeyW && isPlaying && gameMode === 'creative';
+    const _canSprint = (gameMode === 'creative') || (gameMode === 'survival' && typeof GEN_HUNGER_ENABLED !== 'undefined' && GEN_HUNGER_ENABLED && player.hunger >= 6);
+    const isSprinting = (keys.ControlLeft || wDoubleTapped) && !isSneaking && keys.KeyW && isPlaying && _canSprint;
     player.isSprinting = isSprinting; 
     
     player.height = isSneaking ? CROUCH_HEIGHT : NORMAL_HEIGHT;
@@ -348,6 +349,10 @@ function movePlayer(dt) {
     } else if (fluid.inLava) {
         speed = WALK_SPEED * 0.3;
         if (player.flying) player.flying = false;
+    }
+    // v288: slow player while eating (MC uses ~0.2x walk speed)
+    if (player.eatItemId && player.eatTimer > 0) {
+        speed *= 0.2;
     }
 
     // Soul Sand slowdown: check block under player's feet
@@ -447,6 +452,23 @@ function movePlayer(dt) {
         if (player.onGround && keys.Space && isPlaying) {
             player.vy = JUMP_FORCE;
             player.onGround = false;
+            // v291: MC sprint-jump horizontal boost. In MC, jumping while
+            // sprinting adds a one-shot horizontal velocity kick in the
+            // direction the player is facing (~0.2 blocks/tick = ~4 m/s in
+            // our units). This is what makes sprint-jumping in MC feel
+            // noticeably faster than sprint-running — without it, jumps
+            // slow you down because air acceleration is reduced.
+            if (player.isSprinting) {
+                const fx = -Math.sin(player.yaw);
+                const fz = -Math.cos(player.yaw);
+                const BOOST = 1.5;
+                player.vx += fx * BOOST;
+                player.vz += fz * BOOST;
+            }
+            // v284: jump exhaustion. Sprint jump = 0.2, regular jump = 0.05.
+            if (typeof window.addExhaustion === 'function') {
+                window.addExhaustion(player.isSprinting ? 0.2 : 0.05);
+            }
         }
     }
 
@@ -539,6 +561,16 @@ function movePlayer(dt) {
             player.z = oldZ;
             player.vx = 0;
             player.vz = 0;
+        }
+    }
+
+    // v284: sprint-movement exhaustion (0.1 per meter sprinted)
+    if (player.isSprinting && player.onGround) {
+        const _dxMoved = player.x - oldX;
+        const _dzMoved = player.z - oldZ;
+        const _moved = Math.sqrt(_dxMoved * _dxMoved + _dzMoved * _dzMoved);
+        if (_moved > 0.0001 && typeof window.addExhaustion === 'function') {
+            window.addExhaustion(0.1 * _moved);
         }
     }
 

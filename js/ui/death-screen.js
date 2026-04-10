@@ -217,6 +217,9 @@ window.respawnPlayer = function() {
     player._fireTimer = 0;
     player._fireDamageTimer = 0;
     player.health = player.maxHealth;
+    player.hunger = player.maxHunger || 20;
+    player.saturation = 5;
+    player.exhaustion = 0;
     player.vy = 0; player.vx = 0; player.vz = 0;
 
     // If in the nether or aether, switch back to overworld using the unified
@@ -352,6 +355,7 @@ window.respawnPlayer = function() {
 
     // Refresh UI
     if (typeof updateHealthUI === 'function') updateHealthUI();
+    if (typeof updateHungerUI === 'function') updateHungerUI();
     if (typeof buildUI === 'function') buildUI();
     if (typeof window.updateXPBarUI === 'function') window.updateXPBarUI();
 
@@ -368,6 +372,9 @@ window.respawnToMenu = function() {
     player._fireTimer = 0;
     player._fireDamageTimer = 0;
     player.health = player.maxHealth;
+    player.hunger = player.maxHunger || 20;
+    player.saturation = 5;
+    player.exhaustion = 0;
     if (typeof window.resetPlayerModel === 'function') window.resetPlayerModel();
     if (typeof window.updateFireEffects === 'function') window.updateFireEffects(false, 0);
     document.getElementById('ui-layer').classList.add('hidden');

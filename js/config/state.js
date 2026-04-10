@@ -268,7 +268,9 @@ const activeTNT = [];
 let gameMode = 'survival'; 
 
 const player = { x: 0, y: 15, z: 0, vx: 0, vy: 0, vz: 0, pitch: 0, yaw: 0, onGround: false, height: NORMAL_HEIGHT, eyeLevel: NORMAL_EYE_LEVEL, flying: false,
-    walkDist: 0, walkDistO: 0, bob: 0, oBob: 0, landingImpact: 0, isSprinting: false, health: 20, maxHealth: 20, highestY: 0 };
+    walkDist: 0, walkDistO: 0, bob: 0, oBob: 0, landingImpact: 0, isSprinting: false, health: 20, maxHealth: 20, highestY: 0,
+    hunger: 20, maxHunger: 20, saturation: 5, exhaustion: 0,
+    eatTimer: 0, eatItemId: 0, regenTimer: 0, hungerDamageTimer: 0, hungerTickTimer: 0 };
 
 const miningState = { isMining: false, x: 0, y: 0, z: 0, progress: 0, stage: -1, id: 0 };
 let breakingBox, breakingMat;

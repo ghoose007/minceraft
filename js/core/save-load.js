@@ -317,6 +317,9 @@ async function saveWorld(slot) {
             hostileRate: GEN_HOSTILE_RATE,
             spawnDist: GEN_SPAWN_DIST,
             xpEnabled: GEN_XP_ENABLED,
+            hungerEnabled: (typeof GEN_HUNGER_ENABLED !== 'undefined' ? GEN_HUNGER_ENABLED : true),
+            monolithsEnabled: (typeof GEN_MONOLITHS_ENABLED !== 'undefined' ? GEN_MONOLITHS_ENABLED : false),
+            monolithChance: (typeof GEN_MONOLITH_CHANCE !== 'undefined' ? GEN_MONOLITH_CHANCE : 0.1),
             aetherEnabled: (typeof GEN_AETHER_ENABLED !== 'undefined' ? GEN_AETHER_ENABLED : true),
             superflatLayers: (typeof GEN_SUPERFLAT_LAYERS !== 'undefined' ? GEN_SUPERFLAT_LAYERS : null),
             superflatPreset: (typeof GEN_SUPERFLAT_PRESET !== 'undefined' ? GEN_SUPERFLAT_PRESET : 'classic'),
@@ -330,6 +333,7 @@ async function saveWorld(slot) {
             x: player.x, y: player.y, z: player.z,
             yaw: player.yaw, pitch: player.pitch,
             health: player.health, maxHealth: player.maxHealth,
+            hunger: player.hunger, saturation: player.saturation, exhaustion: player.exhaustion,
             flying: player.flying,
             highestY: player.highestY
         },
@@ -444,6 +448,16 @@ async function loadWorldFromSlot(slot) {
         GEN_HOSTILE_RATE = data.genParams.hostileRate || 100;
         GEN_SPAWN_DIST = data.genParams.spawnDist || 32;
         GEN_XP_ENABLED = data.genParams.xpEnabled !== undefined ? data.genParams.xpEnabled : true;
+        if (typeof GEN_HUNGER_ENABLED !== 'undefined' || true) {
+            GEN_HUNGER_ENABLED = data.genParams.hungerEnabled !== undefined ? data.genParams.hungerEnabled : true;
+            if (typeof worldOptions !== 'undefined') worldOptions.hungerEnabled = GEN_HUNGER_ENABLED;
+        }
+        GEN_MONOLITHS_ENABLED = data.genParams.monolithsEnabled === true;
+        GEN_MONOLITH_CHANCE = (typeof data.genParams.monolithChance === 'number') ? data.genParams.monolithChance : 0.1;
+        if (typeof worldOptions !== 'undefined') {
+            worldOptions.monolithsEnabled = GEN_MONOLITHS_ENABLED;
+            worldOptions.monolithChance = GEN_MONOLITH_CHANCE;
+        }
         if (typeof GEN_AETHER_ENABLED !== 'undefined') {
             GEN_AETHER_ENABLED = data.genParams.aetherEnabled !== undefined ? data.genParams.aetherEnabled : true;
         }

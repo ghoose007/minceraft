@@ -55,10 +55,10 @@ window.spawnBlockDrops = function(targetId, x, y, z, val) {
         else dropId = 0;
     }
     
-    // Door: only bottom half drops the item
+    // Door: always drops one door item (was previously nullifying top-half
+    // drops, which meant breaking the top half yielded nothing — v278 fix)
     if (targetId === 149) {
-        const isTopHalf = (val >> 11) & 0x1;
-        if (isTopHalf) dropId = 0;
+        // dropId stays as the door item from BLOCK_DATA[149].dropId (151)
     }
 
     // Lapis Ore: drops 4-9 lapis lazuli (MC-accurate)
@@ -91,6 +91,8 @@ window.spawnBlockDrops = function(targetId, x, y, z, val) {
 
 // --- GLOBAL BLOCK BREAK FUNCTION ---
 window.breakBlock = function(x, y, z, canHarvest = true) {
+    // v284: mining exhaustion (0.005 per block broken)
+    if (typeof window.addExhaustion === 'function') window.addExhaustion(0.005);
     const val = getVoxel(x, y, z);
     const targetId = val & 0xFF;
     
@@ -126,6 +128,10 @@ window.breakBlock = function(x, y, z, canHarvest = true) {
         if ((otherVal & 0xFF) === 149) {
             setVoxel(x, otherY, z, 0);
             pendingBlockUpdates.push({x, y: otherY, z});
+            // v278: ensure the chunk containing the other half gets re-meshed
+            // so we don't leave a visible ghost half-door on mobile.
+            if (typeof updateChunks === 'function') updateChunks(x, otherY, z);
+            if (typeof queueNeighbors === 'function') queueNeighbors(x, otherY, z);
             triggerNeighborUpdates(x, otherY, z);
         }
     }

@@ -206,6 +206,28 @@ if (!document.getElementById('mc-3d-styles')) {
         }
         .damage-shake { animation: mc-damage-shake 0.3s ease-in-out; }
 
+        /* v288: individual heart regen shake — fires when health increases */
+        @keyframes heart-regen-shake {
+            0%   { transform: translate(0, 0); }
+            20%  { transform: translate(0, -2px); }
+            40%  { transform: translate(0, 2px); }
+            60%  { transform: translate(0, -2px); }
+            80%  { transform: translate(0, 1px); }
+            100% { transform: translate(0, 0); }
+        }
+        .heart.regen-shake { animation: heart-regen-shake 0.35s ease-in-out; }
+
+        /* v288: individual hunger shank drain shake — fires when hunger drops */
+        @keyframes hunger-drain-shake {
+            0%   { transform: translate(0, 0); }
+            20%  { transform: translate(0, 2px); }
+            40%  { transform: translate(0, -2px); }
+            60%  { transform: translate(0, 2px); }
+            80%  { transform: translate(0, -1px); }
+            100% { transform: translate(0, 0); }
+        }
+        .hunger.drain-shake { animation: hunger-drain-shake 0.35s ease-in-out; }
+
         .durability-bar {
             position: absolute;
             bottom: 7px;
@@ -218,20 +240,6 @@ if (!document.getElementById('mc-3d-styles')) {
             display: flex;
         }
         .durability-progress { height: 100%; transition: width 0.1s; }
-
-        /* Screen shake — applied to canvas so UI layout is unaffected */
-        @keyframes damage-screen-shake {
-            0%   { transform: translate(0, 0) rotate(0deg); }
-            15%  { transform: translate(-4px, 2px) rotate(-0.3deg); }
-            30%  { transform: translate(4px, -2px) rotate(0.3deg); }
-            50%  { transform: translate(-3px, 1px) rotate(-0.2deg); }
-            70%  { transform: translate(3px, -1px) rotate(0.2deg); }
-            85%  { transform: translate(-1px, 1px) rotate(0deg); }
-            100% { transform: translate(0, 0) rotate(0deg); }
-        }
-        html.damage-shake-screen {
-            animation: damage-screen-shake 0.28s cubic-bezier(.36,.07,.19,.97) both;
-        }
     `;
     document.head.appendChild(style);
 }
@@ -574,7 +582,7 @@ function createIconElement(id) {
 })();
 
 window.triggerDamageShake = function() {
-    // Health bar shake (existing system)
+    // Health bar shake (whole-bar shake preserved; v288 removed screen shake)
     const bar = document.getElementById('health-bar');
     if (bar) {
         bar.classList.remove('damage-shake');
@@ -582,24 +590,33 @@ window.triggerDamageShake = function() {
         bar.classList.add('damage-shake');
     }
 
-    // Screen shake — apply to the html element; html { overflow:hidden } clips the edges
-    const shakeEl = document.documentElement;
-    shakeEl.classList.remove('damage-shake-screen');
-    void shakeEl.offsetWidth;
-    shakeEl.classList.add('damage-shake-screen');
-    clearTimeout(window._shakeCleanupTimer);
-    window._shakeCleanupTimer = setTimeout(() => {
-        shakeEl.classList.remove('damage-shake-screen');
-    }, 300);
-
     // Play damage sound
     if (typeof window.playDamageSound === 'function') window.playDamageSound();
 };
 
+// v288: track previous values to detect regen/drain for individual icon shake
+let _prevHealthForShake = -1;
+let _prevHungerForShake = -1;
+// v288: track last rendered values to avoid rebuilding the DOM every frame.
+// The rebuild was wiping animated shake classes before they could play.
+let _lastRenderedHealth = -1;
+let _lastRenderedHunger = -1;
+let _lastRenderedGamemode = '';
+let _lastRenderedHungerEnabled = null;
+
 function updateHealthUI() {
     const bar = document.getElementById('health-bar');
     if (!bar) return;
-    if (typeof gameMode !== 'undefined' && gameMode !== 'survival') { bar.style.display = 'none'; return; }
+    if (typeof gameMode !== 'undefined' && gameMode !== 'survival') {
+        bar.style.display = 'none';
+        _prevHealthForShake = player.health;
+        _lastRenderedHealth = -1;
+        return;
+    }
+    // v288: early-exit if nothing changed to avoid wiping in-flight shake animations
+    if (player.health === _lastRenderedHealth && bar.children.length > 0) {
+        return;
+    }
     
     bar.style.display = 'flex'; bar.innerHTML = '';
     
@@ -607,6 +624,7 @@ function updateHealthUI() {
     const baseHearts = 10; // Standard row = 10 hearts
     const bonusHearts = Math.max(0, totalHearts - baseHearts);
     const hasBonus = bonusHearts > 0;
+    const isRegen = (_prevHealthForShake >= 0 && player.health > _prevHealthForShake);
     
     // Build hearts array: full, half, empty based on current health
     function buildRow(startHeart, numHearts, health, maxForRow) {
@@ -617,12 +635,20 @@ function updateHealthUI() {
             h.className = 'heart';
             const heartIdx = startHeart + i;
             const healthAtHeart = heartIdx * 2; // health value at start of this heart
+            let isFilled = false;
             if (player.health >= healthAtHeart + 2) {
                 h.classList.add('full');
+                isFilled = true;
             } else if (player.health >= healthAtHeart + 1) {
                 h.classList.add('half');
+                isFilled = true;
             } else {
                 h.classList.add('empty');
+            }
+            // v288: apply regen-shake synchronously with staggered delay
+            if (isRegen && isFilled) {
+                h.style.animationDelay = (heartIdx * 30) + 'ms';
+                h.classList.add('regen-shake');
             }
             row.appendChild(h);
         }
@@ -644,7 +670,72 @@ function updateHealthUI() {
         const baseBottom = 76; // default armor bar bottom
         armorBar.style.bottom = (baseBottom + (hasBonus ? rowHeight : 0)) + 'px';
     }
+    _prevHealthForShake = player.health;
+    _lastRenderedHealth = player.health;
 }
+
+// v284: Hunger bar — 10 icons mirroring the health bar on the right side.
+// Slot 0 (leftmost) = highest hunger values (19-20). Drains left to right.
+function updateHungerUI() {
+    const bar = document.getElementById('hunger-bar');
+    if (!bar) return;
+    // Hide the bar when not in survival OR hunger disabled
+    const survMode = (typeof gameMode !== 'undefined' && gameMode === 'survival');
+    const hungerOn = (typeof GEN_HUNGER_ENABLED !== 'undefined' && GEN_HUNGER_ENABLED);
+    if (!survMode || !hungerOn) {
+        bar.style.display = 'none';
+        _prevHungerForShake = player.hunger;
+        _lastRenderedHunger = -1;
+        _lastRenderedGamemode = survMode ? 'survival' : 'creative';
+        _lastRenderedHungerEnabled = hungerOn;
+        return;
+    }
+    // v288: early-exit if nothing changed. Otherwise the full DOM rebuild
+    // every frame was wiping the in-flight shake animation classes before
+    // they had time to play.
+    const hunger = player.hunger || 0;
+    if (hunger === _lastRenderedHunger &&
+        _lastRenderedGamemode === 'survival' &&
+        _lastRenderedHungerEnabled === hungerOn &&
+        bar.children.length > 0) {
+        return;
+    }
+    bar.style.display = 'flex';
+    bar.innerHTML = '';
+    const row = document.createElement('div');
+    row.className = 'health-row'; // reuse row layout
+    const isDrain = (_prevHungerForShake >= 0 && hunger < _prevHungerForShake);
+    for (let i = 0; i < 10; i++) {
+        const h = document.createElement('div');
+        h.className = 'hunger';
+        // Slot 0 (leftmost) = 19-20, slot 9 (rightmost) = 1-2
+        const hungerAt = (9 - i) * 2;
+        let isFilled = false;
+        if (hunger >= hungerAt + 2) {
+            h.classList.add('full');
+            isFilled = true;
+        } else if (hunger >= hungerAt + 1) {
+            h.classList.add('half');
+            isFilled = true;
+        } else {
+            h.classList.add('empty');
+        }
+        // v288: apply drain-shake synchronously with a staggered animation-delay.
+        // The class is added BEFORE the element is appended to the DOM so the
+        // animation starts immediately when the browser paints the new node.
+        if (isDrain && isFilled) {
+            h.style.animationDelay = (i * 25) + 'ms';
+            h.classList.add('drain-shake');
+        }
+        row.appendChild(h);
+    }
+    bar.appendChild(row);
+    _prevHungerForShake = hunger;
+    _lastRenderedHunger = hunger;
+    _lastRenderedGamemode = 'survival';
+    _lastRenderedHungerEnabled = hungerOn;
+}
+window.updateHungerUI = updateHungerUI;
 
 let handTexture = null;
 let handMaterial = null;

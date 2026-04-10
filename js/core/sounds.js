@@ -136,6 +136,9 @@
         // Load extra unique audio files
         const extraSounds = [
             { key: 'burp', file: 'burp.ogg' },
+            { key: 'eat_0', file: 'eat_0.ogg' },
+            { key: 'eat_1', file: 'eat_1.ogg' },
+            { key: 'eat_2', file: 'eat_2.ogg' },
             { key: 'tool_break', file: 'tool_break.ogg' },
             { key: 'lava_pop', file: 'lavapop.ogg' },
             { key: 'fire_ambient', file: 'fire_burn.ogg' },
@@ -858,6 +861,12 @@
     window.playNamedSoundAt = playNamedSoundAt;
     window.playNamedSound = playNamedSound;
     window.playBurpSound = () => { if (_buffers['burp']) playNamedSound('burp', 0.5, 0.9, 1.1); };
+    window.playEatSound = () => {
+        // v286: pick a random eat sound. MC plays these rapidly during eating.
+        const keys = ['eat_0', 'eat_1', 'eat_2'];
+        const pick = keys[Math.floor(Math.random() * keys.length)];
+        if (_buffers[pick]) playNamedSound(pick, 0.5, 0.9, 1.1);
+    };
     window.playFlintAndSteelSound = (wx, wy, wz) => playNamedSoundAt('flint_and_steel', 0.6, 0.9, 1.1, wx + 0.5, wy + 0.5, wz + 0.5);
 
     window.playFuseSound = function(wx, wy, wz) {

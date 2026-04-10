@@ -790,10 +790,13 @@ function _generateNormalChunk(cx, cz) {
     placeChunkBlobs(49, 8,  4,  8,  1, 15);
     placeChunkBlobs(50, 1,  3,  6,  1, 31);
     placeChunkBlobs(9,  1,  2,  8,  1, 15);
-    placeChunkBlobs(10, 3, 15, 32, 1, 80);
-    placeChunkBlobs(11, 3, 15, 32, 1, 80);
-    placeChunkBlobs(12, 3, 15, 32, 1, 80);
-    placeChunkBlobs(5,  4, 15, 32, 1, 80);
+    // v297: stone variants spawn as larger blobs (was 3/15/32, now 5/20/48)
+    // v297: dirt patches in stone, similar size to gravel patches
+    placeChunkBlobs(10, 5, 20, 48, 1, 80); // Diorite
+    placeChunkBlobs(11, 5, 20, 48, 1, 80); // Granite
+    placeChunkBlobs(12, 5, 20, 48, 1, 80); // Andesite
+    placeChunkBlobs(5,  4, 15, 32, 1, 80); // Gravel
+    placeChunkBlobs(2,  4, 20, 40, 1, 80); // Dirt patches in stone
         
     // PHASE 6: Underground springs
     const springCount = 2;
@@ -829,6 +832,7 @@ function _generateNormalChunk(cx, cz) {
                 let treeChance = 0;
                 if (biome === 'rainforest') treeChance = 0.025;
                 else if (biome === 'forest') treeChance = 0.012;
+                else if (biome === 'alpha_forest') treeChance = 0.012;
                 else if (biome === 'taiga') treeChance = 0.02;
                 else if (biome === 'plains') treeChance = 0.0005;
                 else if (biome === 'tundra') treeChance = 0.001;
@@ -1057,7 +1061,7 @@ function _generateNormalChunk(cx, cz) {
                                 }
                             }
                         }
-                    } else if ((biome === 'forest' || biome === 'rainforest' || biome === 'plains' || biome === 'extreme_hills') && surfId === 1) {
+                    } else if ((biome === 'forest' || biome === 'alpha_forest' || biome === 'rainforest' || biome === 'plains' || biome === 'extreme_hills') && surfId === 1) {
                         let logId = 13, leafId = 14, isBirch = false;
                         
                         if (biome === 'forest' && seededRandom() < 0.3) {
@@ -1356,6 +1360,10 @@ function _generateNormalChunk(cx, cz) {
                         else if (r < 0.32 * folMult) setVoxel(x, y+1, z, 23);
                         else if (r < 0.33 * folMult) setVoxel(x, y+1, z, 24);
                         else if (r < 0.35 * folMult) setVoxel(x, y+1, z, 53);
+                    } else if (biome === 'alpha_forest' && surfId === 1) {
+                        // v310: Alpha forest has only flowers, no tall grass or bushes
+                        if (r < 0.017 * folMult) setVoxel(x, y+1, z, 23); // Rose
+                        else if (r < 0.020 * folMult) setVoxel(x, y+1, z, 53); // Dandelion
                     } else if ((biome === 'forest' || biome === 'rainforest') && surfId === 1) {
                         if (r < 0.15 * folMult) setVoxel(x, y+1, z, 16);
                         else if (r < 0.17 * folMult) setVoxel(x, y+1, z, 23);
@@ -1565,6 +1573,59 @@ function _generateNormalChunk(cx, cz) {
                             spawnMob(mobType, dx + 0.5, py + 1.0, dz + 0.5);
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // v293: Alpha-style monolith post-pass. Shifts the entire chunk up so
+    // the bedrock block sits at sea level, leaving a void under the terrain.
+    _applyMonolithLift(cx, cz);
+}
+
+// v293: Alpha Minecraft-style monoliths. A 2x2 chunk region seeded roll
+// determines whether all 4 chunks in that region get lifted so their
+// bedrock moves from Y=0 up to Y=GEN_SEA_LEVEL. Everything above is
+// shifted up by the same amount, creating a sheer cliff around the
+// region and an open void below. Only applies to the normal overworld
+// generator (not superflat, nether, or aether).
+function _applyMonolithLift(cx, cz) {
+    if (typeof GEN_MONOLITHS_ENABLED === 'undefined' || !GEN_MONOLITHS_ENABLED) return;
+    // Skip for superflat
+    if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 1) return;
+    // Region is 2x2 chunks. All four chunks in the same region roll identically.
+    const rcx = cx >> 1;
+    const rcz = cz >> 1;
+    const rng = _chunkSeededRandom(rcx * 9173 + 4421, rcz * 7841 + 6287);
+    const chancePct = (typeof GEN_MONOLITH_CHANCE === 'number') ? GEN_MONOLITH_CHANCE : 0.1;
+    if (rng() * 100 >= chancePct) return;
+    const lift = (typeof GEN_SEA_LEVEL === 'number') ? (GEN_SEA_LEVEL | 0) : 62;
+    if (lift <= 0) return;
+    const chunk = _getOrCreateChunkFast(cx, cz);
+    if (!chunk) return;
+    // In-place shift upward. Walk ly from top to bottom so source rows
+    // haven't been overwritten by the time we read them. Indexing:
+    // i = lx + (ly << 4) + (lz << 12), stride Y = 16.
+    for (let ly = WORLD_HEIGHT - 1; ly >= 0; ly--) {
+        const srcY = ly - lift;
+        if (srcY >= 0) {
+            // Copy the entire (lx, lz) slab at srcY → ly
+            const destBaseY = ly << 4;
+            const srcBaseY = srcY << 4;
+            for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+                const destBaseZ = destBaseY + (lz << 12);
+                const srcBaseZ = srcBaseY + (lz << 12);
+                for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+                    chunk[lx + destBaseZ] = chunk[lx + srcBaseZ];
+                }
+            }
+        } else {
+            // Below where any source exists — fill with air
+            const destBaseY = ly << 4;
+            for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+                const destBaseZ = destBaseY + (lz << 12);
+                for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+                    chunk[lx + destBaseZ] = 0;
                 }
             }
         }

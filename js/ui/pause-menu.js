@@ -276,6 +276,8 @@ window.showPauseScreen = function(screenId) {
 // PLAYER DAMAGE HELPER (applies difficulty multiplier)
 // ==========================================
 window.applyPlayerDamage = function(amount) {
+    // v284: damage exhaustion (0.1 per hit)
+    if (typeof window.addExhaustion === 'function') window.addExhaustion(0.1);
     if (typeof gameMode !== 'undefined' && gameMode !== 'survival') return;
     if (typeof player === 'undefined' || !player || player._dead) return;
 

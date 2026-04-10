@@ -54,7 +54,7 @@ var generatedChunksArr = null;
 var biomeMap = null;
 
 // Biome ID → name lookup (sent in init)
-var BIOME_NAMES_LIST = ['desert', 'rainforest', 'tundra', 'taiga', 'plains', 'forest', 'ocean', 'swamp', 'jungle', 'extreme_hills', 'aether_skyforest', 'aether_void', 'aether_lake'];
+var BIOME_NAMES_LIST = ['desert', 'rainforest', 'tundra', 'taiga', 'plains', 'forest', 'ocean', 'swamp', 'jungle', 'extreme_hills', 'aether_skyforest', 'aether_void', 'aether_lake', 'alpha_forest'];
 
 // Stubs for the THREE.js assembly path — chunk-mesh.js declares them but we never call assembly
 const chunkMeshes = new Map();
@@ -211,6 +211,7 @@ const BIOME_COLORS = {
     'swamp': [106/255, 112/255, 57/255],
     'jungle': [89/255, 174/255, 48/255],
     'extreme_hills': [0x8A/255, 0xB6/255, 0x89/255],
+    'alpha_forest': [199/255, 255/255, 140/255],
     // Aether — values must match aether.js BIOME_COLORS assignments
     'aether_skyforest': [0.65, 0.82, 0.55],
     'aether_void':      [0.7, 0.85, 0.95],
@@ -227,6 +228,7 @@ const BIOME_FOLIAGE_COLORS = {
     'swamp': [106/255, 112/255, 57/255],
     'jungle': [48/255, 150/255, 22/255],
     'extreme_hills': [0x6D/255, 0xA3/255, 0x6B/255],
+    'alpha_forest': [199/255, 255/255, 140/255],
     // Aether — golden-amber leaves
     'aether_skyforest': [0.80, 0.72, 0.38],
     'aether_void':      [0.80, 0.72, 0.38],

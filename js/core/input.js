@@ -31,18 +31,21 @@
         swingAnimation = 1.0;
 
         // --- EAT FOOD INTERACTION (Independent of block targeting) ---
-        if (e.button === 2 && (currentBuildBlock === 115 || currentBuildBlock === 122 || currentBuildBlock === 123 || currentBuildBlock === 134) && uiState === 'PLAYING') {
-            
-            let healAmount = 0;
-            if (currentBuildBlock === 115) healAmount = 4; // Apple (2 hearts)
-            if (currentBuildBlock === 122) healAmount = 3; // Raw Pork (1.5 hearts)
-            if (currentBuildBlock === 123) healAmount = 8; // Cooked Pork (4 hearts)
-            if (currentBuildBlock === 134) healAmount = 5; // Bread (2.5 hearts)
-
-            if (player.health < player.maxHealth) {
-                player.health = Math.min(player.maxHealth, player.health + healAmount); 
-                if (typeof updateHealthUI === 'function') updateHealthUI();
-                
+        if (e.button === 2 && typeof window.isFoodItem === 'function' && window.isFoodItem(currentBuildBlock) && uiState === 'PLAYING') {
+            const hungerOn = (typeof GEN_HUNGER_ENABLED !== 'undefined' && GEN_HUNGER_ENABLED);
+            if (hungerOn && gameMode === 'survival') {
+                if (player.hunger < (player.maxHunger || 20)) {
+                    window.isRightMouseHeld = true;
+                    player.eatItemId = currentBuildBlock;
+                    player.eatTimer = 0;
+                    player.eatSoundTimer = 0;
+                }
+                return;
+            }
+            // Legacy instant eat
+            const didEat = typeof window.applyFoodEffect === 'function' && window.applyFoodEffect(currentBuildBlock);
+            if (didEat) {
+                if (typeof window.playBurpSound === 'function') window.playBurpSound();
                 if (typeof gameMode !== 'undefined' && gameMode === 'survival') {
                     inventory[activeSlot].count--;
                     if (inventory[activeSlot].count <= 0) {
@@ -54,7 +57,7 @@
                 }
                 swingAnimation = 1.0;
             }
-            return; // Handled item use, don't proceed to block placement logic
+            return;
         }
 
         const target = raycastVoxel();
@@ -103,6 +106,10 @@
                 miningState.progress = 0;
                 miningState.stage = -1;
                 if (typeof breakingBox !== 'undefined') {
+                    // v280.1: rebuild overlay geometry for the target block
+                    if (typeof window.rebuildBreakingBoxForBlock === 'function') {
+                        window.rebuildBreakingBoxForBlock(targetId, getVoxel(x, y, z), x, y, z);
+                    }
                     breakingBox.position.set(x + 0.5, y + 0.5, z + 0.5);
                     breakingBox.visible = true;
                 }
@@ -557,34 +564,41 @@
                     }
                 }
                 
-                // Hinge: detect adjacent same-dir door for double doors (v275)
+                // Hinge: detect adjacent same-dir door for double doors
+                // (v275/v278 — v278 also updates existing door's hinge)
                 let hinge = 0;
+                let updateNeighborDoor = null;
                 {
                     function _isSameDirDoor(cx, cy, cz, wantDir) {
                         const v = getVoxel(cx, cy, cz);
                         if ((v & 0xFF) !== 149) return false;
                         return ((v >> 8) & 0x3) === wantDir;
                     }
+                    function _hingeForPos(dir, isLowerCoord) {
+                        if (dir === 0 || dir === 1) return isLowerCoord ? 0 : 1;
+                        return isLowerCoord ? 1 : 0;
+                    }
+                    let neighborCoord = null;
                     if (doorDir === 0 || doorDir === 2) {
-                        const negX = _isSameDirDoor(px - 1, py, pz, doorDir);
-                        const posX = _isSameDirDoor(px + 1, py, pz, doorDir);
-                        if (doorDir === 0) {
-                            if (negX) hinge = 1;
-                            else if (posX) hinge = 0;
-                        } else {
-                            if (negX) hinge = 0;
-                            else if (posX) hinge = 1;
+                        if (_isSameDirDoor(px - 1, py, pz, doorDir)) {
+                            neighborCoord = { x: px - 1, y: py, z: pz, neighborIsLower: true };
+                        } else if (_isSameDirDoor(px + 1, py, pz, doorDir)) {
+                            neighborCoord = { x: px + 1, y: py, z: pz, neighborIsLower: false };
                         }
                     } else {
-                        const negZ = _isSameDirDoor(px, py, pz - 1, doorDir);
-                        const posZ = _isSameDirDoor(px, py, pz + 1, doorDir);
-                        if (doorDir === 1) {
-                            if (negZ) hinge = 1;
-                            else if (posZ) hinge = 0;
-                        } else {
-                            if (negZ) hinge = 0;
-                            else if (posZ) hinge = 1;
+                        if (_isSameDirDoor(px, py, pz - 1, doorDir)) {
+                            neighborCoord = { x: px, y: py, z: pz - 1, neighborIsLower: true };
+                        } else if (_isSameDirDoor(px, py, pz + 1, doorDir)) {
+                            neighborCoord = { x: px, y: py, z: pz + 1, neighborIsLower: false };
                         }
+                    }
+                    if (neighborCoord) {
+                        hinge = _hingeForPos(doorDir, !neighborCoord.neighborIsLower);
+                        const neighborHinge = _hingeForPos(doorDir, neighborCoord.neighborIsLower);
+                        updateNeighborDoor = {
+                            x: neighborCoord.x, y: neighborCoord.y, z: neighborCoord.z,
+                            newHinge: neighborHinge
+                        };
                     }
                 }
                 
@@ -598,6 +612,32 @@
                 if (typeof updateChunks === 'function') updateChunks(px, py + 1, pz);
                 pendingBlockUpdates.push({x: px, y: py, z: pz});
                 pendingBlockUpdates.push({x: px, y: py + 1, z: pz});
+                
+                // v278: rewrite neighbor door halves with corrected hinge
+                if (updateNeighborDoor) {
+                    const nX = updateNeighborDoor.x;
+                    const nY = updateNeighborDoor.y;
+                    const nZ = updateNeighborDoor.z;
+                    const newH = updateNeighborDoor.newHinge;
+                    const nBotVal = getVoxel(nX, nY, nZ);
+                    const nTopVal = getVoxel(nX, nY + 1, nZ);
+                    if ((nBotVal & 0xFF) === 149) {
+                        const nDir = (nBotVal >> 8) & 0x3;
+                        const nOpen = (nBotVal >> 10) & 0x1;
+                        const nBot = nDir | (nOpen << 2) | (0 << 3) | (newH << 4);
+                        setVoxel(nX, nY, nZ, 149, nBot);
+                        pendingBlockUpdates.push({x: nX, y: nY, z: nZ});
+                        if (typeof updateChunks === 'function') updateChunks(nX, nY, nZ);
+                    }
+                    if ((nTopVal & 0xFF) === 149) {
+                        const nTDir = (nTopVal >> 8) & 0x3;
+                        const nTOpen = (nTopVal >> 10) & 0x1;
+                        const nTop = nTDir | (nTOpen << 2) | (1 << 3) | (newH << 4);
+                        setVoxel(nX, nY + 1, nZ, 149, nTop);
+                        pendingBlockUpdates.push({x: nX, y: nY + 1, z: nZ});
+                        if (typeof updateChunks === 'function') updateChunks(nX, nY + 1, nZ);
+                    }
+                }
                 
                 if (typeof window._soundPlaceBlock === 'function') window._soundPlaceBlock(149);
                 
@@ -734,6 +774,15 @@
             window.isLeftMouseHeld = false; 
             if (typeof miningState !== 'undefined') miningState.isMining = false;
             if (typeof breakingBox !== 'undefined' && breakingBox) breakingBox.visible = false;
+        }
+        if (e.button === 2) {
+            // v286: cancel in-progress eating on right release
+            window.isRightMouseHeld = false;
+            if (player.eatItemId) {
+                player.eatItemId = 0;
+                player.eatTimer = 0;
+                player.eatSoundTimer = 0;
+            }
         }
     });
     

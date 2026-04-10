@@ -749,8 +749,10 @@ window.switchDimension = async function(forceDimension) {
 // Find a safe Y spawn in the nether (air pocket near the given X,Z)
 function _findNetherSpawnY(x, z) {
     const fx = Math.floor(x), fz = Math.floor(z);
-    // Search within valid nether interior (above bedrock floor at y=0, below ceiling at ~y=123)
-    const minY = 2;
+    // v311: Enforce minimum Y of 35 — below that the nether is dense
+    // netherrack and lava, and the first air pocket is almost always
+    // a tiny cave surrounded by lava, trapping the player.
+    const minY = 35;
     const maxY = NETHER_HEIGHT - 6; // Stay below the ceiling bedrock
     
     for (let y = minY; y <= maxY; y++) {
@@ -761,8 +763,8 @@ function _findNetherSpawnY(x, z) {
             return y;
         }
     }
-    // Fallback: carve out a space in the middle of valid range
-    const fy = Math.min(40, maxY - 5);
+    // Fallback: carve out a space at a safe mid-height
+    const fy = Math.min(60, maxY - 5);
     for (let dy = 0; dy < 3; dy++) {
         setVoxel(fx, fy + dy, fz, 0);
     }
@@ -776,7 +778,8 @@ function _spawnNetherPortal(nx, nz) {
     const pz = Math.floor(nz);
     const rawY = _findNetherSpawnY(px, pz);
     // Ensure the full portal frame (5 blocks tall) fits within nether bounds
-    const py = Math.max(2, Math.min(NETHER_HEIGHT - 8, rawY));
+    // and respects the 35+ minimum spawn height
+    const py = Math.max(35, Math.min(NETHER_HEIGHT - 8, rawY));
 
     const frameMinX = px;
     const frameMaxX = px + 3;

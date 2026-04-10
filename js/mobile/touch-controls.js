@@ -177,6 +177,19 @@ function _buildMobileUI() {
             right: 90px;
         }
 
+        /* v290: Mobile eat button — shown only when holding a food item in
+           survival with hunger enabled and hunger < max. Positioned above
+           the sneak button so the thumb can reach it naturally. */
+        #mobile-btn-eat {
+            width: 56px; height: 56px;
+            border-radius: 50%;
+            font-size: 14px;
+            position: absolute;
+            bottom: 150px;
+            right: 90px;
+            display: none;
+        }
+
         /* Pause button */
         #mobile-btn-pause {
             position: absolute;
@@ -457,6 +470,13 @@ function _buildMobileUI() {
     sneakBtn.innerHTML = '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
     container.appendChild(sneakBtn);
 
+    // v290: Mobile eat button (hidden by default; shown via updateMobileEatBtnVisibility)
+    const eatBtn = document.createElement('div');
+    eatBtn.id = 'mobile-btn-eat';
+    eatBtn.className = 'mobile-btn';
+    eatBtn.innerHTML = '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7 3 13 6 13s6-6 6-13z"/><path d="M10 2c1 2 2 4 2 6"/></svg>';
+    container.appendChild(eatBtn);
+
     // Camera perspective toggle
     const camBtn = document.createElement('div');
     camBtn.id = 'mobile-btn-camera';
@@ -612,6 +632,59 @@ function _bindTouchEvents() {
         keys.ShiftLeft = false;
         sneakBtn.classList.remove('active');
     });
+
+    // v290: Eat button — hold to eat, release to cancel. Mirrors the
+    // desktop right-mouse hold-to-eat flow exactly: sets the same player
+    // state so the existing game-loop eat tick handles progression.
+    const eatBtnEl = document.getElementById('mobile-btn-eat');
+    if (eatBtnEl) {
+        eatBtnEl.addEventListener('touchstart', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            if (uiState !== 'PLAYING') return;
+            if (gameMode !== 'survival') return;
+            if (typeof GEN_HUNGER_ENABLED === 'undefined' || !GEN_HUNGER_ENABLED) return;
+            if (typeof window.isFoodItem !== 'function' || !window.isFoodItem(currentBuildBlock)) return;
+            if (player.hunger >= (player.maxHunger || 20)) return;
+            window.isRightMouseHeld = true;
+            player.eatItemId = currentBuildBlock;
+            player.eatTimer = 0;
+            player.eatSoundTimer = 0;
+            eatBtnEl.classList.add('active');
+        });
+        eatBtnEl.addEventListener('touchend', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            window.isRightMouseHeld = false;
+            if (player.eatItemId) {
+                player.eatItemId = 0;
+                player.eatTimer = 0;
+                player.eatSoundTimer = 0;
+            }
+            eatBtnEl.classList.remove('active');
+        });
+        eatBtnEl.addEventListener('touchcancel', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            window.isRightMouseHeld = false;
+            if (player.eatItemId) {
+                player.eatItemId = 0;
+                player.eatTimer = 0;
+                player.eatSoundTimer = 0;
+            }
+            eatBtnEl.classList.remove('active');
+        });
+    }
+    // Expose a visibility updater so the game loop can show/hide the
+    // button as currentBuildBlock and hunger change.
+    window.updateMobileEatBtnVisibility = function() {
+        const el = document.getElementById('mobile-btn-eat');
+        if (!el) return;
+        const hungerOn = (typeof GEN_HUNGER_ENABLED !== 'undefined' && GEN_HUNGER_ENABLED);
+        const canEat = (typeof window.isFoodItem === 'function' && window.isFoodItem(currentBuildBlock))
+                    && gameMode === 'survival'
+                    && hungerOn
+                    && uiState === 'PLAYING'
+                    && player.hunger < (player.maxHunger || 20);
+        el.style.display = canEat ? 'flex' : 'none';
+    };
 
     // Pause
     pauseBtn.addEventListener('touchstart', (e) => {
@@ -1107,18 +1180,18 @@ function _handleTap(screenX, screenY) {
     const interactId = getVoxel(target.hit[0], target.hit[1], target.hit[2]) & 0xFF;
 
     // --- Food ---
-    if ((currentBuildBlock === 115 || currentBuildBlock === 122 || currentBuildBlock === 123 ||
-         currentBuildBlock === 134 || currentBuildBlock === 187 || currentBuildBlock === 188)) {
-        let healAmount = 0;
-        if (currentBuildBlock === 115) healAmount = 4;
-        if (currentBuildBlock === 122) healAmount = 3;
-        if (currentBuildBlock === 123) healAmount = 8;
-        if (currentBuildBlock === 134) healAmount = 5;
-        if (currentBuildBlock === 187) healAmount = 3;
-        if (currentBuildBlock === 188) healAmount = 8;
-        if (healAmount > 0 && player.health < player.maxHealth) {
-            player.health = Math.min(player.maxHealth, player.health + healAmount);
-            if (typeof updateHealthUI === 'function') updateHealthUI();
+    if (typeof window.isFoodItem === 'function' && window.isFoodItem(currentBuildBlock)) {
+        const hungerOn = (typeof GEN_HUNGER_ENABLED !== 'undefined' && GEN_HUNGER_ENABLED);
+        if (hungerOn && gameMode === 'survival') {
+            // v290: eating is handled by the dedicated mobile eat button
+            // (hold to eat). Swallow the tap so it doesn't become a block
+            // placement attempt.
+            return;
+        }
+        // Legacy instant eat (hunger disabled or creative)
+        const didEat = typeof window.applyFoodEffect === 'function' && window.applyFoodEffect(currentBuildBlock);
+        if (didEat) {
+            if (typeof window.playBurpSound === 'function') window.playBurpSound();
             if (gameMode === 'survival') {
                 inventory[activeSlot].count--;
                 if (inventory[activeSlot].count <= 0) { inventory[activeSlot].id = 0; inventory[activeSlot].count = 0; }
@@ -1150,24 +1223,22 @@ function _handleTap(screenX, screenY) {
 
     // --- Door toggle ---
     if (interactId === 149) {
-        const val = getVoxel(target.hit[0], target.hit[1], target.hit[2]);
-        const isOpen = (val >> 10) & 0x1;
-        setVoxel(target.hit[0], target.hit[1], target.hit[2], 149,
-            ((val >> 8) & 0x3) | (isOpen ? 0 : (1 << 2)) | ((val >> 12) & 0x1) << 4,
-            (val >> 12) & 0x1, (val >> 13) & 0x1);
-        // Toggle partner
-        const isTop = (val >> 11) & 0x1;
-        const otherY = isTop ? target.hit[1] - 1 : target.hit[1] + 1;
-        const otherVal = getVoxel(target.hit[0], otherY, target.hit[2]);
+        const dx2 = target.hit[0], dy2 = target.hit[1], dz2 = target.hit[2];
+        const dval = getVoxel(dx2, dy2, dz2);
+        const wasOpen = (dval >> 10) & 0x1;
+        // v278: flip only bit 10, preserving all other bits (dir, half, hinge,
+        // light). Matches the desktop toggle approach.
+        setVoxel(dx2, dy2, dz2, dval ^ (1 << 10));
+        // Toggle the other half
+        const isTop = (dval >> 11) & 0x1;
+        const otherY = isTop ? dy2 - 1 : dy2 + 1;
+        const otherVal = getVoxel(dx2, otherY, dz2);
         if ((otherVal & 0xFF) === 149) {
-            const oOpen = (otherVal >> 10) & 0x1;
-            setVoxel(target.hit[0], otherY, target.hit[2], 149,
-                ((otherVal >> 8) & 0x3) | (oOpen ? 0 : (1 << 2)) | ((otherVal >> 12) & 0x1) << 4,
-                (otherVal >> 12) & 0x1, (otherVal >> 13) & 0x1);
-            if (typeof updateChunks === 'function') updateChunks(target.hit[0], otherY, target.hit[2]);
+            setVoxel(dx2, otherY, dz2, otherVal ^ (1 << 10));
+            if (typeof updateChunks === 'function') updateChunks(dx2, otherY, dz2);
         }
-        if (typeof updateChunks === 'function') updateChunks(target.hit[0], target.hit[1], target.hit[2]);
-        if (typeof window.playDoorSound === 'function') window.playDoorSound(!isOpen);
+        if (typeof updateChunks === 'function') updateChunks(dx2, dy2, dz2);
+        if (typeof window.playDoorSound === 'function') window.playDoorSound(!wasOpen);
         return;
     }
 
@@ -1550,32 +1621,38 @@ function _handleTap(screenX, screenY) {
             
             // v275: detect adjacent same-dir door for double doors
             let hinge = 0;
+            let updateNeighborDoor = null;
             {
                 function _isSameDirDoor(cx, cy, cz, wantDir) {
                     const v = getVoxel(cx, cy, cz);
                     if ((v & 0xFF) !== 149) return false;
                     return ((v >> 8) & 0x3) === wantDir;
                 }
+                function _hingeForPos(dirr, isLowerCoord) {
+                    if (dirr === 0 || dirr === 1) return isLowerCoord ? 0 : 1;
+                    return isLowerCoord ? 1 : 0;
+                }
+                let neighborCoord = null;
                 if (doorDir === 0 || doorDir === 2) {
-                    const negX = _isSameDirDoor(dx - 1, dy, dz, doorDir);
-                    const posX = _isSameDirDoor(dx + 1, dy, dz, doorDir);
-                    if (doorDir === 0) {
-                        if (negX) hinge = 1;
-                        else if (posX) hinge = 0;
-                    } else {
-                        if (negX) hinge = 0;
-                        else if (posX) hinge = 1;
+                    if (_isSameDirDoor(dx - 1, dy, dz, doorDir)) {
+                        neighborCoord = { x: dx - 1, y: dy, z: dz, neighborIsLower: true };
+                    } else if (_isSameDirDoor(dx + 1, dy, dz, doorDir)) {
+                        neighborCoord = { x: dx + 1, y: dy, z: dz, neighborIsLower: false };
                     }
                 } else {
-                    const negZ = _isSameDirDoor(dx, dy, dz - 1, doorDir);
-                    const posZ = _isSameDirDoor(dx, dy, dz + 1, doorDir);
-                    if (doorDir === 1) {
-                        if (negZ) hinge = 1;
-                        else if (posZ) hinge = 0;
-                    } else {
-                        if (negZ) hinge = 0;
-                        else if (posZ) hinge = 1;
+                    if (_isSameDirDoor(dx, dy, dz - 1, doorDir)) {
+                        neighborCoord = { x: dx, y: dy, z: dz - 1, neighborIsLower: true };
+                    } else if (_isSameDirDoor(dx, dy, dz + 1, doorDir)) {
+                        neighborCoord = { x: dx, y: dy, z: dz + 1, neighborIsLower: false };
                     }
+                }
+                if (neighborCoord) {
+                    hinge = _hingeForPos(doorDir, !neighborCoord.neighborIsLower);
+                    const neighborHinge = _hingeForPos(doorDir, neighborCoord.neighborIsLower);
+                    updateNeighborDoor = {
+                        x: neighborCoord.x, y: neighborCoord.y, z: neighborCoord.z,
+                        newHinge: neighborHinge
+                    };
                 }
             }
             const bottomVal = (doorDir) | (0 << 2) | (0 << 3) | (hinge << 4);
@@ -1585,6 +1662,32 @@ function _handleTap(screenX, screenY) {
             setVoxel(dx, dy + 1, dz, 149, topVal);
             pendingBlockUpdates.push({x: dx, y: dy, z: dz});
             pendingBlockUpdates.push({x: dx, y: dy + 1, z: dz});
+            
+            // v278: rewrite neighbor door halves with corrected hinge
+            if (updateNeighborDoor) {
+                const nX = updateNeighborDoor.x;
+                const nY = updateNeighborDoor.y;
+                const nZ = updateNeighborDoor.z;
+                const newH = updateNeighborDoor.newHinge;
+                const nBotVal = getVoxel(nX, nY, nZ);
+                const nTopVal = getVoxel(nX, nY + 1, nZ);
+                if ((nBotVal & 0xFF) === 149) {
+                    const nDir = (nBotVal >> 8) & 0x3;
+                    const nOpen = (nBotVal >> 10) & 0x1;
+                    const nBot = nDir | (nOpen << 2) | (0 << 3) | (newH << 4);
+                    setVoxel(nX, nY, nZ, 149, nBot);
+                    pendingBlockUpdates.push({x: nX, y: nY, z: nZ});
+                    if (typeof updateChunks === 'function') updateChunks(nX, nY, nZ);
+                }
+                if ((nTopVal & 0xFF) === 149) {
+                    const nTDir = (nTopVal >> 8) & 0x3;
+                    const nTOpen = (nTopVal >> 10) & 0x1;
+                    const nTop = nTDir | (nTOpen << 2) | (1 << 3) | (newH << 4);
+                    setVoxel(nX, nY + 1, nZ, 149, nTop);
+                    pendingBlockUpdates.push({x: nX, y: nY + 1, z: nZ});
+                    if (typeof updateChunks === 'function') updateChunks(nX, nY + 1, nZ);
+                }
+            }
             
             if (typeof window._soundPlaceBlock === 'function') window._soundPlaceBlock(149, dx, dy, dz);
             
@@ -1791,6 +1894,10 @@ function _startBreaking(screenX, screenY) {
         miningState.id = targetId;
         miningState.progress = 0; miningState.stage = -1;
         if (typeof breakingBox !== 'undefined') {
+            // v279: rebuild overlay geometry to match block shape
+            if (typeof window.rebuildBreakingBoxForBlock === 'function') {
+                window.rebuildBreakingBoxForBlock(targetId, getVoxel(x, y, z), x, y, z);
+            }
             breakingBox.position.set(x + 0.5, y + 0.5, z + 0.5);
             breakingBox.visible = true;
         }
@@ -1803,7 +1910,11 @@ function _stopBreaking() {
     miningState.isMining = false;
     miningState.progress = 0;
     miningState.stage = -1;
-    if (typeof breakingBox !== 'undefined' && breakingBox) breakingBox.visible = false;
+    if (typeof breakingBox !== 'undefined' && breakingBox) {
+        breakingBox.visible = false;
+        // v279.1: invalidate shape cache so the next mining always rebuilds
+        if (breakingBox.userData) breakingBox.userData.shapeKey = null;
+    }
 }
 
 // Redirect breaking to a new screen position (finger moved while holding)
@@ -1833,6 +1944,10 @@ function _redirectBreaking(screenX, screenY) {
             miningState.id = targetId;
             miningState.progress = 0; miningState.stage = -1;
             if (typeof breakingBox !== 'undefined') {
+                // v279: rebuild overlay geometry for new target shape
+                if (typeof window.rebuildBreakingBoxForBlock === 'function') {
+                    window.rebuildBreakingBoxForBlock(targetId, getVoxel(x, y, z), x, y, z);
+                }
                 breakingBox.position.set(x + 0.5, y + 0.5, z + 0.5);
                 breakingBox.visible = true;
             }

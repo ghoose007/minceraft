@@ -57,6 +57,8 @@ let GEN_RAVINE_FREQUENCY = 100;
 let GEN_RAVINE_DEPTH = 100;
 let GEN_RAVINE_WIDTH = 100;
 let GEN_ORE_ABUNDANCE = 100;
+let GEN_MONOLITHS_ENABLED = false;
+let GEN_MONOLITH_CHANCE = 0.01;
 
 // ----- Worker-local state -----
 // Single chunk being generated right now. Worker writes here, then
@@ -365,4 +367,6 @@ function applySettings(s) {
     if ('GEN_RAVINE_DEPTH' in s) GEN_RAVINE_DEPTH = s.GEN_RAVINE_DEPTH;
     if ('GEN_RAVINE_WIDTH' in s) GEN_RAVINE_WIDTH = s.GEN_RAVINE_WIDTH;
     if ('GEN_ORE_ABUNDANCE' in s) GEN_ORE_ABUNDANCE = s.GEN_ORE_ABUNDANCE;
+    if ('GEN_MONOLITHS_ENABLED' in s) GEN_MONOLITHS_ENABLED = s.GEN_MONOLITHS_ENABLED;
+    if ('GEN_MONOLITH_CHANCE' in s) GEN_MONOLITH_CHANCE = s.GEN_MONOLITH_CHANCE;
 }

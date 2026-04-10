@@ -83,6 +83,15 @@ function _getRawBiome(x, z) {
         bH = bH * (1.0 - blend) + (GEN_SEA_LEVEL - 2) * blend;
         bV = bV * (1.0 - blend) + 2 * blend;
     }
+
+    // v298: Alpha preset — all non-ocean biomes become alpha_forest.
+    // Rivers still work because the river override runs below this and
+    // only exempts ocean/desert (alpha_forest is neither).
+    if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 4 && biome !== 'ocean') {
+        biome = 'alpha_forest';
+        bH = GEN_SEA_LEVEL + 6;
+        bV = 18;
+    }
     
     // --- RIVER OVERRIDE ---
     // Uses ridge noise (1 - abs(noise)) to create narrow winding channels.

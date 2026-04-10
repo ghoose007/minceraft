@@ -18,6 +18,11 @@ function getParticleGeometry(blockId) {
     let texIndex = 0;
     if (blockData) {
         texIndex = typeof blockData.atlasIdx === 'object' ? blockData.atlasIdx.side : blockData.atlasIdx;
+    } else if (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[blockId]) {
+        // All food items (and other item entries) use terrain.png indices.
+        // Use the atlas index directly without checking isTerrainAtlas.
+        const t = TOOL_DATA[blockId];
+        texIndex = typeof t.atlasIdx === 'object' ? t.atlasIdx.side : t.atlasIdx;
     }
     
     if (!settingGraphicsFancy) {
@@ -55,7 +60,7 @@ function getParticleGeometry(blockId) {
     return geo;
 }
 
-function spawnParticles(x, y, z, blockId) {
+function spawnParticles(x, y, z, blockId, countOverride) {
     if (blockId === 0 || blockId === 4 || blockId === 27) return; 
 
     // Fire and portal blocks use smoke particles instead of block-break particles
@@ -70,7 +75,7 @@ function spawnParticles(x, y, z, blockId) {
     }
     
     const particleBlockId = blockId === 1 ? 2 : (blockId === 149 || blockId === 150) ? 29 : blockId === 201 ? 28 : blockId;
-    const count = 12 + Math.floor(Math.random() * 8); 
+    const count = (typeof countOverride === 'number') ? countOverride : (12 + Math.floor(Math.random() * 8));
     
     const baseGeo = getParticleGeometry(particleBlockId);
     const geo = baseGeo.clone();

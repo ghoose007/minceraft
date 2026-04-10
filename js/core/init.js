@@ -273,7 +273,11 @@ async function init(seed, loadedData) {
     if (typeof getFireOverlayPlane === 'function') getFireOverlayPlane();
     
     // --- OVERLAY MESH CREATION ---
-    const breakGeo = new THREE.BoxGeometry(1.01, 1.01, 1.01);
+    // v279: Instead of a static 1x1x1 box, the breakingBox geometry is
+    // rebuilt per-target-block to match the actual rendered shape for
+    // slabs, stairs, doors, trapdoors, fences, iron bars, farmland,
+    // enchanting table, and extended pistons. Everything else uses the
+    // default full cube.
     breakingMat = new THREE.MeshBasicMaterial({
         map: typeof textureAtlas !== 'undefined' ? textureAtlas : null,
         transparent: true,
@@ -283,9 +287,262 @@ async function init(seed, loadedData) {
         polygonOffsetFactor: -4,
         polygonOffsetUnits: -4
     });
-    breakingBox = new THREE.Mesh(breakGeo, breakingMat);
+    const _defaultBreakGeo = new THREE.BoxGeometry(1.01, 1.01, 1.01);
+    breakingBox = new THREE.Mesh(_defaultBreakGeo, breakingMat);
     breakingBox.visible = false;
     scene.add(breakingBox);
+    // Track current shape key so we only rebuild on change.
+    breakingBox.userData.shapeKey = 'cube';
+    
+    // Helper: merge an array of BoxGeometry specs into one BufferGeometry.
+    // Each spec is { x, y, z, w, h, d } in LOCAL voxel coordinates (0..1).
+    // The output geometry is centered at (0.5, 0.5, 0.5) so when the
+    // breakingBox mesh is positioned at (x+0.5, y+0.5, z+0.5) it aligns.
+    function _buildMergedBoxGeometry(specs) {
+        if (!specs || specs.length === 0) return _defaultBreakGeo.clone();
+        if (specs.length === 1) {
+            const s = specs[0];
+            const g = new THREE.BoxGeometry(s.w, s.h, s.d);
+            // Offset so that the local-space (0..1 voxel) box at (s.x,s.y,s.z)
+            // ends up centered correctly when breakingBox.position is at
+            // (wx+0.5, wy+0.5, wz+0.5). BoxGeometry is centered on origin, so
+            // we need to translate by ((s.x + s.w/2) - 0.5, ...).
+            g.translate((s.x + s.w/2) - 0.5, (s.y + s.h/2) - 0.5, (s.z + s.d/2) - 0.5);
+            return g;
+        }
+        // Multiple specs: concat attribute arrays manually.
+        const positions = [];
+        const normals = [];
+        const uvs = [];
+        const indices = [];
+        let vertOffset = 0;
+        for (const s of specs) {
+            const g = new THREE.BoxGeometry(s.w, s.h, s.d);
+            g.translate((s.x + s.w/2) - 0.5, (s.y + s.h/2) - 0.5, (s.z + s.d/2) - 0.5);
+            const pArr = g.attributes.position.array;
+            const nArr = g.attributes.normal.array;
+            const uArr = g.attributes.uv.array;
+            const iArr = g.index.array;
+            for (let i = 0; i < pArr.length; i++) positions.push(pArr[i]);
+            for (let i = 0; i < nArr.length; i++) normals.push(nArr[i]);
+            for (let i = 0; i < uArr.length; i++) uvs.push(uArr[i]);
+            for (let i = 0; i < iArr.length; i++) indices.push(iArr[i] + vertOffset);
+            vertOffset += g.attributes.position.count;
+            g.dispose();
+        }
+        const merged = new THREE.BufferGeometry();
+        merged.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+        merged.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
+        merged.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
+        merged.setIndex(indices);
+        return merged;
+    }
+    
+    // Compute the list of box specs for a given block id + encoded value.
+    // World coords (wx, wy, wz) are used for blocks whose shape depends on
+    // neighbors (fences, glass panes, iron bars). Specs are in LOCAL voxel
+    // space (0..1). Small inflate (E) makes the overlay sit slightly proud
+    // of the actual block faces.
+    function _breakSpecsForBlock(id, val, wx, wy, wz) {
+        const E = 0.005; // inflate to prevent z-fighting
+        const INF = 1.01; // full-cube inflated size
+        const _inflate = (b) => ({
+            x: b.x - E, y: b.y - E, z: b.z - E,
+            w: b.w + 2*E, h: b.h + 2*E, d: b.d + 2*E
+        });
+        // Default: full cube
+        const fullCube = [{x:0, y:0, z:0, w:1, h:1, d:1}];
+        
+        // --- Slabs ---
+        if (typeof isSlabBlock === 'function' && isSlabBlock(id)) {
+            const isTop = ((val >> 8) & 0x1) === 1;
+            return [_inflate({x:0, y: isTop?0.5:0, z:0, w:1, h:0.5, d:1})];
+        }
+        // --- Stairs ---
+        if (typeof isStairBlock === 'function' && isStairBlock(id)) {
+            const stairDir = (val >> 8) & 0x3;
+            // Note: placement writes an upsideDown bit (val bit 10) but the
+            // stair renderer ignores it — stairs always render right-side-up.
+            // Matching the renderer for overlay alignment.
+            const bottomHalf = {x:0, y:0, z:0, w:1, h:0.5, d:1};
+            // Upper step quarter block — positioned based on stairDir.
+            // sd=0 (+Z side step), sd=1 (-Z side step),
+            // sd=2 (+X side step), sd=3 (-X side step).
+            let step;
+            const stepY = 0.5;
+            if (stairDir === 0)      step = {x:0, y:stepY, z:0.5, w:1, h:0.5, d:0.5};
+            else if (stairDir === 1) step = {x:0, y:stepY, z:0,   w:1, h:0.5, d:0.5};
+            else if (stairDir === 2) step = {x:0.5, y:stepY, z:0, w:0.5, h:0.5, d:1};
+            else                     step = {x:0, y:stepY, z:0,   w:0.5, h:0.5, d:1};
+            return [_inflate(bottomHalf), _inflate(step)];
+        }
+        // --- Door (149) ---
+        if (id === 149) {
+            const dir = (val >> 8) & 0x3;
+            const isOpen = (val >> 10) & 0x1;
+            const hinge = (val >> 12) & 0x1;
+            const D = 3/16;
+            const EE = 0.005;
+            let b;
+            if (!isOpen) {
+                if (dir === 0)      b = {x:0, y:0, z:EE, w:1, h:1, d:D-EE};
+                else if (dir === 1) b = {x:1-D, y:0, z:0, w:D-EE, h:1, d:1};
+                else if (dir === 2) b = {x:0, y:0, z:1-D, w:1, h:1, d:D-EE};
+                else                b = {x:EE, y:0, z:0, w:D-EE, h:1, d:1};
+            } else {
+                if (dir === 0) {
+                    if (hinge===0) b = {x:EE, y:0, z:0, w:D-EE, h:1, d:1};
+                    else           b = {x:1-D, y:0, z:0, w:D-EE, h:1, d:1};
+                } else if (dir === 1) {
+                    if (hinge===0) b = {x:0, y:0, z:EE, w:1, h:1, d:D-EE};
+                    else           b = {x:0, y:0, z:1-D, w:1, h:1, d:D-EE};
+                } else if (dir === 2) {
+                    if (hinge===0) b = {x:1-D, y:0, z:0, w:D-EE, h:1, d:1};
+                    else           b = {x:EE, y:0, z:0, w:D-EE, h:1, d:1};
+                } else {
+                    if (hinge===0) b = {x:0, y:0, z:1-D, w:1, h:1, d:D-EE};
+                    else           b = {x:0, y:0, z:EE, w:1, h:1, d:D-EE};
+                }
+            }
+            return [_inflate(b)];
+        }
+        // --- Trapdoor (150) ---
+        if (id === 150) {
+            const dir = (val >> 8) & 0x3;
+            const isOpen = (val >> 10) & 0x1;
+            const isTop = (val >> 11) & 0x1;
+            const D = 3/16;
+            let b;
+            if (!isOpen) {
+                b = {x:0, y: isTop?1-D:0, z:0, w:1, h:D, d:1};
+            } else {
+                if (dir === 0)      b = {x:0, y:0, z:0, w:1, h:1, d:D};
+                else if (dir === 1) b = {x:1-D, y:0, z:0, w:D, h:1, d:1};
+                else if (dir === 2) b = {x:0, y:0, z:1-D, w:1, h:1, d:D};
+                else                b = {x:0, y:0, z:0, w:D, h:1, d:1};
+            }
+            return [_inflate(b)];
+        }
+        // Helper: matches the renderer's canConnect logic. A neighbor
+        // counts as connectable if it's any solid block (not air, fluid,
+        // cross block, torch, snow layer, vine, lily pad).
+        const _canConnectNeighbor = (nx, ny, nz) => {
+            if (typeof getVoxel !== 'function') return false;
+            const nId = getVoxel(nx, ny, nz) & 0xFF;
+            if (nId === 0) return false;
+            if (typeof isFluidBlock === 'function' && isFluidBlock(nId)) return false;
+            if (typeof isCrossBlock === 'function' && isCrossBlock(nId)) return false;
+            if (nId === 17 || nId === 40 || nId === 66 || nId === 67) return false;
+            return true;
+        };
+        
+        // --- Fences (144-148): center post + horizontal rails to connected sides ---
+        if (typeof isFenceBlock === 'function' && isFenceBlock(id)) {
+            const P0 = 6/16, P1 = 10/16; // post 4px wide, centered
+            const PW = P1 - P0;
+            const specs = [];
+            // Center post (full height)
+            specs.push(_inflate({x:P0, y:0, z:P0, w:PW, h:1, d:PW}));
+            // Connection rails. Renderer uses two bars at y=7-10 and y=12-15.
+            // We render them as a single thicker bar each side for simplicity.
+            // Bar dims: 2px wide on the cross-axis, spans from edge to post.
+            const BW = 2/16;
+            const BC = 0.5 - BW/2; // centered cross-axis offset
+            // y ranges of the two rails
+            const rails = [
+                { y0: 7/16, y1: 10/16 },
+                { y0: 12/16, y1: 15/16 }
+            ];
+            const hasXN = wx !== undefined && _canConnectNeighbor(wx-1, wy, wz);
+            const hasXP = wx !== undefined && _canConnectNeighbor(wx+1, wy, wz);
+            const hasZN = wx !== undefined && _canConnectNeighbor(wx, wy, wz-1);
+            const hasZP = wx !== undefined && _canConnectNeighbor(wx, wy, wz+1);
+            for (const r of rails) {
+                const rh = r.y1 - r.y0;
+                if (hasXN) specs.push(_inflate({x:0,    y:r.y0, z:BC, w:P0,     h:rh, d:BW}));
+                if (hasXP) specs.push(_inflate({x:P1,   y:r.y0, z:BC, w:1-P1,   h:rh, d:BW}));
+                if (hasZN) specs.push(_inflate({x:BC,   y:r.y0, z:0,  w:BW,     h:rh, d:P0}));
+                if (hasZP) specs.push(_inflate({x:BC,   y:r.y0, z:P1, w:BW,     h:rh, d:1-P1}));
+            }
+            return specs;
+        }
+        
+        // --- Iron Bars (158) and Glass Pane (68): center post + flat panes ---
+        if (id === 158 || id === 68) {
+            const T0 = 7/16, T1 = 9/16; // 2px wide post
+            const PW = T1 - T0;
+            const specs = [];
+            // Center post (always present, full height)
+            specs.push(_inflate({x:T0, y:0, z:T0, w:PW, h:1, d:PW}));
+            const hasXN = wx !== undefined && _canConnectNeighbor(wx-1, wy, wz);
+            const hasXP = wx !== undefined && _canConnectNeighbor(wx+1, wy, wz);
+            const hasZN = wx !== undefined && _canConnectNeighbor(wx, wy, wz-1);
+            const hasZP = wx !== undefined && _canConnectNeighbor(wx, wy, wz+1);
+            const hasX = hasXN || hasXP;
+            const hasZ = hasZN || hasZP;
+            // Renderer rule: if no connections, draw an X-aligned segment as the default
+            const drawX = hasX || (!hasX && !hasZ);
+            const drawZ = hasZ;
+            // X-aligned arm (thin in Z, between T0..T1)
+            if (drawX) {
+                if (hasXN) specs.push(_inflate({x:0,  y:0, z:T0, w:T0,    h:1, d:PW}));
+                if (hasXP) specs.push(_inflate({x:T1, y:0, z:T0, w:1-T1,  h:1, d:PW}));
+            }
+            // Z-aligned arm (thin in X, between T0..T1)
+            if (drawZ) {
+                if (hasZN) specs.push(_inflate({x:T0, y:0, z:0,  w:PW, h:1, d:T0}));
+                if (hasZP) specs.push(_inflate({x:T0, y:0, z:T1, w:PW, h:1, d:1-T1}));
+            }
+            return specs;
+        }
+        // --- Farmland (62, 63) ---
+        if (id === 62 || id === 63) {
+            return [_inflate({x:0, y:0, z:0, w:1, h:15/16, d:1})];
+        }
+        // --- Enchanting Table (201) ---
+        if (id === 201) {
+            return [_inflate({x:0, y:0, z:0, w:1, h:12/16, d:1})];
+        }
+        // --- Extended Pistons (207, 208) ---
+        if (id === 207 || id === 208) {
+            const extended = ((val >> 11) & 0x1) === 1;
+            if (!extended) return fullCube; // retracted is full cube
+            const pDir = (val >> 8) & 0x7;
+            // Body is 12/16 = 0.75 long, positioned opposite to the extension direction
+            // pDir: 0=-Y, 1=+Y, 2=-Z, 3=+Z, 4=-X, 5=+X
+            const L = 12/16;
+            if (pDir === 0) return [_inflate({x:0, y:1-L, z:0, w:1, h:L, d:1})]; // extends -Y: body is high
+            if (pDir === 1) return [_inflate({x:0, y:0, z:0, w:1, h:L, d:1})];   // extends +Y: body is low
+            if (pDir === 2) return [_inflate({x:0, y:0, z:1-L, w:1, h:1, d:L})]; // extends -Z: body is +Z
+            if (pDir === 3) return [_inflate({x:0, y:0, z:0, w:1, h:1, d:L})];   // extends +Z: body is -Z
+            if (pDir === 4) return [_inflate({x:1-L, y:0, z:0, w:L, h:1, d:1})]; // extends -X: body is +X
+            if (pDir === 5) return [_inflate({x:0, y:0, z:0, w:L, h:1, d:1})];   // extends +X: body is -X
+            return fullCube;
+        }
+        // Default: full cube
+        return [_inflate({x:0, y:0, z:0, w:1, h:1, d:1})];
+    }
+    
+    // Rebuild the breakingBox geometry to match a given block id+val.
+    // Call before showing breakingBox.visible. Cheap no-op if shape key
+    // hasn't changed (i.e. targeting the same block state as last time).
+    window.rebuildBreakingBoxForBlock = function(id, val, wx, wy, wz) {
+        if (!breakingBox) return;
+        // v280: rebuild geometry on every call. Mining starts once per
+        // block (not per frame) so this is essentially free.
+        const specs = _breakSpecsForBlock(id, val, wx, wy, wz);
+        const newGeo = _buildMergedBoxGeometry(specs);
+        if (breakingBox.geometry && breakingBox.geometry !== _defaultBreakGeo) {
+            breakingBox.geometry.dispose();
+        }
+        breakingBox.geometry = newGeo;
+        newGeo.computeBoundingBox();
+        newGeo.computeBoundingSphere();
+        // Re-apply current breaking stage UVs to the new geometry.
+        if (typeof window.updateBreakingUVs === 'function' && breakingBox.userData.lastUvStage != null) {
+            window.updateBreakingUVs(breakingBox.userData.lastUvStage);
+        }
+    };
     
     if (loadedData) {
         // --- RESTORE SAVED WORLD (v5 unified path) ---
@@ -401,6 +658,9 @@ async function init(seed, loadedData) {
         player.x = loadedData.player.x; player.y = loadedData.player.y; player.z = loadedData.player.z;
         player.yaw = loadedData.player.yaw || 0; player.pitch = loadedData.player.pitch || 0;
         player.health = loadedData.player.health || 20; player.maxHealth = loadedData.player.maxHealth || 20;
+        player.hunger = (loadedData.player.hunger !== undefined) ? loadedData.player.hunger : 20;
+        player.saturation = (loadedData.player.saturation !== undefined) ? loadedData.player.saturation : 5;
+        player.exhaustion = (loadedData.player.exhaustion !== undefined) ? loadedData.player.exhaustion : 0;
         player.flying = loadedData.player.flying || false;
         player.highestY = loadedData.player.highestY || loadedData.player.y;
         player.vx = 0; player.vy = 0; player.vz = 0; player.onGround = false;
@@ -600,6 +860,7 @@ async function init(seed, loadedData) {
     if (typeof selectSlot === 'function') selectSlot(0);
     if (typeof updateHeldItem === 'function') updateHeldItem();
     if (typeof updateHealthUI === 'function') updateHealthUI();
+    if (typeof updateHungerUI === 'function') updateHungerUI();
 
     // Restore dropped items from save data (deferred until scene + textures are ready)
     if (window._pendingDroppedItems && typeof window.spawnDroppedItem === 'function') {
@@ -683,6 +944,8 @@ async function init(seed, loadedData) {
 
             // Refresh health bar visibility
             if (typeof updateHealthUI === 'function') updateHealthUI();
+            if (typeof updateHungerUI === 'function') updateHungerUI();
+            if (typeof window.updateMobileEatBtnVisibility === 'function') window.updateMobileEatBtnVisibility();
             if (typeof buildUI === 'function') buildUI();
 
             const el = document.getElementById('action-text');
@@ -891,21 +1154,22 @@ window.getTargetedMob = function() {
 
         // --- EAT FOOD INTERACTION (Independent of block targeting) ---
 
-        if (e.button === 2 && (currentBuildBlock === 115 || currentBuildBlock === 122 || currentBuildBlock === 123 || currentBuildBlock === 134 || currentBuildBlock === 187 || currentBuildBlock === 188) && uiState === 'PLAYING') {
-            
-            let healAmount = 0;
-            if (currentBuildBlock === 115) healAmount = 4; // Apple (2 hearts)
-            if (currentBuildBlock === 122) healAmount = 3; // Raw Pork (1.5 hearts)
-            if (currentBuildBlock === 123) healAmount = 8; // Cooked Pork (4 hearts)
-            if (currentBuildBlock === 134) healAmount = 5; // Bread (2.5 hearts)
-            if (currentBuildBlock === 187) healAmount = 3; // Raw Beef (1.5 hearts)
-            if (currentBuildBlock === 188) healAmount = 8; // Cooked Beef (4 hearts)
-
-            if (player.health < player.maxHealth) {
-                player.health = Math.min(player.maxHealth, player.health + healAmount); 
-                if (typeof updateHealthUI === 'function') updateHealthUI();
+        if (e.button === 2 && typeof window.isFoodItem === 'function' && window.isFoodItem(currentBuildBlock) && uiState === 'PLAYING') {
+            const hungerOn = (typeof GEN_HUNGER_ENABLED !== 'undefined' && GEN_HUNGER_ENABLED);
+            if (hungerOn && gameMode === 'survival') {
+                // v286: hold to eat. Only start if hunger < max.
+                if (player.hunger < (player.maxHunger || 20)) {
+                    window.isRightMouseHeld = true;
+                    player.eatItemId = currentBuildBlock;
+                    player.eatTimer = 0;
+                    player.eatSoundTimer = 0;
+                }
+                return;
+            }
+            // Legacy instant eat (hunger disabled or creative)
+            const didEat = typeof window.applyFoodEffect === 'function' && window.applyFoodEffect(currentBuildBlock);
+            if (didEat) {
                 if (typeof window.playBurpSound === 'function') window.playBurpSound();
-                
                 if (typeof gameMode !== 'undefined' && gameMode === 'survival') {
                     inventory[activeSlot].count--;
                     if (inventory[activeSlot].count <= 0) {
@@ -966,6 +1230,10 @@ window.getTargetedMob = function() {
                 miningState.progress = 0;
                 miningState.stage = -1;
                 if (typeof breakingBox !== 'undefined') {
+                    // v280.1: rebuild overlay geometry for the target block
+                    if (typeof window.rebuildBreakingBoxForBlock === 'function') {
+                        window.rebuildBreakingBoxForBlock(targetId, getVoxel(x, y, z), x, y, z);
+                    }
                     breakingBox.position.set(x + 0.5, y + 0.5, z + 0.5);
                     breakingBox.visible = true;
                 }
@@ -986,6 +1254,18 @@ window.getTargetedMob = function() {
                     if (aboveId === 0) { // Ensure the block above is air
                         setVoxel(target.hit[0], target.hit[1], target.hit[2], 62); // Turn to Dry Farmland
                         pendingBlockUpdates.push({x: target.hit[0], y: target.hit[1], z: target.hit[2]});
+                        
+                        // v310: Tilling grass has a 15% chance to drop seeds.
+                        // This is the primary way to get seeds since alpha
+                        // worlds no longer have tall grass (and this works
+                        // in regular worlds too, matching MC behavior).
+                        if (targetId === 1 && Math.random() < 0.15 && typeof window.spawnDroppedItem === 'function') {
+                            window.spawnDroppedItem(target.hit[0] + 0.5, target.hit[1] + 1.2, target.hit[2] + 0.5, 128, 1);
+                        }
+                        // v310: Track this farmland for moisture decay
+                        if (typeof window._trackFarmland === 'function') {
+                            window._trackFarmland(target.hit[0], target.hit[1], target.hit[2]);
+                        }
                         
                         if (typeof spawnParticles === 'function') spawnParticles(target.hit[0], target.hit[1], target.hit[2], 2);
                         if (typeof window.damageHeldTool === 'function') window.damageHeldTool(1);
@@ -1609,38 +1889,52 @@ window.getTargetedMob = function() {
                 // Hinge side: detect adjacent door of same direction to form
                 // a double door. For doors facing ±Z, check ±X neighbors.
                 // For doors facing ±X, check ±Z neighbors.
-                // v275: when an existing same-direction door is found on one
-                // side, the new door takes the opposite hinge so the two
-                // panels mirror and open outward from the center.
+                // v275/v278: when an existing same-direction door is found on
+                // one side, the new door takes the opposite hinge so the two
+                // panels mirror and open outward from the center. v278 also
+                // REWRITES the existing door's hinge so the pair is correct
+                // regardless of which side was placed first.
                 let hinge = 0;
+                let updateNeighborDoor = null; // { x, y, z, newHinge }
                 {
                     function _isSameDirDoor(cx, cy, cz, wantDir) {
                         const v = getVoxel(cx, cy, cz);
                         if ((v & 0xFF) !== 149) return false;
                         return ((v >> 8) & 0x3) === wantDir;
                     }
+                    // Helper: for a given door direction, map "position in the
+                    // pair (lower/higher world-coord)" → correct hinge value.
+                    // Derived from the renderer's hinge conventions.
+                    function _hingeForPos(dir, isLowerCoord) {
+                        // dir 0: lower X = hinge 0, higher X = hinge 1
+                        // dir 1: lower Z = hinge 0, higher Z = hinge 1
+                        // dir 2: lower X = hinge 1, higher X = hinge 0
+                        // dir 3: lower Z = hinge 1, higher Z = hinge 0
+                        if (dir === 0 || dir === 1) return isLowerCoord ? 0 : 1;
+                        return isLowerCoord ? 1 : 0;
+                    }
+                    let neighborCoord = null; // world coord of the neighbor door's bottom half
                     if (doorDir === 0 || doorDir === 2) {
-                        // Faces ±Z — check ±X neighbors
-                        const negX = _isSameDirDoor(px - 1, py, pz, doorDir);
-                        const posX = _isSameDirDoor(px + 1, py, pz, doorDir);
-                        if (doorDir === 0) {
-                            if (negX) hinge = 1;       // existing door at -X → mine on +X
-                            else if (posX) hinge = 0;  // existing door at +X → mine on -X
-                        } else { // doorDir === 2
-                            if (negX) hinge = 0;       // existing door at -X → mine on +X (hinge 0 for dir 2)
-                            else if (posX) hinge = 1;  // existing door at +X → mine on -X (hinge 1 for dir 2)
+                        if (_isSameDirDoor(px - 1, py, pz, doorDir)) {
+                            neighborCoord = { x: px - 1, y: py, z: pz, axis: 'x', neighborIsLower: true };
+                        } else if (_isSameDirDoor(px + 1, py, pz, doorDir)) {
+                            neighborCoord = { x: px + 1, y: py, z: pz, axis: 'x', neighborIsLower: false };
                         }
                     } else {
-                        // Faces ±X — check ±Z neighbors
-                        const negZ = _isSameDirDoor(px, py, pz - 1, doorDir);
-                        const posZ = _isSameDirDoor(px, py, pz + 1, doorDir);
-                        if (doorDir === 1) {
-                            if (negZ) hinge = 1;
-                            else if (posZ) hinge = 0;
-                        } else { // doorDir === 3
-                            if (negZ) hinge = 0;
-                            else if (posZ) hinge = 1;
+                        if (_isSameDirDoor(px, py, pz - 1, doorDir)) {
+                            neighborCoord = { x: px, y: py, z: pz - 1, axis: 'z', neighborIsLower: true };
+                        } else if (_isSameDirDoor(px, py, pz + 1, doorDir)) {
+                            neighborCoord = { x: px, y: py, z: pz + 1, axis: 'z', neighborIsLower: false };
                         }
+                    }
+                    if (neighborCoord) {
+                        // Neighbor door is at a lower or higher coord than the new one
+                        hinge = _hingeForPos(doorDir, !neighborCoord.neighborIsLower);
+                        const neighborHinge = _hingeForPos(doorDir, neighborCoord.neighborIsLower);
+                        updateNeighborDoor = {
+                            x: neighborCoord.x, y: neighborCoord.y, z: neighborCoord.z,
+                            newHinge: neighborHinge
+                        };
                     }
                 }
                 
@@ -1654,6 +1948,34 @@ window.getTargetedMob = function() {
                 if (typeof updateChunks === 'function') updateChunks(px, py + 1, pz);
                 pendingBlockUpdates.push({x: px, y: py, z: pz});
                 pendingBlockUpdates.push({x: px, y: py + 1, z: pz});
+                
+                // v278: if a neighbor door needs hinge update (for right-first
+                // double-door placement), rewrite BOTH halves of it with the
+                // correct hinge. Preserve open state and direction.
+                if (updateNeighborDoor) {
+                    const nX = updateNeighborDoor.x;
+                    const nY = updateNeighborDoor.y;
+                    const nZ = updateNeighborDoor.z;
+                    const newH = updateNeighborDoor.newHinge;
+                    const nBotVal = getVoxel(nX, nY, nZ);
+                    const nTopVal = getVoxel(nX, nY + 1, nZ);
+                    if ((nBotVal & 0xFF) === 149) {
+                        const nDir = (nBotVal >> 8) & 0x3;
+                        const nOpen = (nBotVal >> 10) & 0x1;
+                        const nBot = nDir | (nOpen << 2) | (0 << 3) | (newH << 4);
+                        setVoxel(nX, nY, nZ, 149, nBot);
+                        pendingBlockUpdates.push({x: nX, y: nY, z: nZ});
+                        if (typeof updateChunks === 'function') updateChunks(nX, nY, nZ);
+                    }
+                    if ((nTopVal & 0xFF) === 149) {
+                        const nTDir = (nTopVal >> 8) & 0x3;
+                        const nTOpen = (nTopVal >> 10) & 0x1;
+                        const nTop = nTDir | (nTOpen << 2) | (1 << 3) | (newH << 4);
+                        setVoxel(nX, nY + 1, nZ, 149, nTop);
+                        pendingBlockUpdates.push({x: nX, y: nY + 1, z: nZ});
+                        if (typeof updateChunks === 'function') updateChunks(nX, nY + 1, nZ);
+                    }
+                }
                 
                 if (typeof window._soundPlaceBlock === 'function') window._soundPlaceBlock(149, px, py, pz);
                 
@@ -1899,7 +2221,19 @@ window.getTargetedMob = function() {
         if (e.button === 0) {
             window.isLeftMouseHeld = false; 
             if (typeof miningState !== 'undefined') miningState.isMining = false;
-            if (typeof breakingBox !== 'undefined' && breakingBox) breakingBox.visible = false;
+            if (typeof breakingBox !== 'undefined' && breakingBox) {
+                breakingBox.visible = false;
+                if (breakingBox.userData) breakingBox.userData.shapeKey = null;
+            }
+        }
+        if (e.button === 2) {
+            // v286: right-click released — cancel in-progress eating
+            window.isRightMouseHeld = false;
+            if (player.eatItemId) {
+                player.eatItemId = 0;
+                player.eatTimer = 0;
+                player.eatSoundTimer = 0;
+            }
         }
     });
     
@@ -1946,7 +2280,10 @@ window.getTargetedMob = function() {
             
             window.isLeftMouseHeld = false;
             if (typeof miningState !== 'undefined') miningState.isMining = false;
-            if (typeof breakingBox !== 'undefined' && breakingBox) breakingBox.visible = false;
+            if (typeof breakingBox !== 'undefined' && breakingBox) {
+                breakingBox.visible = false;
+                if (breakingBox.userData) breakingBox.userData.shapeKey = null;
+            }
 
             if (uiState === 'DEAD') {
                 // Don't do anything when pointer lock drops during death screen

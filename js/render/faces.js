@@ -75,10 +75,36 @@ const _biomeTintCache = new Map();
 const _biomeFoliageTintCache = new Map();
 const _biomeWaterTintCache = new Map();
 
+// v303: When a block is rendered inside alpha_forest, skip the standard
+// [0.55, 0.75, 0.4] grass/leaf desaturation fudge so the raw biome tint
+// hits the base texture directly. This gives the exact MC Alpha colors.
+function _isAlphaForestAt(x, z) {
+    if (typeof biomeMap === 'undefined' || !biomeMap) return false;
+    const halfW = WORLD_WIDTH / 2;
+    const halfD = WORLD_DEPTH / 2;
+    const ix = (x | 0) + halfW;
+    const iz = (z | 0) + halfD;
+    if (ix < 0 || ix >= WORLD_WIDTH || iz < 0 || iz >= WORLD_DEPTH) return false;
+    return biomeMap[ix + iz * WORLD_WIDTH] === 'alpha_forest';
+}
+
 function getSmoothedBiomeTint(bx, bz) {
     const cacheKey = ((bx + 32768) << 16) | (bz + 32768);
     const cached = _biomeTintCache.get(cacheKey);
     if (cached) return cached;
+    
+    // v306: Alpha forest bypasses smoothing. The preset forces the whole
+    // world to a single biome, so averaging a 5x5 kernel just drags the
+    // tint toward 'plains' when the neighbor cells haven't been synced
+    // yet (edge of explored area). Return the raw alpha color directly.
+    const halfWb = WORLD_WIDTH / 2;
+    const halfDb = WORLD_DEPTH / 2;
+    const selfBiomeFast = biomeMap[(bx + halfWb) + (bz + halfDb) * WORLD_WIDTH];
+    if (selfBiomeFast === 'alpha_forest') {
+        const result = BIOME_COLORS['alpha_forest'] || [1,1,1];
+        _biomeTintCache.set(cacheKey, result);
+        return result;
+    }
     
     let r = 0, g = 0, b = 0, count = 0;
     const halfW = WORLD_WIDTH / 2;
@@ -121,6 +147,16 @@ function getSmoothedFoliageTint(bx, bz) {
     const cacheKey = ((bx + 32768) << 16) | (bz + 32768);
     const cached = _biomeFoliageTintCache.get(cacheKey);
     if (cached) return cached;
+    
+    // v306: Alpha forest bypass — see getSmoothedBiomeTint
+    const halfWb = WORLD_WIDTH / 2;
+    const halfDb = WORLD_DEPTH / 2;
+    const selfBiomeFast = biomeMap[(bx + halfWb) + (bz + halfDb) * WORLD_WIDTH];
+    if (selfBiomeFast === 'alpha_forest') {
+        const result = BIOME_FOLIAGE_COLORS['alpha_forest'] || [1,1,1];
+        _biomeFoliageTintCache.set(cacheKey, result);
+        return result;
+    }
     
     let r = 0, g = 0, b = 0, count = 0;
     const halfW = WORLD_WIDTH / 2;
@@ -574,6 +610,17 @@ function pushFace(x, y, z, face, positions, normals, uvs, colors, biomeTints, bl
         texIndex = offset.customTex;
     }
 
+    // v310: Alpha forest overrides — grass block uses 191/192, oak leaves
+    // use 193 (fancy) or 194 (fast). Tint forced to [1,1,1] below.
+    const _isAlphaGrassBlock = (blockId === 1 && _isAlphaForestAt(x, z));
+    const _isAlphaLeaf = (blockId === 14 && _isAlphaForestAt(x, z));
+    if (_isAlphaGrassBlock) {
+        if (face.dir[1] === 1) texIndex = 192;
+        else if (face.dir[1] === 0 && overlayTexIndex >= 0) overlayTexIndex = 191;
+    } else if (_isAlphaLeaf) {
+        texIndex = settingGraphicsFancy ? 193 : 194;
+    }
+
     let tintColor = [1, 1, 1];
     let overlayColor = null;
 
@@ -588,15 +635,19 @@ function pushFace(x, y, z, face, positions, normals, uvs, colors, biomeTints, bl
     if (blockId === 43) {
         tintColor = BIRCH_LEAF_TINT;
     } else if (isFoliageTinted) {
-        tintColor = getSmoothedFoliageTint(x, z);
+        // v310: alpha forest leaves are pre-colored, no tint
+        if (!_isAlphaLeaf) tintColor = getSmoothedFoliageTint(x, z);
     } else if (isGrassTinted) {
         tintColor = getSmoothedBiomeTint(x, z);
     } else if (blockId === 1 && face.dir[1] === 1) {
-        tintColor = getSmoothedBiomeTint(x, z);
+        // v304: alpha grass block top uses pre-colored texture — no tint
+        tintColor = _isAlphaGrassBlock ? [1, 1, 1] : getSmoothedBiomeTint(x, z);
     }
     
     if (overlayTexIndex >= 0) {
         overlayColor = getSmoothedBiomeTint(x, z);
+        // v304: alpha grass side overlay is pre-colored — no tint
+        if (_isAlphaGrassBlock) overlayColor = [1, 1, 1];
         // SNOWY GRASS: if this is a grass block (id 1) side face and the
         // cell directly above is a snow layer (40) or snow block (39), 
         // replace the green grass overlay with the snow texture so the

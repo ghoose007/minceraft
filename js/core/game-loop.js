@@ -247,6 +247,8 @@ function _gatherWorldgenSettings() {
     if (typeof GEN_RAVINE_DEPTH !== 'undefined') s.GEN_RAVINE_DEPTH = GEN_RAVINE_DEPTH;
     if (typeof GEN_RAVINE_WIDTH !== 'undefined') s.GEN_RAVINE_WIDTH = GEN_RAVINE_WIDTH;
     if (typeof GEN_ORE_ABUNDANCE !== 'undefined') s.GEN_ORE_ABUNDANCE = GEN_ORE_ABUNDANCE;
+    if (typeof GEN_MONOLITHS_ENABLED !== 'undefined') s.GEN_MONOLITHS_ENABLED = GEN_MONOLITHS_ENABLED;
+    if (typeof GEN_MONOLITH_CHANCE !== 'undefined') s.GEN_MONOLITH_CHANCE = GEN_MONOLITH_CHANCE;
     return s;
 }
 
@@ -365,6 +367,10 @@ function _onWorkerChunkDone(msg) {
     // _generateSuperflatChunk so it sends back all-zero biome IDs which would
     // otherwise become 'desert' in the main thread biomeMap.
     const isSuperflatOverworld = (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 1);
+    // v302: Alpha preset — force every cell to alpha_forest so the tint
+    // system resolves to the alpha green color regardless of what the
+    // worker ended up sending.
+    const isAlphaPreset = (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 4);
     for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         for (let lz = 0; lz < CHUNK_SIZE; lz++) {
             const wx = startX + lx;
@@ -373,6 +379,8 @@ function _onWorkerChunkDone(msg) {
             if (gIdx >= 0 && gIdx < WORLD_WIDTH * WORLD_DEPTH) {
                 if (isSuperflatOverworld) {
                     biomeMap[gIdx] = 'plains';
+                } else if (isAlphaPreset) {
+                    biomeMap[gIdx] = 'alpha_forest';
                 } else {
                     biomeMap[gIdx] = BIOME_NAMES[biomes[lx + lz * CHUNK_SIZE]];
                 }
@@ -1130,6 +1138,7 @@ function _syncChunkToMeshWorker(scx, scz) {
                     case 'aether_skyforest': id = 10; break;
                     case 'aether_void': id = 11; break;
                     case 'aether_lake': id = 12; break;
+                    case 'alpha_forest': id = 13; break;
                 }
                 biomeStrip[lx + lz * CHUNK_SIZE] = id;
             }
@@ -1360,6 +1369,7 @@ function animate() {
     const isPaused = (uiState === 'PAUSED' || uiState === 'MENU' || uiState === 'CREATE_WORLD' || isDead);
     if (!isPaused) {
         globalTime = (globalTime + dt) % TOTAL_TIME;
+        if (typeof _tickFarmlandMoisture === 'function') _tickFarmlandMoisture();
     } 
     
     let t = 0;
@@ -1464,6 +1474,12 @@ function animate() {
                                 miningState.x = target.hit[0]; miningState.y = target.hit[1]; miningState.z = target.hit[2];
                                 miningState.id = target.id; miningState.progress = 0; miningState.stage = 0;
                                 if (typeof breakingBox !== 'undefined' && breakingBox) {
+                                    // v279: rebuild overlay geometry to match the block's actual shape
+                                    if (typeof window.rebuildBreakingBoxForBlock === 'function') {
+                                        // v279.1: read val fresh via getVoxel to avoid any
+                                        // staleness from the target object.
+                                        window.rebuildBreakingBoxForBlock(target.id, getVoxel(target.hit[0], target.hit[1], target.hit[2]), target.hit[0], target.hit[1], target.hit[2]);
+                                    }
                                     breakingBox.position.set(miningState.x + 0.5, miningState.y + 0.5, miningState.z + 0.5);
                                     breakingBox.visible = true;
                                     if (!breakingBox.material.map && typeof textureAtlas !== 'undefined') {
@@ -1481,7 +1497,10 @@ function animate() {
                     const target = raycastVoxel();
                     if (!target || target.hit[0] !== miningState.x || target.hit[1] !== miningState.y || target.hit[2] !== miningState.z) {
                         miningState.isMining = false;
-                        if (breakingBox) breakingBox.visible = false;
+                        if (breakingBox) {
+                            breakingBox.visible = false;
+                            if (breakingBox.userData) breakingBox.userData.shapeKey = null;
+                        }
                     } else {
                         if (swingAnimation <= 0) swingAnimation = 1.0;
                         if (hardness < 0) miningState.progress = 0;
@@ -1508,7 +1527,14 @@ function animate() {
                                 }
 
                                 miningState.isMining = false;
-                                if (breakingBox) breakingBox.visible = false;
+                                if (breakingBox) {
+                                    breakingBox.visible = false;
+                                    // v279.1: invalidate the shape cache so the
+                                    // next mining session ALWAYS rebuilds the
+                                    // overlay geometry — prevents the previous
+                                    // block's shape from persisting.
+                                    if (breakingBox.userData) breakingBox.userData.shapeKey = null;
+                                }
                                 window.blockBreakCooldown = 0.3;
                             } else {
                                 const stage = Math.floor(miningState.progress * 10); 
@@ -1596,6 +1622,117 @@ function animate() {
                 player.onFire = (player._fireTimer > 0) || inLavaNow || onFireNow;
             } else {
                 player.onFire = false;
+            }
+
+            // v284: Hunger system tick — only when enabled.
+            if (gameMode === 'survival' && !player._dead && typeof GEN_HUNGER_ENABLED !== 'undefined' && GEN_HUNGER_ENABLED) {
+                // v286: Eat-in-progress tick. Only advances while the right
+                // mouse button is still held. Cancels cleanly if released.
+                if (player.eatItemId && window.isRightMouseHeld) {
+                    // Verify the player is still holding the same food item;
+                    // switching items mid-eat cancels.
+                    if (currentBuildBlock !== player.eatItemId) {
+                        player.eatItemId = 0;
+                        player.eatTimer = 0;
+                        player.eatSoundTimer = 0;
+                    } else {
+                        player.eatTimer = (player.eatTimer || 0) + dt;
+                        player.eatSoundTimer = (player.eatSoundTimer || 0) + dt;
+                        // Play an eat sound roughly every 0.2s while eating
+                        if (player.eatSoundTimer >= 0.2) {
+                            player.eatSoundTimer = 0;
+                            if (typeof window.playEatSound === 'function') window.playEatSound();
+                            // v287: also spawn food-texture particles near the
+                            // player's mouth on each chomp. Position is the
+                            // player's eye level plus a forward offset so the
+                            // particles fly out of the character's face.
+                            if (typeof spawnParticles === 'function') {
+                                const fwdX = -Math.sin(player.yaw) * Math.cos(player.pitch);
+                                const fwdY = -Math.sin(player.pitch);
+                                const fwdZ = -Math.cos(player.yaw) * Math.cos(player.pitch);
+                                const mx = player.x + fwdX * 0.4;
+                                const my = player.y + player.eyeLevel - 0.15 + fwdY * 0.4;
+                                const mz = player.z + fwdZ * 0.4;
+                                spawnParticles(mx - 0.5, my - 0.5, mz - 0.5, player.eatItemId, 3);
+                            }
+                        }
+                        // MC eat time is 1.6s for all foods in this game
+                        const eatTime = (typeof FOOD_DATA !== 'undefined' && FOOD_DATA[player.eatItemId] && FOOD_DATA[player.eatItemId].eatTime) || 1.6;
+                        if (player.eatTimer >= eatTime) {
+                            const eatenId = player.eatItemId;
+                            player.eatItemId = 0;
+                            player.eatTimer = 0;
+                            player.eatSoundTimer = 0;
+                            // Apply the food and consume inventory
+                            const didEat = typeof window.applyFoodEffect === 'function' && window.applyFoodEffect(eatenId);
+                            if (didEat) {
+                                if (typeof window.playBurpSound === 'function') window.playBurpSound();
+                                if (inventory[activeSlot]) {
+                                    inventory[activeSlot].count--;
+                                    if (inventory[activeSlot].count <= 0) {
+                                        inventory[activeSlot].id = 0;
+                                        inventory[activeSlot].count = 0;
+                                    }
+                                    if (typeof buildUI === 'function') buildUI();
+                                    if (typeof selectSlot === 'function') selectSlot(activeSlot);
+                                }
+                            }
+                        }
+                    }
+                } else if (player.eatItemId && !window.isRightMouseHeld) {
+                    // Released mid-eat — cancel cleanly
+                    player.eatItemId = 0;
+                    player.eatTimer = 0;
+                    player.eatSoundTimer = 0;
+                }
+                // Exhaustion → saturation → hunger cascade
+                if (player.exhaustion >= 4.0) {
+                    player.exhaustion -= 4.0;
+                    if (player.saturation > 0) {
+                        player.saturation = Math.max(0, player.saturation - 1);
+                    } else if (player.hunger > 0) {
+                        player.hunger = Math.max(0, player.hunger - 1);
+                    }
+                }
+                // Regen: hunger >= 18 heals HP over time
+                if (player.health < player.maxHealth && player.hunger >= 18) {
+                    player.regenTimer = (player.regenTimer || 0) + dt;
+                    // Fast regen (saturation > 0): 1 HP per 0.5s, +6 exhaustion per HP
+                    // Slow regen (saturation == 0): 1 HP per 4.0s, +6 exhaustion per HP
+                    const regenInterval = (player.saturation > 0) ? 0.5 : 4.0;
+                    if (player.regenTimer >= regenInterval) {
+                        player.regenTimer -= regenInterval;
+                        player.health = Math.min(player.maxHealth, player.health + 1);
+                        player.exhaustion += 6.0;
+                        if (typeof updateHealthUI === 'function') updateHealthUI();
+                    }
+                } else {
+                    player.regenTimer = 0;
+                }
+                // Starvation damage: hunger == 0 damages HP
+                if (player.hunger === 0) {
+                    player.hungerDamageTimer = (player.hungerDamageTimer || 0) + dt;
+                    if (player.hungerDamageTimer >= 4.0) {
+                        player.hungerDamageTimer -= 4.0;
+                        // Difficulty-based floor: easy=10, normal=1, hard=0
+                        const diff = (typeof worldOptions !== 'undefined' && worldOptions.difficulty) || 'normal';
+                        const floor = diff === 'easy' ? 10 : (diff === 'hard' ? 0 : 1);
+                        if (player.health > floor) {
+                            if (typeof window.applyPlayerDamage === 'function') {
+                                window.applyPlayerDamage(1);
+                            } else {
+                                player.health = Math.max(floor, player.health - 1);
+                                if (typeof updateHealthUI === 'function') updateHealthUI();
+                            }
+                        }
+                    }
+                } else {
+                    player.hungerDamageTimer = 0;
+                }
+                // Update hunger UI every tick (cheap since it's DOM class toggles)
+                if (typeof updateHungerUI === 'function') updateHungerUI();
+                // v290: update mobile eat button visibility based on held item / hunger
+                if (typeof window.updateMobileEatBtnVisibility === 'function') window.updateMobileEatBtnVisibility();
             }
 
             // Update fire overlay + model fire meshes
@@ -1695,6 +1832,16 @@ function animate() {
                 }
 
                 heldItemGroup.position.set(0.56 + swingTX + handBobX, -0.52 + swingTY + handBobY, -0.72 + swingTZ);
+
+                // v287: eating animation — food moves closer to camera and
+                // bobs up/down rapidly while the player eats.
+                if (player.eatItemId && player.eatTimer > 0) {
+                    const bobPhase = player.eatTimer * 18.0; // rapid bob frequency
+                    const eatBobY = Math.abs(Math.sin(bobPhase)) * 0.08;
+                    heldItemGroup.position.x = 0.22 + handBobX;
+                    heldItemGroup.position.y = -0.30 + eatBobY + handBobY;
+                    heldItemGroup.position.z = -0.42;
+                }
 
                 const toRad = Math.PI / 180;
                 heldItemGroup.rotation.set((0 + swingRotX) * toRad, (-45.0 + swingRotY) * toRad, (0 + swingRotZ + handRollDeg) * toRad, 'YXZ');
@@ -2830,18 +2977,93 @@ function onWindowResize() {
     }
 }
 
+// v284: Hunger system — apply a food item's effect. When hunger is
+// disabled, uses the legacy instant-heal behavior; when enabled, fills
+// hunger + saturation and defers healing to the regen tick.
+window.applyFoodEffect = function(itemId) {
+    if (typeof FOOD_DATA === 'undefined' || !FOOD_DATA[itemId]) return false;
+    const f = FOOD_DATA[itemId];
+    const hungerOn = (typeof GEN_HUNGER_ENABLED !== 'undefined' && GEN_HUNGER_ENABLED);
+    if (hungerOn) {
+        // Block eating at full hunger unless alwaysEdible
+        if (player.hunger >= player.maxHunger && !f.alwaysEdible) return false;
+        player.hunger = Math.min(player.maxHunger, player.hunger + f.hunger);
+        // Saturation clamps to current hunger
+        player.saturation = Math.min(player.hunger, player.saturation + f.saturation);
+        if (typeof updateHungerUI === 'function') updateHungerUI();
+    } else {
+        // Legacy path: eat only if not full HP, instant-heal
+        if (player.health >= player.maxHealth) return false;
+        player.health = Math.min(player.maxHealth, player.health + f.legacyHeal);
+        if (typeof updateHealthUI === 'function') updateHealthUI();
+    }
+    return true;
+};
+
+// v284: exhaustion accumulators. Exhaustion builds from activity and
+// triggers hunger/saturation drain in the game-loop tick. No-op if
+// hunger is disabled.
+window.addExhaustion = function(amount) {
+    if (typeof GEN_HUNGER_ENABLED === 'undefined' || !GEN_HUNGER_ENABLED) return;
+    if (typeof gameMode !== 'undefined' && gameMode !== 'survival') return;
+    player.exhaustion = (player.exhaustion || 0) + amount;
+};
+
 window.updateBreakingUVs = function(texIndex) {
     if (typeof breakingBox === 'undefined' || !breakingBox) return;
+    // v279: track the last stage so rebuilding the geometry for a new
+    // target can re-apply the current stage's UVs.
+    breakingBox.userData.lastUvStage = texIndex;
     const uScale = 1 / 16, vScale = 1 / 16;
     const gridX = texIndex % 16, gridY = Math.floor(texIndex / 16);
     const uOffset = gridX * uScale, vOffset = 1.0 - (gridY * vScale) - vScale;
-    const uvs = breakingBox.geometry.attributes.uv.array;
-    const baseUVs = [0,1, 1,1, 0,0, 1,0, 0,1, 1,1, 0,0, 1,0, 0,1, 1,1, 0,0, 1,0, 0,1, 1,1, 0,0, 1,0, 0,1, 1,1, 0,0, 1,0, 0,1, 1,1, 0,0, 1,0];
-    for (let i = 0; i < 48; i += 2) {
-        uvs[i] = uOffset + baseUVs[i] * uScale;
-        uvs[i+1] = vOffset + baseUVs[i+1] * vScale;
+    const geo = breakingBox.geometry;
+    if (!geo) return;
+    const uvAttr = geo.attributes.uv;
+    const posAttr = geo.attributes.position;
+    const normAttr = geo.attributes.normal;
+    if (!uvAttr || !posAttr || !normAttr) return;
+    const uvs = uvAttr.array;
+    const positions = posAttr.array;
+    const normals = normAttr.array;
+    // v281: planar-project vertices onto the breaking texture so the
+    // crack pattern spans the entire voxel as a single unbroken texture
+    // rather than repeating once per sub-box. For each vertex, look at
+    // its face normal to decide which two world axes form the projection
+    // plane, then map the vertex's position on those axes to a UV in
+    // [0..1] within the atlas tile.
+    // Vertices are in local space centered on the voxel: pos = world - 0.5
+    // so (pos + 0.5) gives 0..1 within the voxel cube.
+    const clamp01 = (v) => v < 0 ? 0 : (v > 1 ? 1 : v);
+    for (let i = 0, vi = 0; i < uvs.length; i += 2, vi += 3) {
+        const px = positions[vi];
+        const py = positions[vi+1];
+        const pz = positions[vi+2];
+        const nx = normals[vi];
+        const ny = normals[vi+1];
+        const nz = normals[vi+2];
+        // Pick the projection plane based on the dominant normal axis
+        let lu, lv;
+        const ax = Math.abs(nx), ay = Math.abs(ny), az = Math.abs(nz);
+        if (ay >= ax && ay >= az) {
+            // Top/bottom face → project onto XZ plane
+            lu = px + 0.5;
+            lv = pz + 0.5;
+        } else if (ax >= az) {
+            // ±X face → project onto ZY plane
+            lu = pz + 0.5;
+            lv = py + 0.5;
+        } else {
+            // ±Z face → project onto XY plane
+            lu = px + 0.5;
+            lv = py + 0.5;
+        }
+        lu = clamp01(lu);
+        lv = clamp01(lv);
+        uvs[i]   = uOffset + lu * uScale;
+        uvs[i+1] = vOffset + lv * vScale;
     }
-    breakingBox.geometry.attributes.uv.needsUpdate = true;
+    uvAttr.needsUpdate = true;
 };
 
 window.spawnLavaPopParticle = function(x, y, z) {
@@ -2867,4 +3089,80 @@ window.spawnLavaPopParticle = function(x, y, z) {
     });
 };
 
+// ==========================================// ==========================================
+// FARMLAND MOISTURE SYSTEM (v310)
 // ==========================================
+// Tracks tilled farmland blocks and periodically checks each for a
+// nearby water source (within 4 blocks horizontal, ±1 Y). Matches MC:
+//   - Farmland with water nearby → Moist Farmland (63)
+//   - Dry farmland with no water for ~30s → reverts to Dirt (2)
+//   - Moist farmland without water → slowly reverts to dry, then dirt
+
+// Map: "x,y,z" -> { lastMoistTime, added }
+const _farmlandTracker = new Map();
+let _farmlandNextTick = 0;
+
+window._trackFarmland = function(x, y, z) {
+    const key = (x|0) + ',' + (y|0) + ',' + (z|0);
+    _farmlandTracker.set(key, { lastMoist: performance.now() });
+};
+
+function _hasWaterNearFarmland(x, y, z) {
+    // Check 9x3x9 box: ±4 horizontally, ±1 vertically
+    for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -4; dx <= 4; dx++) {
+            for (let dz = -4; dz <= 4; dz++) {
+                const id = getVoxel(x + dx, y + dy, z + dz) & 0xFF;
+                if (id === 4) return true; // water block
+            }
+        }
+    }
+    return false;
+}
+
+function _tickFarmlandMoisture() {
+    const now = performance.now();
+    if (now < _farmlandNextTick) return;
+    _farmlandNextTick = now + 1500; // tick every 1.5s
+    
+    if (_farmlandTracker.size === 0) return;
+    
+    const toDelete = [];
+    for (const [key, data] of _farmlandTracker) {
+        const parts = key.split(',');
+        const x = parts[0] | 0, y = parts[1] | 0, z = parts[2] | 0;
+        const currentId = getVoxel(x, y, z) & 0xFF;
+        
+        // Block was removed or changed to something else — stop tracking
+        if (currentId !== 62 && currentId !== 63) {
+            toDelete.push(key);
+            continue;
+        }
+        
+        const hasWater = _hasWaterNearFarmland(x, y, z);
+        
+        if (hasWater) {
+            // Promote to moist, refresh timer
+            data.lastMoist = now;
+            if (currentId === 62) {
+                setVoxel(x, y, z, 63);
+                if (typeof pendingBlockUpdates !== 'undefined') pendingBlockUpdates.push({x, y, z});
+            }
+        } else {
+            // No water — decay
+            const dryFor = (now - data.lastMoist) / 1000;
+            if (currentId === 63 && dryFor > 15) {
+                // Moist → dry after 15s without water
+                setVoxel(x, y, z, 62);
+                if (typeof pendingBlockUpdates !== 'undefined') pendingBlockUpdates.push({x, y, z});
+            } else if (currentId === 62 && dryFor > 30) {
+                // Dry → dirt after 30s without water
+                setVoxel(x, y, z, 2);
+                if (typeof pendingBlockUpdates !== 'undefined') pendingBlockUpdates.push({x, y, z});
+                toDelete.push(key);
+            }
+        }
+    }
+    for (const k of toDelete) _farmlandTracker.delete(k);
+}
+window._tickFarmlandMoisture = _tickFarmlandMoisture;
