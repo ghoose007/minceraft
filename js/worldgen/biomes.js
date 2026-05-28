@@ -58,6 +58,40 @@ function _getRawBiome(x, z) {
                 const cHumid = _wgPerlinHumid.fbm(jx / _wgBiomeScale, jz / _wgBiomeScale, 3) + (GEN_HUMID_OFFSET / 100.0);
                 
                 const result = _classifyBiome(cTemp, cHumid);
+
+                // v318 badlands: Minecraft-style rare hot/dry mesa regions.
+                // Badlands share desert climate, usually appear near deserts, but
+                // should not replace every desert. Use deterministic cell hashing
+                // so full Voronoi cells become badlands patches instead of noisy speckles.
+                if (result.biome === 'desert' && cTemp > 0.25 && cHumid < -0.25) {
+                    const badlandsRoll = _cellHash(cx, cz, _worldSeed + 424242);
+                    if (badlandsRoll > 0.58 || (cTemp > 0.34 && cHumid < -0.38 && badlandsRoll > 0.42)) {
+                        result.biome = 'badlands';
+                        result.bH = GEN_SEA_LEVEL + 24;
+                        result.bV = 14;
+                    }
+                }
+
+                // v341 ice_spikes: MC-style rare variant of snowy plains
+                // (tundra). MC calls this a "high weirdness" variant; we use
+                // the same deterministic cell-hash approach as badlands so
+                // whole Voronoi cells flip rather than speckling along
+                // tundra borders. Terrain is flatter than tundra (bV=6
+                // vs 24) since the visual interest comes from the packed-ice
+                // spikes themselves, not from the heightmap; bH a little
+                // lower so the snowy plains floor sits at a believable
+                // elevation. Roll > 0.78 makes them findable but rare —
+                // a player wandering tundra borders should occasionally
+                // come across one.
+                if (result.biome === 'tundra') {
+                    const iceSpikesRoll = _cellHash(cx, cz, _worldSeed + 717171);
+                    if (iceSpikesRoll > 0.78) {
+                        result.biome = 'ice_spikes';
+                        result.bH = GEN_SEA_LEVEL + 12;
+                        result.bV = 6;
+                    }
+                }
+
                 closestBiome = result.biome;
                 closestBH = result.bH;
                 closestBV = result.bV;
@@ -97,7 +131,7 @@ function _getRawBiome(x, z) {
     // Uses ridge noise (1 - abs(noise)) to create narrow winding channels.
     // Multiple warp layers at different frequencies create realistic meanders.
     // Rivers blend terrain height down to sea level with tight bank transitions.
-    if (biome !== 'ocean' && biome !== 'desert') {
+    if (biome !== 'ocean' && biome !== 'desert' && biome !== 'badlands') {
         // Multi-scale domain warping for realistic river meanders
         // Large-scale bends (river valley direction)
         const rWarp1X = _wgPerlinRiver2.fbm(wx / 300, wz / 300, 2) * 60;
@@ -145,10 +179,12 @@ function _classifyBiome(temp, humid) {
     if (typeof GEN_SINGLE_BIOME !== 'undefined' && GEN_SINGLE_BIOME) {
         biome = GEN_SINGLE_BIOME;
         if (biome === 'desert')        { bH = GEN_SEA_LEVEL + 2;  bV = 8;  }
+        else if (biome === 'badlands') { bH = GEN_SEA_LEVEL + 24; bV = 14; }
         else if (biome === 'jungle')   { bH = GEN_SEA_LEVEL + 6;  bV = 18; }
         else if (biome === 'rainforest') { bH = GEN_SEA_LEVEL + 10; bV = 35; }
         else if (biome === 'swamp')    { bH = GEN_SEA_LEVEL + 1;  bV = 3;  }
         else if (biome === 'tundra')   { bH = GEN_SEA_LEVEL + 18; bV = 24; }
+        else if (biome === 'ice_spikes') { bH = GEN_SEA_LEVEL + 12; bV = 6; } // v341
         else if (biome === 'taiga')    { bH = GEN_SEA_LEVEL + 14; bV = 30; }
         else if (biome === 'extreme_hills') { bH = GEN_SEA_LEVEL + 20; bV = 22; }
         else if (biome === 'forest')   { bH = GEN_SEA_LEVEL + 6;  bV = 18; }
@@ -199,6 +235,13 @@ function _computeChunkBiomeData(cx, cz) {
     const rawH = new Float32Array(padW * padH);
     const rawV = new Float32Array(padW * padH);
     const rawBiomes = new Uint8Array(padW * padH);
+    // v334: per-cell "is this raw biome badlands?" mask. We box-blur this
+    // alongside the heightmap so we have a smooth 0..1 weight that the
+    // spire/hoodoo height bonus can multiply through. Without this the
+    // spire bonus was a binary on/off based on the chunk cell biome, which
+    // produced visible height cliffs at the badlands/plains boundary even
+    // though the underlying heightmap blended smoothly.
+    const rawBadlands = new Float32Array(padW * padH);
     
     for (let lx = 0; lx < padW; lx++) {
         for (let lz = 0; lz < padH; lz++) {
@@ -209,36 +252,56 @@ function _computeChunkBiomeData(cx, cz) {
             rawH[idx] = b.bH;
             rawV[idx] = b.bV;
             rawBiomes[idx] = BIOME_IDS[b.biome];
+            rawBadlands[idx] = (b.biome === 'badlands') ? 1.0 : 0.0;
         }
     }
     
     // Box blur horizontal
     const tempH = new Float32Array(padW * padH);
     const tempV = new Float32Array(padW * padH);
+    const tempB = new Float32Array(padW * padH);
     
     for (let z = 0; z < padH; z++) {
-        let sumH = 0, sumV = 0, count = 0;
+        let sumH = 0, sumV = 0, sumB = 0, count = 0;
         for (let dx = 0; dx <= blurRadius && dx < padW; dx++) {
-            sumH += rawH[dx + z * padW]; sumV += rawV[dx + z * padW]; count++;
+            sumH += rawH[dx + z * padW];
+            sumV += rawV[dx + z * padW];
+            sumB += rawBadlands[dx + z * padW];
+            count++;
         }
         for (let x = 0; x < padW; x++) {
             tempH[x + z * padW] = sumH / count;
             tempV[x + z * padW] = sumV / count;
+            tempB[x + z * padW] = sumB / count;
             const dropX = x - blurRadius;
-            if (dropX >= 0) { sumH -= rawH[dropX + z * padW]; sumV -= rawV[dropX + z * padW]; count--; }
+            if (dropX >= 0) {
+                sumH -= rawH[dropX + z * padW];
+                sumV -= rawV[dropX + z * padW];
+                sumB -= rawBadlands[dropX + z * padW];
+                count--;
+            }
             const addX = x + blurRadius + 1;
-            if (addX < padW) { sumH += rawH[addX + z * padW]; sumV += rawV[addX + z * padW]; count++; }
+            if (addX < padW) {
+                sumH += rawH[addX + z * padW];
+                sumV += rawV[addX + z * padW];
+                sumB += rawBadlands[addX + z * padW];
+                count++;
+            }
         }
     }
     
     // Box blur vertical, extract center
     const blurredH = new Float32Array(CHUNK_SIZE * CHUNK_SIZE);
     const blurredV = new Float32Array(CHUNK_SIZE * CHUNK_SIZE);
+    const blurredBadlands = new Float32Array(CHUNK_SIZE * CHUNK_SIZE);
     
     for (let x = 0; x < padW; x++) {
-        let sumH = 0, sumV = 0, count = 0;
+        let sumH = 0, sumV = 0, sumB = 0, count = 0;
         for (let dz = 0; dz <= blurRadius && dz < padH; dz++) {
-            sumH += tempH[x + dz * padW]; sumV += tempV[x + dz * padW]; count++;
+            sumH += tempH[x + dz * padW];
+            sumV += tempV[x + dz * padW];
+            sumB += tempB[x + dz * padW];
+            count++;
         }
         for (let z = 0; z < padH; z++) {
             const localX = x - pad;
@@ -246,11 +309,22 @@ function _computeChunkBiomeData(cx, cz) {
             if (localX >= 0 && localX < CHUNK_SIZE && localZ >= 0 && localZ < CHUNK_SIZE) {
                 blurredH[localX + localZ * CHUNK_SIZE] = sumH / count;
                 blurredV[localX + localZ * CHUNK_SIZE] = sumV / count;
+                blurredBadlands[localX + localZ * CHUNK_SIZE] = sumB / count;
             }
             const dropZ = z - blurRadius;
-            if (dropZ >= 0) { sumH -= tempH[x + dropZ * padW]; sumV -= tempV[x + dropZ * padW]; count--; }
+            if (dropZ >= 0) {
+                sumH -= tempH[x + dropZ * padW];
+                sumV -= tempV[x + dropZ * padW];
+                sumB -= tempB[x + dropZ * padW];
+                count--;
+            }
             const addZ = z + blurRadius + 1;
-            if (addZ < padH) { sumH += tempH[x + addZ * padW]; sumV += tempV[x + addZ * padW]; count++; }
+            if (addZ < padH) {
+                sumH += tempH[x + addZ * padW];
+                sumV += tempV[x + addZ * padW];
+                sumB += tempB[x + addZ * padW];
+                count++;
+            }
         }
     }
     
@@ -261,7 +335,7 @@ function _computeChunkBiomeData(cx, cz) {
         }
     }
     
-    const data = { biomes, heightMap: blurredH, volMap: blurredV };
+    const data = { biomes, heightMap: blurredH, volMap: blurredV, badlandsWeight: blurredBadlands };
     chunkBiomeCache.set(key, data);
     return data;
 }
@@ -310,6 +384,14 @@ function getBiomeDisplayName(x, z) {
     if (currentDimension === 'overworld' && baseBiome !== 'desert' && isInRiverZone(x, z)) {
         return 'River';
     }
-    
+
+    // v341: pretty-print multi-word biome names. Underscored names exist in
+    // the BIOME_NAMES array (e.g. 'ice_spikes', 'extreme_hills',
+    // 'alpha_forest') and the naive capitalize-first-letter approach
+    // produces ugly strings like "Ice_spikes" in the F3 overlay. Convert
+    // underscores to spaces and title-case each word.
+    if (baseBiome.indexOf('_') >= 0) {
+        return baseBiome.split('_').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+    }
     return baseBiome.charAt(0).toUpperCase() + baseBiome.slice(1);
 }

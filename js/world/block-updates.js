@@ -21,9 +21,9 @@ function doBlockUpdate(x, y, z) {
             window.onRedstoneBlockChanged(x, y, z);
         }
     } else {
-        // NEW: If the block is sand (15) or gravel (5), check if it needs to fall
+        // If the block is sand/red sand/gravel, check if it needs to fall, check if it needs to fall
         // This ensures floating gravity blocks fall if a neighbor block is broken
-        if ((id === 15 || id === 5) && typeof checkGravity === 'function') {
+        if ((id === 15 || id === 25 || id === 5) && typeof checkGravity === 'function') {
             checkGravity(x, y, z);
         }
     }

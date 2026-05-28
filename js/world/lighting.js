@@ -330,19 +330,59 @@ function recalculateLighting(ux, uy, uz) {
             }
         }
     } else {
-        // v312: Global lighting pass — mark ALL loaded chunks for remesh.
-        // Without this, torch/lava/glowstone light values get written to
-        // chunk data but the meshes still show pre-light geometry. This
-        // was especially bad for the nether where lava is the main light
-        // source but the dimension looked completely dark after load.
+        // Global lighting pass — mark ALL loaded chunks for remesh AND invalidate
+        // the mesh worker's mirrored chunk copies. This is critical for loaded
+        // saves: the mesh worker can receive saved/stale light bits before the
+        // startup relight finishes. If we only add dirtyChunks but do not bump
+        // chunk versions, _syncChunkToMeshWorker() believes the worker copy is
+        // still current and builds meshes with the old darker light values until
+        // a block edit later bumps that chunk.
         if (typeof dirtyChunks !== 'undefined' && dirtyChunks) {
             for (let ci = 0; ci < generatedChunksArr.length; ci++) {
                 if (generatedChunksArr[ci]) {
-                    const cx = (ci / CHUNKS_Z) | 0;
-                    const cz = ci % CHUNKS_Z;
-                    dirtyChunks.add(cx + ',' + cz);
+                    const scx = (ci / CHUNKS_Z) | 0;
+                    const scz = ci % CHUNKS_Z;
+                    dirtyChunks.add((scx - (CHUNKS_X >> 1)) + ',' + (scz - (CHUNKS_Z >> 1)));
+                    if (typeof bumpChunkVersion === 'function') {
+                        bumpChunkVersion(scx, scz);
+                    }
                 }
             }
+        }
+    }
+}
+
+
+// Re-runs the same local lighting path used by runtime chunk updates over a
+// visible chunk radius. A full/global light rebuild is mathematically clean,
+// but runtime-generated chunks and player edits use local recalc calls. Running
+// this settle pass after load/new-world startup makes saved worlds match the
+// normal in-game lighting appearance instead of looking darker until a block
+// update forces a local relight.
+function settleLightingForVisibleChunks(centerX, centerZ, radiusChunks) {
+    if (!chunkStorageArr || !generatedChunksArr) return;
+    const pCx = Math.floor(centerX / CHUNK_SIZE);
+    const pCz = Math.floor(centerZ / CHUNK_SIZE);
+    const r = Math.max(0, radiusChunks | 0);
+    const jobs = [];
+    for (let dx = -r; dx <= r; dx++) {
+        for (let dz = -r; dz <= r; dz++) {
+            const wcx = pCx + dx;
+            const wcz = pCz + dz;
+            const scx = wcx + (CHUNKS_X >> 1);
+            const scz = wcz + (CHUNKS_Z >> 1);
+            if (scx < 0 || scx >= CHUNKS_X || scz < 0 || scz >= CHUNKS_Z) continue;
+            const idx = scx * CHUNKS_Z + scz;
+            if (!generatedChunksArr[idx] || !chunkStorageArr[idx]) continue;
+            jobs.push({ wcx, wcz, d: dx * dx + dz * dz });
+        }
+    }
+    jobs.sort((a, b) => a.d - b.d);
+    const fullY = WORLD_HEIGHT - 1;
+    for (const j of jobs) {
+        recalculateLighting(j.wcx * CHUNK_SIZE + (CHUNK_SIZE >> 1), fullY, j.wcz * CHUNK_SIZE + (CHUNK_SIZE >> 1));
+        if (typeof dirtyChunks !== 'undefined' && dirtyChunks) {
+            dirtyChunks.add(j.wcx + ',' + j.wcz);
         }
     }
 }

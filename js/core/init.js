@@ -253,13 +253,18 @@ async function init(seed, loadedData) {
         // Load your fire texture BEFORE building chunks
         if (typeof loadFireTexture === 'function') await loadFireTexture(); 
         textureAtlas = await loadTextureAtlas();
+        textureAtlasMip = (typeof loadMipTextureAtlas === 'function') ? await loadMipTextureAtlas() : textureAtlas;
         await loadToolAtlas();
         solidMaterial = new THREE.MeshBasicMaterial({ map: textureAtlas, alphaTest: 0.5, transparent: false, side: THREE.FrontSide, vertexColors: true });
         injectLightingShader(solidMaterial);
+        solidMaterialMip = new THREE.MeshBasicMaterial({ map: textureAtlasMip || textureAtlas, alphaTest: 0.5, transparent: false, side: THREE.FrontSide, vertexColors: true });
+        injectLightingShader(solidMaterialMip);
         if (typeof createPortalMaterial === 'function') createPortalMaterial(textureAtlas);
         if (typeof createAetherPortalMaterial === 'function') createAetherPortalMaterial(textureAtlas);
         glassMaterial = new THREE.MeshBasicMaterial({ map: textureAtlas, transparent: true, opacity: 1.0, alphaTest: 0.0, side: THREE.FrontSide, vertexColors: true, depthWrite: false });
         injectLightingShader(glassMaterial);
+        glassMaterialMip = new THREE.MeshBasicMaterial({ map: textureAtlasMip || textureAtlas, transparent: true, opacity: 1.0, alphaTest: 0.0, side: THREE.FrontSide, vertexColors: true, depthWrite: false });
+        injectLightingShader(glassMaterialMip);
         const waterTex = await loadWaterTexture();
         waterMaterial = createFluidMaterial(waterTex, true);
         const lavaTex = await loadLavaTexture();
@@ -743,9 +748,14 @@ async function init(seed, loadedData) {
         }
         
         // Lighting and meshing for current dimension
+        const loadRadius = Math.min(RENDER_DISTANCES[currentRenderDistIndex] + 2, 12);
+        updateLoadingBar(55, 'Repairing nearby chunks...');
+        await yieldToUI();
+        if (typeof _repairVisibleChunkHolesAfterLoad === 'function') {
+            try { await _repairVisibleChunkHolesAfterLoad(player.x, player.z, loadRadius + 1); } catch (e) { console.warn('[load] visible chunk repair failed', e); }
+        }
         updateLoadingBar(60, 'Recalculating lighting...');
         await yieldToUI();
-        const loadRadius = Math.min(RENDER_DISTANCES[currentRenderDistIndex] + 2, 12);
         if (useLazyGeneration) {
             const pcx = Math.floor((player.x + Math.floor(WORLD_WIDTH / 2)) / CHUNK_SIZE);
             const pcz = Math.floor((player.z + Math.floor(WORLD_DEPTH / 2)) / CHUNK_SIZE);
@@ -754,6 +764,11 @@ async function init(seed, loadedData) {
                     ensureChunkGenerated(pcx + dx, pcz + dz);
         }
         recalculateLightingInRadius(player.x, player.z, loadRadius * CHUNK_SIZE);
+        if (typeof settleLightingForVisibleChunks === 'function') {
+            updateLoadingBar(72, 'Settling loaded lighting...');
+            await yieldToUI();
+            settleLightingForVisibleChunks(player.x, player.z, loadRadius);
+        }
         
         updateLoadingBar(80, 'Building chunks...');
         await yieldToUI();
@@ -796,10 +811,20 @@ async function init(seed, loadedData) {
         updateLoadingBar(90, 'Calculating spawn lighting...');
         await yieldToUI();
         recalculateLightingInRadius(0, 0, spawnRadius * CHUNK_SIZE);
+        if (typeof settleLightingForVisibleChunks === 'function') {
+            updateLoadingBar(91, 'Settling spawn lighting...');
+            await yieldToUI();
+            settleLightingForVisibleChunks(0, 0, spawnRadius);
+        }
     } else {
         updateLoadingBar(85, 'Calculating lighting...');
         await yieldToUI();
         recalculateLighting();
+        if (typeof settleLightingForVisibleChunks === 'function') {
+            updateLoadingBar(91, 'Settling spawn lighting...');
+            await yieldToUI();
+            settleLightingForVisibleChunks(0, 0, Math.min(RENDER_DISTANCES[currentRenderDistIndex] + 2, 12));
+        }
     }
     
     updateLoadingBar(92, 'Building initial chunks...');
@@ -828,9 +853,49 @@ async function init(seed, loadedData) {
     }
     dirtyChunks.clear();
 
-    let spawnX = 0, spawnZ = 0;
+    function _findSkyblockSafeSpawnOnIsland() {
+    const groundY = 64;
+    // Try the open front/right grass arm first, far from the corner oak and chest.
+    const preferred = [
+        [2, -2], [1, -2], [0, -2],
+        [2, 0], [1, 0], [0, 0],
+        [-1, 0], [-2, 0], [-1, -1]
+    ];
+    function isSafe(x, z) {
+        return ((getVoxel(x, groundY, z) & 0xFF) === 1) &&
+               ((getVoxel(x, groundY + 1, z) & 0xFF) === 0) &&
+               ((getVoxel(x, groundY + 2, z) & 0xFF) === 0);
+    }
+    for (const p of preferred) {
+        if (isSafe(p[0], p[1])) return { x: p[0], y: groundY, z: p[1] };
+    }
+    // Fallback: scan the whole classic L island footprint.
+    for (let x = -2; x <= 2; x++) {
+        for (let z = -2; z <= 2; z++) {
+            const inL = (z <= 0) || (x <= 0);
+            if (inL && isSafe(x, z)) return { x, y: groundY, z };
+        }
+    }
+    return { x: 0, y: groundY, z: 0 };
+}
+
+let spawnX = 0, spawnZ = 0;
     let spawnY = getHighestBlock(0, 0);
-    let foundLand = spawnY >= GEN_SEA_LEVEL || (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 1);
+    let foundLand = spawnY >= GEN_SEA_LEVEL || (typeof GEN_WORLD_TYPE !== 'undefined' && (GEN_WORLD_TYPE === 1 || GEN_WORLD_TYPE === 5));
+    if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 5) {
+        // Fill starter chest and grow the starter tree on the main thread.
+        // The tree uses the existing runtime sapling growTree() generator.
+        if (typeof window.setupSkyblockStarterChest === 'function') window.setupSkyblockStarterChest();
+        if (typeof window.setupSkyblockStarterTree === 'function') window.setupSkyblockStarterTree();
+
+        // Always choose an actual free grass block on the starter island after
+        // the tree exists, so the spawn search can avoid any leaves above it.
+        const skySpawn = _findSkyblockSafeSpawnOnIsland();
+        spawnX = skySpawn.x;
+        spawnZ = skySpawn.z;
+        spawnY = skySpawn.y;
+        foundLand = true;
+    }
     if (!foundLand) {
         for (let r = 1; r < 200 && !foundLand; r += 2) {
             for (let dx = -r; dx <= r && !foundLand; dx += 4) {
@@ -848,12 +913,15 @@ async function init(seed, loadedData) {
     }
     player.x = spawnX;
     player.z = spawnZ;
-    player.y = spawnY + 2;
+    // Normal terrain keeps the legacy +2 air-spawn behavior. Skyblock uses
+    // exact ground spawn so the player starts standing on the grass block
+    // instead of floating or intersecting the corner tree leaves.
+    player.y = (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 5) ? (spawnY + 1.01) : (spawnY + 2);
 
     // Store world spawn for respawning after death
     window.worldSpawnX = spawnX;
     window.worldSpawnZ = spawnZ;
-    window.worldSpawnY = spawnY;
+    window.worldSpawnY = (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 5) ? (spawnY + 1.01) : spawnY;
     } // end normal generation path
 
     if (typeof buildUI === 'function') buildUI();
@@ -1034,16 +1102,6 @@ async function init(seed, loadedData) {
                 if (typeof window._stopInventoryDoll === 'function') window._stopInventoryDoll();
                 document.body.requestPointerLock(); 
             }
-        }
-
-        if(e.code === 'KeyF' && uiState === 'PLAYING') {
-            toggleRenderDist(); 
-            const radius = RENDER_DISTANCES[currentRenderDistIndex];
-            const el = document.getElementById('action-text');
-            el.textContent = `Render Distance: ${RENDER_NAMES[currentRenderDistIndex]} (${radius} Chunks)`;
-            el.style.opacity = '1';
-            clearTimeout(actionTextTimeout);
-            actionTextTimeout = setTimeout(() => el.style.opacity = '0', 2000);
         }
 
         if(e.code === 'KeyH' && uiState === 'PLAYING') {
@@ -1555,11 +1613,13 @@ window.getTargetedMob = function() {
                 swingAnimation = 1.0; return;
             }
             
-            // Block placement of tools/items — only allow actual placeable blocks and saplings
+            // Block placement of tools/items — only allow actual placeable blocks and intentional special-use items.
+            currentBuildBlock = Number(currentBuildBlock);
             if (currentBuildBlock >= 100) {
-                // These are placeable despite being >= 100
-                const placeableHighIds = [116, 117, 118, 128, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158, 190, 191, 192, 193, 194, 195, 196, 200, 201, 202, 203, 205, 206, 207, 208, 210, 212, 213, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251];
-                if (!placeableHighIds.includes(currentBuildBlock)) return;
+                // Existing exceptions: seeds/flint-and-steel/door item/spawn eggs have custom placement/use handlers.
+                const placeableHighIds = [128, 136, 151, 190, 191, 192, 193, 194, 195, 196];
+                const isRegisteredBlock = (typeof BLOCK_DATA !== 'undefined' && !!BLOCK_DATA[currentBuildBlock]);
+                if (!isRegisteredBlock && !placeableHighIds.includes(currentBuildBlock)) return;
             }
 
             let px = target.hit[0] + target.normal[0];
@@ -1845,6 +1905,40 @@ window.getTargetedMob = function() {
                 if ((yaw > 45 && yaw <= 135) || (yaw > 225 && yaw <= 315)) {
                     placeLevel = 1;
                 }
+            }
+            // v340: Tall Grass (item id 219) → place 219 at the target cell
+            // and 220 directly above. Mirrors the door-item placement
+            // pattern. This is the placement path the game actually loads
+            // (index.html only loads init.js; the input.js variant exists
+            // but isn't included in the script tags, so the v335 branch I
+            // originally added there was dead code).
+            else if (currentBuildBlock === 219) {
+                const aboveId = getVoxel(px, py + 1, pz) & 0xFF;
+                if (aboveId !== 0) return; // need air for the top half
+                setVoxel(px, py, pz, 219);
+                setVoxel(px, py + 1, pz, 220);
+                pendingBlockUpdates.push({x: px, y: py, z: pz});
+                pendingBlockUpdates.push({x: px, y: py + 1, z: pz});
+                if (typeof updateChunks === 'function') {
+                    updateChunks(px, py, pz);
+                    updateChunks(px, py + 1, pz);
+                }
+                if (typeof queueNeighbors === 'function') {
+                    queueNeighbors(px, py, pz);
+                    queueNeighbors(px, py + 1, pz);
+                }
+                if (typeof window._soundPlaceBlock === 'function') window._soundPlaceBlock(219, px, py, pz);
+                if (typeof gameMode !== 'undefined' && gameMode === 'survival' && inventory[activeSlot]) {
+                    inventory[activeSlot].count--;
+                    if (inventory[activeSlot].count <= 0) {
+                        inventory[activeSlot].id = 0;
+                        inventory[activeSlot].count = 0;
+                    }
+                    if (typeof buildUI === 'function') buildUI();
+                    if (typeof selectSlot === 'function') selectSlot(activeSlot);
+                }
+                swingAnimation = 1.0;
+                return;
             }
             // Door item (151) → place door block (149) as 2-block-tall structure
             else if (currentBuildBlock === 151) {
@@ -2132,7 +2226,10 @@ window.getTargetedMob = function() {
                               (pMinY < bMaxY && pMaxY > bMinY) &&
                               (pMinZ < bMaxZ && pMaxZ > bMinZ);
                               
-            if (!intersect || currentBuildBlock === 17 || currentBuildBlock === 116 || currentBuildBlock === 117 || currentBuildBlock === 118 || currentBuildBlock === 137 || currentBuildBlock === 202 || currentBuildBlock === 203 || currentBuildBlock === 205 || currentBuildBlock === 206) {
+            // v340: id 219 (Tall Grass) joins the cross-plant exception so
+            // it can be placed where the player is standing, same as the
+            // other 1-block crosses (17, 116-118, 137, 26).
+            if (!intersect || currentBuildBlock === 17 || currentBuildBlock === 116 || currentBuildBlock === 117 || currentBuildBlock === 118 || currentBuildBlock === 137 || currentBuildBlock === 26 || currentBuildBlock === 202 || currentBuildBlock === 203 || currentBuildBlock === 205 || currentBuildBlock === 206 || currentBuildBlock === 219) {
                 if (currentBuildBlock === 4) {
                     // Water can't exist in the nether — also blocks aether
                     // portal ignition in the nether since that path uses water.

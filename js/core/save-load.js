@@ -112,16 +112,31 @@ function compressChunksFromArray(chunks) {
 
 function decompressChunksIntoArray(entries, chunks) {
     if (!entries || !chunks) return;
+    const EXPECTED = CHUNK_SIZE * WORLD_HEIGHT * CHUNK_SIZE;
     for (const entry of entries) {
         const rle = new Int32Array(entry.rle);
-        const chunk = new Int32Array(CHUNK_SIZE * WORLD_HEIGHT * CHUNK_SIZE);
+        const chunk = new Int32Array(EXPECTED);
         let pos = 0;
-        for (let i = 0; i < rle.length; i += 2) {
+        let overran = false;
+        for (let i = 0; i + 1 < rle.length; i += 2) {
             const val = rle[i];
             const count = rle[i + 1];
             for (let j = 0; j < count; j++) {
+                if (pos >= EXPECTED) { overran = true; break; }
                 chunk[pos++] = val;
             }
+            if (overran) break;
+        }
+        // v332 Fix E: detect malformed RLE. A well-formed chunk RLE must
+        // decode to exactly CHUNK_VOLUME entries. If not, the saved record
+        // is corrupt — drop the chunk so the sanitize pass clears the
+        // generated flag and lazy-gen can regenerate it on load.
+        if (pos !== EXPECTED || overran) {
+            console.warn('[save-load] dropping malformed chunk idx=' + entry.idx
+                + ' pos=' + pos + ' expected=' + EXPECTED
+                + ' overran=' + overran);
+            if (entry.idx < chunks.length) chunks[entry.idx] = null;
+            continue;
         }
         if (entry.idx < chunks.length) chunks[entry.idx] = chunk;
     }
@@ -133,6 +148,15 @@ function compressChunks() {
 }
 function decompressChunks(entries) {
     decompressChunksIntoArray(entries, chunkStorageArr);
+}
+
+// Loaded-save repair: chunk records and generated flags are stored separately.
+// If a save has chunk data but its generated flag was missing/stale, startup
+// lighting can skip that chunk, leaving it with old/dark saved light until a
+// block edit forces a local relight. Trust actual chunk data and mark any
+// present chunk as generated before init() runs lighting/meshing.
+function _repairGeneratedFlagsFromLoadedChunks(d, dimName) {
+    _sanitizeDimensionGeneratedFlags(d, dimName || 'overworld');
 }
 
 // --- Biome map RLE (biomes compress well — adjacent cells share biomes) ---
@@ -195,6 +219,314 @@ function decompressBiomeMap(compressed) {
 function _dimChunksKey(slot, dimName, batchIdx) { return slot + '_dim_' + dimName + '_chunks_' + batchIdx; }
 function _dimBiomesKey(slot, dimName) { return slot + '_dim_' + dimName + '_biomes'; }
 
+// v6 atomic save keys. Chunks/biomes are written under a unique saveId first,
+// then the main slot metadata is committed last. If the browser closes during
+// a save, the previous metadata still points at the previous complete key set.
+function _dimChunksKeyV6(slot, dimName, saveId, batchIdx) { return slot + '_v6_' + saveId + '_dim_' + dimName + '_chunks_' + batchIdx; }
+function _dimBiomesKeyV6(slot, dimName, saveId) { return slot + '_v6_' + saveId + '_dim_' + dimName + '_biomes'; }
+function _isCurrentV6DataKey(slot, saveId, key) {
+    return (typeof key === 'string' && key.startsWith(slot + '_v6_' + saveId + '_'));
+}
+function _isSlotDataKey(slot, key) {
+    return (typeof key === 'string' && key.startsWith(slot + '_'));
+}
+
+function _chunkHasAnyData(chunk) {
+    if (!chunk) return false;
+    for (let i = 0; i < chunk.length; i++) {
+        if ((chunk[i] & 0xFF) !== 0) return true;
+    }
+    return false;
+}
+
+function _isSkyblockSaveLoadContext() {
+    try {
+        if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 5) return true;
+    } catch (_) {}
+    try {
+        if (typeof window !== 'undefined' && window._saveLoadWorldType === 5) return true;
+    } catch (_) {}
+    return false;
+}
+
+// v332 Fix B: Structural validation. A fully-generated overworld/nether
+// chunk always has bedrock (block id 18) at y=0 for every column — gen
+// phase 1 unconditionally writes `setVoxel(x, 0, z, 18)`. A partial
+// chunk created by a stray setVoxel (e.g. fluid spreading into an
+// ungenerated neighbor) will have data somewhere but NO bedrock at
+// y=0. We sample five y=0 cells (four corners + center); if any are
+// missing bedrock, the chunk is a partial fragment, not a real chunk.
+//
+// Indexing: li = lx + (ly << 4) + ((lz & 15) << 12). For y=0 the
+// (ly << 4) term is 0, so the sample indices are 0, 15, 61440, 61455,
+// and 32776.
+function _chunkLooksStructurallyGenerated(chunk, dimName) {
+    if (!chunk) return false;
+    // Aether has floating islands with empty void at y=0 — no bedrock
+    // floor, so skip structural validation there.
+    if (dimName === 'aether') return _chunkHasAnyData(chunk);
+
+    // Skyblock is intentionally a void/island world with no bedrock floor.
+    // The normal overworld bedrock-floor validator would treat every saved
+    // Skyblock island/player-built chunk as a partial invalid chunk and delete
+    // it during save/load. Preserve any non-empty Skyblock chunk exactly.
+    if (dimName === 'overworld' && _isSkyblockSaveLoadContext()) {
+        return _chunkHasAnyData(chunk);
+    }
+
+    const BEDROCK = 18;
+    const samples = [0, 15, 61440, 61455, 32776];
+    for (const li of samples) {
+        if ((chunk[li] & 0xFF) !== BEDROCK) return false;
+    }
+    return true;
+}
+
+function _stripSavedLightBitsFromDimension(d) {
+    if (!d || !d.chunks) return;
+    const clearMask = ~0x003FC000;
+    for (const chunk of d.chunks) {
+        if (!chunk) continue;
+        for (let i = 0; i < chunk.length; i++) chunk[i] &= clearMask;
+    }
+}
+
+// Generated flags are authoritative for lazy worldgen. A stale generated flag
+// with no chunk payload makes the engine believe a chunk exists, so it will not
+// regenerate it; the result is a full-height void strip after loading. Repair
+// this both before saving and after loading. Overworld/nether all-air chunks are
+// invalid, while aether can legitimately have empty void chunks.
+//
+// v332 Fix B: also catch the inverse failure mode — a chunk slot that has
+// SOME data but was never fully generated (e.g. fluid spread allocated the
+// slot via setVoxel + a few water blocks landed there). Previously these
+// were promoted to flag=1 because `_chunkHasAnyData` returned true. Now
+// we require structural validation (bedrock floor for non-aether dims).
+// Partial chunks get nulled so lazy-gen regenerates them properly.
+function _sanitizeDimensionGeneratedFlags(d, dimName) {
+    if (!d || !d.generatedFlags) return { cleared: 0, restored: 0, emptyCleared: 0, partialCleared: 0 };
+    const n = d.generatedFlags.length;
+    let cleared = 0, restored = 0, emptyCleared = 0, partialCleared = 0;
+    for (let i = 0; i < n; i++) {
+        const chunk = d.chunks && d.chunks[i] ? d.chunks[i] : null;
+        if (!chunk) {
+            if (d.generatedFlags[i]) cleared++;
+            d.generatedFlags[i] = 0;
+            continue;
+        }
+        if (dimName !== 'aether' && !_chunkHasAnyData(chunk)) {
+            if (d.generatedFlags[i]) emptyCleared++;
+            d.generatedFlags[i] = 0;
+            d.chunks[i] = null;
+            continue;
+        }
+        // v332 Fix B: structural validation. If the chunk has data but
+        // is missing the bedrock floor, it's a stray-setVoxel fragment.
+        // Drop it so lazy-gen produces a real chunk.
+        if (!_chunkLooksStructurallyGenerated(chunk, dimName)) {
+            partialCleared++;
+            d.generatedFlags[i] = 0;
+            d.chunks[i] = null;
+            continue;
+        }
+        if (!d.generatedFlags[i]) restored++;
+        d.generatedFlags[i] = 1;
+    }
+    if (cleared || restored || emptyCleared || partialCleared) {
+        console.warn(`[save-load] repaired ${dimName} generated flags: clearedMissing=${cleared}, restoredFromData=${restored}, clearedEmpty=${emptyCleared}, clearedPartial=${partialCleared}`);
+    }
+    return { cleared, restored, emptyCleared, partialCleared };
+}
+
+function _sanitizeAllDimensionsForSave() {
+    if (typeof dimensionData === 'undefined') return;
+    for (const dimName of ['overworld', 'nether', 'aether']) {
+        _sanitizeDimensionGeneratedFlags(dimensionData[dimName], dimName);
+    }
+}
+
+// v331: the render-distance slider can request up to 32 chunks. A 64x64
+// storage world only has 32 chunks from center to edge, so radius 32 (+gen
+// buffer) exposes the finite world boundary as a straight void strip. Expand
+// old 64x64 saves to a larger centered storage grid while preserving world
+// chunk coordinates. This fixes the issue at the source instead of treating it
+// as save corruption.
+function _minChunksForMaxRenderDistance() {
+    let maxRd = 32;
+    try {
+        if (typeof RENDER_DISTANCES !== 'undefined' && RENDER_DISTANCES && RENDER_DISTANCES.length) {
+            maxRd = Math.max.apply(null, RENDER_DISTANCES);
+        }
+    } catch (_) {}
+    const needed = (maxRd + 2) * 2 + 1; // visible radius + lazy-gen buffer, both sides + center
+    return Math.max(96, needed);
+}
+
+function _expandDimensionStorageIfNeeded(d, dimName, minChunks) {
+    if (!d || !d.chunksX || !d.chunksZ || !d.chunks) return false;
+    const oldCX = d.chunksX | 0;
+    const oldCZ = d.chunksZ | 0;
+    const newCX = Math.max(oldCX, minChunks | 0);
+    const newCZ = Math.max(oldCZ, minChunks | 0);
+    if (newCX === oldCX && newCZ === oldCZ) return false;
+
+    const oldW = d.worldWidth || oldCX * CHUNK_SIZE;
+    const oldD = d.worldDepth || oldCZ * CHUNK_SIZE;
+    const newW = newCX * CHUNK_SIZE;
+    const newD = newCZ * CHUNK_SIZE;
+    const oldHalfCX = oldCX >> 1, oldHalfCZ = oldCZ >> 1;
+    const newHalfCX = newCX >> 1, newHalfCZ = newCZ >> 1;
+    const oldHalfW = oldW / 2, oldHalfD = oldD / 2;
+    const newHalfW = newW / 2, newHalfD = newD / 2;
+
+    const newChunks = new Array(newCX * newCZ).fill(null);
+    const newFlags = new Uint8Array(newCX * newCZ);
+    const newBiomeMap = new Array(newW * newD);
+
+    for (let ocx = 0; ocx < oldCX; ocx++) {
+        for (let ocz = 0; ocz < oldCZ; ocz++) {
+            const oldIdx = ocx * oldCZ + ocz;
+            const wcx = ocx - oldHalfCX;
+            const wcz = ocz - oldHalfCZ;
+            const ncx = wcx + newHalfCX;
+            const ncz = wcz + newHalfCZ;
+            if (ncx < 0 || ncx >= newCX || ncz < 0 || ncz >= newCZ) continue;
+            const newIdx = ncx * newCZ + ncz;
+            newChunks[newIdx] = d.chunks[oldIdx] || null;
+            if (d.generatedFlags && d.generatedFlags[oldIdx]) newFlags[newIdx] = 1;
+
+            // Copy biome cells for this chunk, if available. World coordinates
+            // remain identical; only the centered array offset changes.
+            if (d.biomeMap && d.biomeMap.length === oldW * oldD) {
+                const startWX = wcx * CHUNK_SIZE;
+                const startWZ = wcz * CHUNK_SIZE;
+                for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+                    for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+                        const wx = startWX + lx;
+                        const wz = startWZ + lz;
+                        const oldG = (wx + oldHalfW) + (wz + oldHalfD) * oldW;
+                        const newG = (wx + newHalfW) + (wz + newHalfD) * newW;
+                        if (oldG >= 0 && oldG < d.biomeMap.length && newG >= 0 && newG < newBiomeMap.length) {
+                            newBiomeMap[newG] = d.biomeMap[oldG];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    d.chunksX = newCX;
+    d.chunksZ = newCZ;
+    d.worldWidth = newW;
+    d.worldDepth = newD;
+    d.chunks = newChunks;
+    d.generatedFlags = newFlags;
+    d.biomeMap = newBiomeMap;
+    console.warn(`[save-load] expanded ${dimName} storage from ${oldCX}x${oldCZ} to ${newCX}x${newCZ} for 32-chunk render distance support`);
+    return true;
+}
+
+function _expandAllDimensionsForRenderDistance() {
+    if (typeof dimensionData === 'undefined') return;
+    const minChunks = _minChunksForMaxRenderDistance();
+    for (const dimName of ['overworld', 'nether', 'aether']) {
+        _expandDimensionStorageIfNeeded(dimensionData[dimName], dimName, minChunks);
+        _sanitizeDimensionGeneratedFlags(dimensionData[dimName], dimName);
+    }
+}
+
+async function _cleanupOldSlotDataKeys(slot, keepSaveId) {
+    try {
+        const db = await openSaveDB();
+        const tx = db.transaction(SAVE_STORE, 'readwrite');
+        const store = tx.objectStore(SAVE_STORE);
+        const allKeys = await new Promise((res, rej) => {
+            const req = store.getAllKeys();
+            req.onsuccess = () => res(req.result);
+            req.onerror = rej;
+        });
+        for (const key of allKeys) {
+            if (!_isSlotDataKey(slot, key)) continue;
+            if (keepSaveId && _isCurrentV6DataKey(slot, keepSaveId, key)) continue;
+            store.delete(key);
+        }
+        await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+    } catch (e) {
+        console.warn('[save-load] old save-key cleanup failed; harmless stale records may remain', e);
+    }
+
+}
+
+// During save, freeze new lazy chunk dispatch and wait for in-flight worldgen
+// + lighting adoption to settle. Saving while worker chunks are still arriving
+// can snapshot generated flags and chunk payloads out of sync, which later
+// shows up as straight missing chunk strips after load.
+async function _drainWorldWorkBeforeSave(timeoutMs) {
+    const started = performance.now();
+    const timeout = Math.max(250, timeoutMs || 4000);
+    try { window._saveInProgress = true; } catch(_) {}
+
+    function _countPendingWorkers() {
+        let n = 0;
+        try { if (typeof _pendingWorkerChunks !== 'undefined' && _pendingWorkerChunks) n += _pendingWorkerChunks.size; } catch(_) {}
+        try { if (typeof _pendingNetherChunks !== 'undefined' && _pendingNetherChunks) n += _pendingNetherChunks.size; } catch(_) {}
+        try { if (typeof _pendingAetherChunks !== 'undefined' && _pendingAetherChunks) n += _pendingAetherChunks.size; } catch(_) {}
+        return n;
+    }
+
+    while (performance.now() - started < timeout) {
+        try {
+            if (typeof window.flushPendingWorldWorkNow === 'function') {
+                // Small bounded flush each turn so lighting/dirties keep draining
+                window.flushPendingWorldWorkNow(6, 6, 24);
+            }
+        } catch (e) {
+            console.warn('[save-load] flushPendingWorldWorkNow failed during save drain', e);
+        }
+
+        const pendingWorkers = _countPendingWorkers();
+        const pendingLight = (typeof _pendingLightingChunks !== 'undefined' && _pendingLightingChunks) ? _pendingLightingChunks.length : 0;
+        const pendingMesh = (typeof _pendingMeshRequests !== 'undefined' && _pendingMeshRequests) ? _pendingMeshRequests.size : 0;
+        if (pendingWorkers === 0 && pendingLight === 0 && pendingMesh === 0) break;
+        await new Promise(r => setTimeout(r, 16));
+    }
+
+    // One last flush to capture anything that resolved on the final wait tick.
+    try { if (typeof window.flushPendingWorldWorkNow === 'function') window.flushPendingWorldWorkNow(12, 12, 64); } catch(_) {}
+}
+
+// Heals loaded saves that have null chunk holes inside the player's current
+// visible load radius (for example from an interrupted older save). We repair
+// these BEFORE startup lighting so fresh-load lighting sees the same chunk
+// neighborhood that a newly-created world would.
+async function _repairVisibleChunkHolesAfterLoad(centerX, centerZ, radiusChunks) {
+    if (!useLazyGeneration || !chunkStorageArr || !generatedChunksArr) return 0;
+    const pCx = Math.floor((centerX + Math.floor(WORLD_WIDTH / 2)) / CHUNK_SIZE);
+    const pCz = Math.floor((centerZ + Math.floor(WORLD_DEPTH / 2)) / CHUNK_SIZE);
+    const r = Math.max(0, radiusChunks | 0);
+    const coords = [];
+    for (let dx = -r; dx <= r; dx++) {
+        for (let dz = -r; dz <= r; dz++) {
+            const cx = pCx + dx;
+            const cz = pCz + dz;
+            if (cx < 0 || cx >= CHUNKS_X || cz < 0 || cz >= CHUNKS_Z) continue;
+            const idx = cx * CHUNKS_Z + cz;
+            if (generatedChunksArr[idx] && chunkStorageArr[idx]) continue;
+            coords.push({ cx, cz, d: dx*dx + dz*dz });
+        }
+    }
+    if (coords.length === 0) return 0;
+    coords.sort((a,b) => a.d - b.d);
+    const ordered = coords.map(c => ({cx:c.cx, cz:c.cz}));
+    if (typeof ensureChunksGeneratedBatch === 'function') {
+        await ensureChunksGeneratedBatch(ordered, null, typeof ensureChunkGenerated === 'function' ? ensureChunkGenerated : null);
+    } else if (typeof ensureChunkGenerated === 'function') {
+        for (const c of ordered) ensureChunkGenerated(c.cx, c.cz);
+    }
+    return ordered.length;
+}
+
+
 // --- Save world to a slot (v5 format) ---
 //
 // New design: walks dimensionData directly. For each dimension that's been
@@ -204,53 +536,49 @@ function _dimBiomesKey(slot, dimName) { return slot + '_dim_' + dimName + '_biom
 
 async function saveWorld(slot) {
     const saveStart = performance.now();
+
+    // Freeze new lazy chunk dispatch and let in-flight worldgen/lighting settle
+    // so the save snapshots a coherent chunk set instead of mixing old/new edges.
+    await _drainWorldWorkBeforeSave(4500);
     
-    // 1. Snapshot the player's current position into the active dimension
+    // Snapshot the player's current position into the active dimension and
+    // make sure no stale generated flags can be committed. The stale flag case
+    // is the root cause of rare full-height void strips: the save says a chunk
+    // is generated, but no chunk data exists, so load/lazy-gen never fills it.
     if (typeof _snapshotPlayerPosToCurrentDim === 'function') {
         _snapshotPlayerPosToCurrentDim();
     }
+    _sanitizeAllDimensionsForSave();
     
-    // 2. Delete ALL existing keys for this slot (clears v4 + v5 keys)
     const db = await openSaveDB();
-    const tx1 = db.transaction(SAVE_STORE, 'readwrite');
-    const store1 = tx1.objectStore(SAVE_STORE);
-    const allKeys = await new Promise((res, rej) => {
-        const req = store1.getAllKeys();
-        req.onsuccess = () => res(req.result);
-        req.onerror = rej;
-    });
-    const slotPrefix = slot + '_';
-    for (const key of allKeys) {
-        if (typeof key === 'string' && key.startsWith(slotPrefix)) {
-            store1.delete(key);
-        }
-    }
-    await new Promise((res, rej) => { tx1.oncomplete = res; tx1.onerror = rej; });
-    
-    // 3. Walk dimensionData. For each generated dimension, write its chunks and biomes.
     const BATCH_SIZE = 128;
+    const saveId = Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
     const dimsMeta = {};
     let totalChunksSaved = 0;
     
+    // Write chunk/biome payloads under unique v6 keys first. Do NOT delete or
+    // overwrite the previous committed data until the new metadata has been
+    // safely committed at the end.
     for (const dimName of ['overworld', 'nether', 'aether']) {
         const d = dimensionData[dimName];
         if (!d || !d.generated || !d.chunks) {
             dimsMeta[dimName] = null;
             continue;
         }
+        _sanitizeDimensionGeneratedFlags(d, dimName);
         
         const compressed = compressChunksFromArray(d.chunks);
         const numBatches = Math.ceil(compressed.length / BATCH_SIZE);
         for (let b = 0; b < numBatches; b++) {
             const batch = compressed.slice(b * BATCH_SIZE, (b + 1) * BATCH_SIZE);
-            await dbPut({ slot: _dimChunksKey(slot, dimName, b), data: batch });
+            await dbPut({ slot: _dimChunksKeyV6(slot, dimName, saveId, b), data: batch });
         }
         
         let hasBiomes = false;
         if (d.biomeMap && d.biomeMap.length > 0) {
             const compressedBiomes = compressBiomeMap(d.biomeMap);
             if (compressedBiomes) {
-                await dbPut({ slot: _dimBiomesKey(slot, dimName), data: compressedBiomes });
+                await dbPut({ slot: _dimBiomesKeyV6(slot, dimName, saveId), data: compressedBiomes });
                 hasBiomes = true;
             }
         }
@@ -266,19 +594,17 @@ async function saveWorld(slot) {
             playerPos: d.playerPos || null,
             generated: true,
         };
-        
         totalChunksSaved += compressed.length;
     }
     
-    // 4. Write metadata blob (everything except chunks/biomes)
     const saveData = {
         slot: slot,
-        version: 5,
+        version: 6,
+        saveId: saveId,
         timestamp: Date.now(),
         worldName: currentWorldName || 'World ' + (slot + 1),
         seed: _worldSeed,
         gameMode: gameMode,
-        // Display fields for world select screen (uses overworld dims)
         chunksX: dimsMeta.overworld ? dimsMeta.overworld.chunksX : CHUNKS_X,
         chunksZ: dimsMeta.overworld ? dimsMeta.overworld.chunksZ : CHUNKS_Z,
         currentDimension: currentDimension || 'overworld',
@@ -369,10 +695,16 @@ async function saveWorld(slot) {
         xpState: typeof window.getPlayerXPState === 'function' ? window.getPlayerXPState() : { level: 0, xp: 0, totalXP: 0 }
     };
     
+    // Commit metadata LAST. After this point the new save is live.
     await dbPut(saveData);
     
+    // Cleanup is intentionally after commit and best-effort only. A failed
+    // cleanup leaves stale records, not a corrupted world.
+    await _cleanupOldSlotDataKeys(slot, saveId);
+    
     const elapsed = (performance.now() - saveStart).toFixed(0);
-    console.log(`World saved to slot ${slot} in ${elapsed}ms (v5: ${totalChunksSaved} chunks total, current=${currentDimension})`);
+    try { window._saveInProgress = false; } catch(_) {}
+    console.log(`World saved to slot ${slot} in ${elapsed}ms (v6 atomic: ${totalChunksSaved} chunks total, current=${currentDimension})`);
 }
 
 // --- Load world from a slot (v5 + v4 migration) ---
@@ -388,13 +720,29 @@ async function loadWorldFromSlot(slot) {
     
     activeWorldSlot = slot;
     currentWorldName = data.worldName || 'World ' + (slot + 1);
-    
+
+    // _loadV5IntoData repairs/sanitizes chunks before genParams are restored
+    // into GEN_WORLD_TYPE. Preserve the saved world type here so Skyblock chunks
+    // are not mistaken for invalid partial overworld chunks.
+    try {
+        if (typeof window !== 'undefined') {
+            window._saveLoadWorldType = data.genParams && typeof data.genParams.worldType === 'number'
+                ? data.genParams.worldType
+                : null;
+        }
+    } catch (_) {}
+
     // Branch on save format version
     if ((data.version || 0) >= 5) {
         await _loadV5IntoData(slot, data);
     } else {
         await _loadV4IntoData(slot, data);
     }
+
+    // v331: old 64x64 worlds cannot safely display/generate a 32-chunk radius
+    // because the visible ring reaches the finite storage edge. Expand the
+    // centered storage grid before init() binds dimensions or spawns workers.
+    _expandAllDimensionsForRenderDistance();
     
     // CRITICAL: set CHUNKS_X_ACTIVE / CHUNKS_Z_ACTIVE from the saved overworld
     // dimensions BEFORE init() runs. init() reads these to set CHUNKS_X /
@@ -539,18 +887,31 @@ async function _loadV5IntoData(slot, data) {
             }
         }
         
-        // Load chunk batches
+        // Load chunk batches. v6 uses unique atomic payload keys; v5 uses
+        // the legacy fixed keys.
+        const saveId = data.saveId || null;
         const numBatches = dimMeta.numChunkBatches || 0;
         for (let b = 0; b < numBatches; b++) {
-            const batch = await dbGet(_dimChunksKey(slot, dimName, b));
+            const key = (data.version || 0) >= 6 && saveId
+                ? _dimChunksKeyV6(slot, dimName, saveId, b)
+                : _dimChunksKey(slot, dimName, b);
+            const batch = await dbGet(key);
             if (batch && batch.data) {
                 decompressChunksIntoArray(batch.data, d.chunks);
+            } else {
+                console.warn('[save-load] missing chunk batch during load', key);
             }
         }
         
+        _repairGeneratedFlagsFromLoadedChunks(d, dimName);
+        _stripSavedLightBitsFromDimension(d);
+
         // Load biomes
         if (dimMeta.hasBiomes) {
-            const biomeRec = await dbGet(_dimBiomesKey(slot, dimName));
+            const biomeKey = (data.version || 0) >= 6 && saveId
+                ? _dimBiomesKeyV6(slot, dimName, saveId)
+                : _dimBiomesKey(slot, dimName);
+            const biomeRec = await dbGet(biomeKey);
             if (biomeRec && biomeRec.data) {
                 const decoded = decompressBiomeMap(biomeRec.data);
                 if (decoded) d.biomeMap = decoded;
@@ -614,6 +975,8 @@ async function _loadV4IntoData(slot, data) {
                 decompressChunksIntoArray(batch.data, od.chunks);
             }
         }
+        _repairGeneratedFlagsFromLoadedChunks(od, 'overworld');
+        _stripSavedLightBitsFromDimension(od);
     }
     
     // --- Nether ---
@@ -646,6 +1009,8 @@ async function _loadV4IntoData(slot, data) {
                 decompressChunksIntoArray(batch.data, nd.chunks);
             }
         }
+        _repairGeneratedFlagsFromLoadedChunks(nd, 'nether');
+        _stripSavedLightBitsFromDimension(nd);
     }
     
     // --- Aether ---
@@ -677,6 +1042,8 @@ async function _loadV4IntoData(slot, data) {
                 decompressChunksIntoArray(batch.data, ad.chunks);
             }
         }
+        _repairGeneratedFlagsFromLoadedChunks(ad, 'aether');
+        _stripSavedLightBitsFromDimension(ad);
     }
     
     // Synthesize the v5-style dimensions metadata so init can use one code path
@@ -741,6 +1108,7 @@ async function saveAndQuit() {
         // Small delay to let IndexedDB fully commit before page unload
         await new Promise(r => setTimeout(r, 100));
     } catch(e) {
+        try { window._saveInProgress = false; } catch(_) {}
         console.error('Save failed:', e);
     }
     

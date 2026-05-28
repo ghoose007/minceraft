@@ -70,13 +70,31 @@ window.toggleViewBobbing = function() {
     }
 }
 
-window.toggleRenderDist = function() {
-    currentRenderDistIndex = (currentRenderDistIndex + 1) % RENDER_DISTANCES.length;
-    var el = document.getElementById('btn-render-dist');
-    if (el) {
-        el.innerText = 'Render Distance: ' + RENDER_NAMES[currentRenderDistIndex];
-    }
+function getCurrentRenderDistanceChunks() {
+    const value = RENDER_DISTANCES[currentRenderDistIndex];
+    return Number.isFinite(value) ? value : 8;
 }
+
+function getRenderDistanceFraction() {
+    return (getCurrentRenderDistanceChunks() - 2) / 30;
+}
+
+window.setRenderDistanceChunks = function(chunks) {
+    chunks = Math.max(2, Math.min(32, Math.round(Number(chunks) || 8)));
+    let bestIndex = 0;
+    let bestDiff = Infinity;
+    for (let i = 0; i < RENDER_DISTANCES.length; i++) {
+        const diff = Math.abs(RENDER_DISTANCES[i] - chunks);
+        if (diff < bestDiff) { bestDiff = diff; bestIndex = i; }
+    }
+    currentRenderDistIndex = bestIndex;
+    window.refreshRenderDistanceSlider();
+};
+
+window.refreshRenderDistanceSlider = function() {
+    const btn = document.getElementById('render-distance-slider-btn');
+    if (btn && btn._refreshSlider) btn._refreshSlider();
+};
 
 window.toggleGUIScale = function() {
     currentGUIScaleIndex = (currentGUIScaleIndex + 1) % GUI_SCALES.length;
@@ -136,6 +154,30 @@ window.checkRemesh = function() {
     }
 }
 
+
+// ==========================================
+// CHUNK LOADING SPEED
+// ==========================================
+const CHUNK_LOAD_SPEEDS = ['smooth', 'balanced', 'fast', 'extreme'];
+const CHUNK_LOAD_LABELS = {
+    smooth: 'Smooth',
+    balanced: 'Balanced',
+    fast: 'Fast',
+    extreme: 'Extreme'
+};
+
+function refreshChunkLoadSpeedButton() {
+    const btn = document.getElementById('btn-chunk-speed');
+    if (btn) btn.innerText = 'Chunk Loading: ' + (CHUNK_LOAD_LABELS[settingChunkLoadSpeed] || 'Balanced');
+}
+
+window.toggleChunkLoadSpeed = function() {
+    let idx = CHUNK_LOAD_SPEEDS.indexOf(settingChunkLoadSpeed);
+    if (idx < 0) idx = 1;
+    settingChunkLoadSpeed = CHUNK_LOAD_SPEEDS[(idx + 1) % CHUNK_LOAD_SPEEDS.length];
+    refreshChunkLoadSpeedButton();
+};
+
 // ==========================================
 // DIFFICULTY TOGGLE
 // ==========================================
@@ -161,6 +203,30 @@ window.toggleDifficulty = function() {
 
 // Apply on load
 applyDifficulty();
+refreshChunkLoadSpeedButton();
+
+// ==========================================
+// CHUNK LOADING SPEED TOGGLE
+// ==========================================
+const CHUNK_LOADING_SPEEDS = ['low', 'normal', 'fast', 'extreme'];
+const CHUNK_LOADING_LABELS = { low: 'Low', normal: 'Normal', fast: 'Fast', extreme: 'Extreme' };
+
+function applyChunkLoadingSpeedLabel() {
+    const btn = document.getElementById('btn-chunk-loading');
+    if (btn) {
+        const key = (typeof settingChunkLoadingSpeed !== 'undefined' ? settingChunkLoadingSpeed : 'normal');
+        btn.innerText = 'Chunk Loading: ' + (CHUNK_LOADING_LABELS[key] || 'Normal');
+    }
+}
+
+window.toggleChunkLoadingSpeed = function() {
+    if (typeof settingChunkLoadingSpeed === 'undefined') window.settingChunkLoadingSpeed = 'normal';
+    const idx = CHUNK_LOADING_SPEEDS.indexOf(settingChunkLoadingSpeed);
+    settingChunkLoadingSpeed = CHUNK_LOADING_SPEEDS[(idx + 1 + CHUNK_LOADING_SPEEDS.length) % CHUNK_LOADING_SPEEDS.length];
+    applyChunkLoadingSpeedLabel();
+};
+
+applyChunkLoadingSpeedLabel();
 
 // ==========================================
 // MC-STYLE SLIDER INTERACTION
@@ -233,6 +299,16 @@ initSlider('sensitivity-slider-btn', 'sensitivity-thumb', 'sensitivity-label',
     }
 );
 
+// Render distance slider: 2 to 32 chunks, reuses the same MC-style slider behavior.
+initSlider('render-distance-slider-btn', 'render-distance-thumb', 'render-distance-label',
+    () => getRenderDistanceFraction(),
+    (frac) => {
+        const chunks = Math.max(2, Math.min(32, Math.round(2 + frac * 30)));
+        window.setRenderDistanceChunks(chunks);
+    },
+    () => 'Render Distance: ' + getCurrentRenderDistanceChunks() + ' Chunks'
+);
+
 // Refresh sliders when options menu is shown
 const _origShowPauseScreen = window.showPauseScreen;
 window.showPauseScreen = function(screenId) {
@@ -255,11 +331,12 @@ window.showPauseScreen = function(screenId) {
         const btnGfx = document.getElementById('btn-graphics');
         if (btnGfx) btnGfx.innerText = 'Graphics: ' + gfxLabel;
 
-        const btnRD = document.getElementById('btn-render-dist');
-        if (btnRD) btnRD.innerText = 'Render Distance: ' + RENDER_NAMES[currentRenderDistIndex];
+        window.refreshRenderDistanceSlider();
 
         const btnSL = document.getElementById('btn-smooth-light');
         if (btnSL) btnSL.innerText = 'Smooth Lighting: ' + (settingSmoothLighting ? 'ON' : 'OFF');
+
+        refreshChunkLoadSpeedButton();
 
         const btnVB = document.getElementById('btn-view-bobbing');
         if (btnVB) btnVB.innerText = 'View Bobbing: ' + (settingViewBobbing ? 'ON' : 'OFF');

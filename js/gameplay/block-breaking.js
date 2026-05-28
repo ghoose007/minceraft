@@ -54,6 +54,28 @@ window.spawnBlockDrops = function(targetId, x, y, z, val) {
         if (Math.random() < 0.15) dropId = 128; 
         else dropId = 0;
     }
+    // v335: 2-block tall grass — bottom (219) is the "primary" half that
+    // rolls for seeds, mirroring the 15% chance of id 16. The top (220)
+    // drops nothing on its own; when the player breaks the top half, the
+    // partner-clear logic in breakBlock removes the bottom too and seeds
+    // are rolled there. This keeps the seed count per plant at most 1,
+    // matching MC.
+    if (targetId === 219) {
+        if (Math.random() < 0.15) dropId = 128;
+        else dropId = 0;
+    }
+    if (targetId === 220) {
+        dropId = 0;
+    }
+
+    // Dead Bush: drops 1-3 sticks when broken by hand or tool.
+    if (targetId === 26) {
+        dropId = 0;
+        const count = 1 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < count; i++) {
+            window.spawnDroppedItem(x + 0.5, y + 0.5, z + 0.5, 112);
+        }
+    }
     
     // Door: always drops one door item (was previously nullifying top-half
     // drops, which meant breaking the top half yielded nothing — v278 fix)
@@ -133,6 +155,35 @@ window.breakBlock = function(x, y, z, canHarvest = true) {
             if (typeof updateChunks === 'function') updateChunks(x, otherY, z);
             if (typeof queueNeighbors === 'function') queueNeighbors(x, otherY, z);
             triggerNeighborUpdates(x, otherY, z);
+        }
+    }
+
+    // v335: Tall Grass — when EITHER half is broken explicitly, clear the
+    // partner half directly (same pattern as the door above). Drops are
+    // always credited to id 219 (the "plant root"), so:
+    //   - Player breaks bottom (219): spawnBlockDrops already rolled
+    //       seeds via the targetId===219 branch above. Partner-clear
+    //       removes 220 silently — no second roll.
+    //   - Player breaks top (220): spawnBlockDrops set dropId=0 above
+    //       (top never drops on its own), so we explicitly fire the 219
+    //       drop roll here before clearing the bottom. Either-half breaks
+    //       are thus equivalent (15% chance of seeds, max one drop).
+    // Support-loss through doBlockUpdate is unaffected: when 219 loses
+    // its grass/dirt below, doBlockUpdate calls spawnBlockDrops(219) for
+    // the 15% roll, then triggerNeighborUpdates cascades into 220 whose
+    // own spawnBlockDrops returns 0 (top never drops).
+    if (targetId === 219 || targetId === 220) {
+        const otherY = (targetId === 219) ? y + 1 : y - 1;
+        const otherId = targetId === 219 ? 220 : 219;
+        if ((getVoxel(x, otherY, z) & 0xFF) === otherId) {
+            if (targetId === 220 && typeof spawnBlockDrops === 'function') {
+                // Credit the missed root-half drop roll exactly once.
+                spawnBlockDrops(219, x, otherY, z, getVoxel(x, otherY, z));
+            }
+            setVoxel(x, otherY, z, 0);
+            pendingBlockUpdates.push({x, y: otherY, z});
+            if (typeof updateChunks === 'function') updateChunks(x, otherY, z);
+            if (typeof queueNeighbors === 'function') queueNeighbors(x, otherY, z);
         }
     }
 

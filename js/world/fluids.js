@@ -3,10 +3,34 @@
 // When lava is placed at (x,y,z), check all neighbors for water and convert immediately.
 // This prevents the one-tick delay where fluids visibly sit next to each other.
 
+// v332 Fix A: fluid sim must never spread into an ungenerated chunk.
+// Without this guard, water/lava `setVoxel` writes could allocate a
+// partial chunk in the neighbor slot — which the save-side sanitize
+// would then promote to "generated=1" because of the non-zero fluid
+// blocks. Fix C in voxel.js makes setVoxel itself refuse to allocate
+// when called outside worldgen, but checking here too lets fluid sim
+// short-circuit (skip the conversion bookkeeping, queueNeighbors,
+// pendingBlockUpdates, etc.) instead of relying on a silent no-op
+// in the inner setVoxel call.
+function _isFluidWriteableCoord(x, y, z) {
+    if (typeof _halfW === 'undefined' || typeof CHUNKS_Z === 'undefined') return true;
+    const ix = (x | 0) + _halfW;
+    const iz = (z | 0) + _halfD;
+    if ((ix >>> 0) >= WORLD_WIDTH || (iz >>> 0) >= WORLD_DEPTH) return false;
+    if ((y | 0) < 0 || (y | 0) >= WORLD_HEIGHT) return false;
+    const cx = ix >> 4, cz = iz >> 4;
+    if (typeof _isChunkGenerated === 'function') {
+        return !!_isChunkGenerated(cx, cz);
+    }
+    // Fallback: only writable if chunk slot is non-null
+    return !!chunkStorageArr[cx * CHUNKS_Z + cz];
+}
+
 function _convertNeighborLava(x, y, z) {
     const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
     for (const [dx, dy, dz] of dirs) {
         const nx = x+dx, ny = y+dy, nz = z+dz;
+        if (!_isFluidWriteableCoord(nx, ny, nz)) continue;
         const nVal = getVoxel(nx, ny, nz);
         const nId = nVal & 0xFF;
         if (nId === 27) {
@@ -26,17 +50,36 @@ function _convertNeighborLava(x, y, z) {
 function _convertNeighborWater(x, y, z) {
     const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
     let converted = false;
+    const lavaVal = getVoxel(x, y, z);
+    const lavaSource = ((lavaVal >> 13) & 0x1) === 1;
     for (const [dx, dy, dz] of dirs) {
         const nx = x+dx, ny = y+dy, nz = z+dz;
+        if (!_isFluidWriteableCoord(nx, ny, nz)) continue;
         const nVal = getVoxel(nx, ny, nz);
         const nId = nVal & 0xFF;
         if (nId === 4) {
-            // Water neighbor gets converted to cobblestone; lava at (x,y,z) survives
-            setVoxel(nx, ny, nz, 33); // cobblestone replaces the water
-            if (typeof window.playFizzSound === 'function') window.playFizzSound(nx, ny, nz);
-            pendingBlockUpdates.push({x: nx, y: ny, z: nz});
-            queueNeighbors(nx, ny, nz);
+            const waterSource = ((nVal >> 13) & 0x1) === 1;
+            if (lavaSource) {
+                // Water touching a lava source turns the lava source into obsidian.
+                setVoxel(x, y, z, 28);
+                if (typeof window.playFizzSound === 'function') window.playFizzSound(x, y, z);
+                pendingBlockUpdates.push({x, y, z});
+                queueNeighbors(x, y, z);
+            } else if (waterSource) {
+                // Flowing lava entering water source makes stone at the water source.
+                setVoxel(nx, ny, nz, 3);
+                if (typeof window.playFizzSound === 'function') window.playFizzSound(nx, ny, nz);
+                pendingBlockUpdates.push({x: nx, y: ny, z: nz});
+                queueNeighbors(nx, ny, nz);
+            } else {
+                // Flowing lava + flowing water makes cobblestone, replacing lava.
+                setVoxel(x, y, z, 33);
+                if (typeof window.playFizzSound === 'function') window.playFizzSound(x, y, z);
+                pendingBlockUpdates.push({x, y, z});
+                queueNeighbors(x, y, z);
+            }
             converted = true;
+            break;
         }
     }
     return converted;
@@ -141,7 +184,10 @@ function updateWater(x, y, z, dirtyBounds) {
     const belowId = below & 0xFF;
 
     // Flow downward: into air, cross blocks, or same fluid (always flows down into itself)
+    // v332 Fix A: skip if the target chunk isn't generated — water cannot
+    // spread into terrain that hasn't been created yet.
     if (belowId === 0 || isCrossBlock(belowId)) {
+        if (!_isFluidWriteableCoord(x, y - 1, z)) return;
         setVoxel(x, y - 1, z, 4, 8, 1, 0);
         _convertNeighborLava(x, y - 1, z); // immediate check for adjacent lava
         updateWaterQueue.add(getVoxelIndex(x, y - 1, z));
@@ -150,12 +196,14 @@ function updateWater(x, y, z, dirtyBounds) {
         // Flow into existing water below — update it if not already full
         const belowLevel = (below >> 8) & 0xF;
         if (belowLevel < 8) {
+            if (!_isFluidWriteableCoord(x, y - 1, z)) return;
             setVoxel(x, y - 1, z, 4, 8, 1, 0);
             updateWaterQueue.add(getVoxelIndex(x, y - 1, z));
             markDirty(x, z);
         }
     } else if (belowId === 27) {
         // Water flowing down onto lava — immediate conversion
+        if (!_isFluidWriteableCoord(x, y - 1, z)) return;
         const belowSource = (below >> 13) & 0x1;
         if (belowSource) {
             setVoxel(x, y - 1, z, 28); // obsidian
@@ -171,6 +219,8 @@ function updateWater(x, y, z, dirtyBounds) {
         if (curLevel > 1) {
             const neighbors = [ [x+1, y, z], [x-1, y, z], [x, y, z+1], [x, y, z-1] ];
             for (let [nx, ny, nz] of neighbors) {
+                // v332 Fix A: skip ungenerated neighbor chunks.
+                if (!_isFluidWriteableCoord(nx, ny, nz)) continue;
                 const nVal = getVoxel(nx, ny, nz);
                 const nId = nVal & 0xFF;
                 if (nId === 27) {
@@ -287,7 +337,9 @@ function updateLava(x, y, z, dirtyBounds) {
     const belowId = below & 0xFF;
 
     // Flow downward: into air, cross blocks, or same fluid
+    // v332 Fix A: skip if the target chunk isn't generated.
     if (belowId === 0 || isCrossBlock(belowId)) {
+        if (!_isFluidWriteableCoord(x, y - 1, z)) return;
         setVoxel(x, y - 1, z, 27, maxLevel, 1, 0);
         _convertNeighborWater(x, y - 1, z); // convert any adjacent water immediately
         updateLavaQueue.add(getVoxelIndex(x, y - 1, z));
@@ -297,6 +349,7 @@ function updateLava(x, y, z, dirtyBounds) {
         const belowLevel = (below >> 8) & 0xF;
         const belowSource = (below >> 13) & 0x1;
         if (belowLevel < maxLevel && !belowSource) {
+            if (!_isFluidWriteableCoord(x, y - 1, z)) return;
             setVoxel(x, y - 1, z, 27, maxLevel, 1, 0);
             updateLavaQueue.add(getVoxelIndex(x, y - 1, z));
             markDirty(x, z);
@@ -310,12 +363,21 @@ function updateLava(x, y, z, dirtyBounds) {
         // the pool surface.
         return;
     } else if (belowId === 4) {
-        // Lava flowing down onto water — water becomes cobblestone, lava continues next tick
-        setVoxel(x, y - 1, z, 33); // cobblestone replaces the water
-        if (typeof window.playFizzSound === 'function') window.playFizzSound(x, y - 1, z);
-        pendingBlockUpdates.push({x, y: y - 1, z});
-        queueNeighbors(x, y - 1, z);
-        // Re-queue the lava above so it can flow down onto the new cobblestone next tick
+        // Minecraft-style: flowing lava into a water source makes stone;
+        // flowing lava into flowing water makes cobblestone at the lava.
+        if (!_isFluidWriteableCoord(x, y - 1, z)) return;
+        const belowSource = ((below >> 13) & 0x1) === 1;
+        if (belowSource) {
+            setVoxel(x, y - 1, z, 3); // stone replaces the water source
+            if (typeof window.playFizzSound === 'function') window.playFizzSound(x, y - 1, z);
+            pendingBlockUpdates.push({x, y: y - 1, z});
+            queueNeighbors(x, y - 1, z);
+        } else {
+            setVoxel(x, y, z, 33); // cobblestone replaces this flowing lava
+            if (typeof window.playFizzSound === 'function') window.playFizzSound(x, y, z);
+            pendingBlockUpdates.push({x, y, z});
+            queueNeighbors(x, y, z);
+        }
         updateLavaQueue.add(getVoxelIndex(x, y, z));
         markDirty(x, z);
     } else {
@@ -323,15 +385,28 @@ function updateLava(x, y, z, dirtyBounds) {
         if (curLevel > 1) {
             const neighbors = [ [x+1, y, z], [x-1, y, z], [x, y, z+1], [x, y, z-1] ];
             for (let [nx, ny, nz] of neighbors) {
+                // v332 Fix A: skip ungenerated neighbor chunks.
+                if (!_isFluidWriteableCoord(nx, ny, nz)) continue;
                 const nVal = getVoxel(nx, ny, nz);
                 const nId = nVal & 0xFF;
                 if (nId === 4) {
-                    // Lava spreading into water horizontally — immediate conversion
-                    setVoxel(nx, ny, nz, 33); // cobblestone
-                    if (typeof window.playFizzSound === 'function') window.playFizzSound(nx, ny, nz);
-                    pendingBlockUpdates.push({x: nx, y: ny, z: nz});
-                    queueNeighbors(nx, ny, nz);
-                    markDirty(nx, nz);
+                    // Minecraft-style: lava flowing into water source creates stone;
+                    // flowing lava meeting flowing water creates cobblestone at the lava.
+                    const waterSource = ((nVal >> 13) & 0x1) === 1;
+                    if (waterSource) {
+                        setVoxel(nx, ny, nz, 3); // stone replaces water source
+                        if (typeof window.playFizzSound === 'function') window.playFizzSound(nx, ny, nz);
+                        pendingBlockUpdates.push({x: nx, y: ny, z: nz});
+                        queueNeighbors(nx, ny, nz);
+                        markDirty(nx, nz);
+                    } else {
+                        setVoxel(x, y, z, 33); // cobblestone replaces flowing lava
+                        if (typeof window.playFizzSound === 'function') window.playFizzSound(x, y, z);
+                        pendingBlockUpdates.push({x, y, z});
+                        queueNeighbors(x, y, z);
+                        markDirty(x, z);
+                        return;
+                    }
                 } else if (nId === 0 || isCrossBlock(nId) || (nId === 27 && ((nVal >> 8) & 0xF) < curLevel - 1 && !((nVal >> 13) & 0x1))) {
                     setVoxel(nx, ny, nz, 27, curLevel - 1, 0, 0);
                     if (nId !== 27) _convertNeighborWater(nx, ny, nz); // convert any adjacent water

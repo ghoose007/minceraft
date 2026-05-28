@@ -5,22 +5,456 @@
 // Per-chunk cache for cave carving's getHighestBlock lookups (cleared at start of each chunk)
 let _caveSurfYCache = null;
 
-function generateChunkColumn(cx, cz) {
-    if (_isChunkGenerated(cx, cz)) return;
-    
-    // Superflat world type
-    if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 1) {
-        // 'overworld' preset uses normal generator with flattened heightmap
-        if (typeof GEN_SUPERFLAT_PRESET !== 'undefined' && GEN_SUPERFLAT_PRESET === 'overworld') {
-            _generateNormalChunk(cx, cz);
-            return;
+// ----- v318 BADLANDS / MESA SURFACE HELPERS -----
+// Block IDs are literals here because worldgen-worker.js imports this file without
+// loading config/constants.js. They must match BLOCK_IDS in constants.js.
+const BADLANDS_RED_SAND = 25;
+const BADLANDS_RED_SANDSTONE = 45;
+const BADLANDS_TERRACOTTA = 168;
+const BADLANDS_ORANGE_TERRACOTTA = 57;
+const BADLANDS_RED_TERRACOTTA = 166;
+const BADLANDS_LIGHT_GREY_TERRACOTTA = 167;
+const BADLANDS_BROWN_TERRACOTTA = 204;
+const BADLANDS_WHITE_TERRACOTTA = 254;
+const BADLANDS_YELLOW_TERRACOTTA = 255;
+const BADLANDS_DEAD_BUSH = 26;
+
+function _positiveMod(n, m) { return ((n % m) + m) % m; }
+function _smoothstep(edge0, edge1, x) {
+    const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+    return t * t * (3 - 2 * t);
+}
+
+// v335: read the badlands "Sub-Biome Size" multiplier (default 1.0 = 100%).
+// Larger value = larger features (lower noise frequency); smaller value =
+// tighter features. Applied to spire mask scales, wooded-badlands mask
+// scale, red-sand mask, and terracotta layer offset, so a single slider
+// controls all the badlands sub-features coherently.
+function _badlandsSubScale() {
+    if (typeof GEN_BIOME_OVERRIDES === 'undefined' || !GEN_BIOME_OVERRIDES) return 1.0;
+    var b = GEN_BIOME_OVERRIDES.badlands;
+    if (!b || typeof b.subBiomeSize !== 'number') return 1.0;
+    return b.subBiomeSize / 100;
+}
+
+function _badlandsSpireHeightBonus(x, z) {
+    // Hoodoo/eroded-spire approximation: a broad mesa mask selects parts of
+    // the badlands, then narrow ridge noise raises thin vertical columns. This
+    // is applied before the 3D density pass, so the normal cave/noise system
+    // still carves into the spires while their silhouettes stay tall and jagged.
+    if (typeof _wgPerlinMountains === 'undefined' || !_wgPerlinMountains ||
+        typeof _wgPerlinVolatility === 'undefined' || !_wgPerlinVolatility) return 0;
+    const subScale = _badlandsSubScale();
+    const broad = (_wgPerlinMountains.fbm(x / (145 * subScale) + 3100, z / (145 * subScale) - 3100, 3) + 1) * 0.5;
+    const ridgeA = 1.0 - Math.abs(_wgPerlinVolatility.fbm(x / (44 * subScale) + 4100, z / (44 * subScale) - 4100, 3));
+    const ridgeB = 1.0 - Math.abs(_wgPerlinMountains.fbm(x / (23 * subScale) - 5600, z / (23 * subScale) + 5600, 2));
+    const mask = _smoothstep(0.48, 0.78, broad);
+    const needle = Math.max(_smoothstep(0.70, 0.94, ridgeA), _smoothstep(0.76, 0.97, ridgeB) * 0.75);
+    if (mask <= 0 || needle <= 0) return 0;
+    const jag = (_wgPerlinVolatility.noise2D(x / (17 * subScale) + 7200, z / (17 * subScale) - 7200) + 1) * 0.5;
+    return Math.pow(mask * needle, 1.45) * (18 + jag * 34);
+}
+
+function _badlandsLayerOffset(x, z) {
+    // Minecraft badlands use a world-seed layer table whose bands shift up/down
+    // horizontally by roughly +/-7 blocks. This approximates that with the
+    // existing seeded worldgen noise so bands stay coherent across chunk borders.
+    if (typeof _wgPerlinVolatility === 'undefined' || !_wgPerlinVolatility) return 0;
+    const subScale = _badlandsSubScale();
+    return Math.round(_wgPerlinVolatility.fbm(x / (64 * subScale) + 1800, z / (64 * subScale) - 1800, 2) * 7);
+}
+
+function _getBadlandsTerracottaBlock(x, y, z) {
+    const band = _positiveMod(Math.floor(y + _badlandsLayerOffset(x, z)), 64);
+
+    // Natural badlands only use uncolored, orange, yellow, brown, red, white,
+    // and light gray terracotta. Most layers are uncolored terracotta, with
+    // thin colored seams repeating vertically like Minecraft's mesa strata.
+    if (band === 6 || band === 7) return BADLANDS_WHITE_TERRACOTTA;
+    if (band === 8) return BADLANDS_LIGHT_GREY_TERRACOTTA;
+    if (band === 13 || band === 14) return BADLANDS_YELLOW_TERRACOTTA;
+    if (band === 20 || band === 21 || band === 22) return BADLANDS_ORANGE_TERRACOTTA;
+    if (band === 31 || band === 32) return BADLANDS_RED_TERRACOTTA;
+    if (band === 38 || band === 39) return BADLANDS_BROWN_TERRACOTTA;
+    if (band === 47) return BADLANDS_LIGHT_GREY_TERRACOTTA;
+    if (band === 54 || band === 55) return BADLANDS_ORANGE_TERRACOTTA;
+    if (band === 61) return BADLANDS_YELLOW_TERRACOTTA;
+    return BADLANDS_TERRACOTTA;
+}
+
+function _isBadlandsRedSandCap(x, y, z) {
+    // Vanilla badlands have red sand on low/flatter exposed ground and at the
+    // feet of terracotta slopes, while taller/cliff faces expose terracotta.
+    if (y <= GEN_SEA_LEVEL + 4) return true;
+    const subScale = _badlandsSubScale();
+    const n = (typeof _wgPerlinSeabed !== 'undefined' && _wgPerlinSeabed)
+        ? _wgPerlinSeabed.fbm(x / (52 * subScale) + 2200, z / (52 * subScale) - 2200, 2)
+        : 0;
+    return y <= GEN_SEA_LEVEL + 10 && n < -0.10;
+}
+
+// v334 Wooded Badlands sub-biome
+// Minecraft's wooded badlands occupy roughly the upper third of mesa plateaus:
+// they keep the badlands terrain shape (terracotta strata under the surface,
+// hoodoo spires nearby) but cap the top with grass + dirt + coarse-dirt patches
+// and grow scattered oak trees instead of dead bushes. We model this with a
+// large-scale noise lobe that's only consulted inside badlands cells, so the
+// pattern stays inside mesa regions and we don't need a new biome ID. The
+// scale is intentionally bigger than the spire scale so wooded patches read
+// as their own "section" of the mesa rather than as one-block speckles.
+function _woodedBadlandsMask(x, z) {
+    if (typeof _wgPerlinMountains === 'undefined' || !_wgPerlinMountains) return 0;
+    const subScale = _badlandsSubScale();
+    const n = _wgPerlinMountains.fbm(x / (175 * subScale) + 9100, z / (175 * subScale) - 9100, 3);
+    // Map noise to a soft 0..1 mask; smoothstep keeps the wooded/non-wooded
+    // boundary smooth so the grass/red-sand transition isn't a hard line.
+    return _smoothstep(0.05, 0.30, n);
+}
+
+// True when this column should generate as wooded badlands. Wooded badlands
+// only appear above a height threshold so the lower red-sand basin around the
+// mesa stays consistent with vanilla — grass shouldn't grow on the desert
+// floor.
+function _isWoodedBadlandsColumn(x, y, z) {
+    if (y < GEN_SEA_LEVEL + 14) return false;
+    return _woodedBadlandsMask(x, z) > 0.5;
+}
+
+function _placeFoliageGrass(x, y, z, chunkRng) {
+    const twoBlockChance = 0.25;
+    const cellY2 = y + 2;
+    if (cellY2 < WORLD_HEIGHT && (getVoxel(x, cellY2, z) & 0xFF) === 0 && chunkRng() < twoBlockChance) {
+        setVoxel(x, y + 1, z, 219);
+        setVoxel(x, cellY2, z, 220);
+    } else {
+        setVoxel(x, y + 1, z, 16);
+    }
+}
+
+// v341: ice-spikes-biome feature placement.
+//
+// MC's Ice Spikes biome has two distinct spike variants documented on the wiki:
+//   - Short and wide: about 8-15 blocks tall, base radius ~2 blocks, tapers
+//     to a point at the top. The common form.
+//   - Tall and thin: 25-50 blocks tall, base radius 1, very thin all the way
+//     up with a single-block "spear tip" at the top. Roughly 20% of spikes.
+// Plus disk-shaped "ice patches" — small 5x5 packed-ice tiles that replace
+// the snow surface in places. Together they create the chaotic spike-forest
+// landscape that's the biome's signature.
+//
+// Built as top-level helpers (called from Phase 3.6 inside
+// _generateNormalChunk) so they're reachable from inside the chunk RNG
+// closure. The chunk RNG is passed in explicitly — same lesson as the
+// v337 _placeFoliageGrass fix.
+function _generateIceSpike(centerX, baseY, centerZ, isTall, chunkRng) {
+    // v343: less uniform, more Minecraft-like packed-ice spikes.
+    // Minecraft's ice spikes are generated as irregular tapered columns:
+    // common short/wide spikes plus rarer tall needle spikes. They are not
+    // perfect cones, so this uses per-spike height/radius/wobble/taper values
+    // while still keeping the footprint bounded inside the current chunk.
+    let height, baseRadiusX, baseRadiusZ, needleStart;
+
+    if (isTall) {
+        // Tall spikes: rarer, skinny, variable height. Most are narrow 1-2
+        // radius columns that pinch hard into a spear tip.
+        height = 22 + Math.floor(chunkRng() * 38); // 22-59
+        baseRadiusX = 1 + (chunkRng() < 0.30 ? 1 : 0);
+        baseRadiusZ = 1 + (chunkRng() < 0.22 ? 1 : 0);
+        needleStart = 0.70 + chunkRng() * 0.18;
+    } else {
+        // Short spikes: much more common, squat/wide, highly variable.
+        height = 7 + Math.floor(chunkRng() * 13); // 7-19
+        baseRadiusX = 2 + Math.floor(chunkRng() * 2); // 2-3
+        baseRadiusZ = 2 + Math.floor(chunkRng() * 2); // 2-3
+        if (chunkRng() < 0.18) { baseRadiusX = 1; baseRadiusZ = 2; }
+        if (chunkRng() < 0.18) { baseRadiusX = 2; baseRadiusZ = 1; }
+        needleStart = 0.78 + chunkRng() * 0.14;
+    }
+
+    const startY = baseY - 1;
+    const taperPower = isTall ? (0.85 + chunkRng() * 0.65) : (1.05 + chunkRng() * 0.85);
+    const leanDirX = Math.floor(chunkRng() * 3) - 1; // -1,0,1
+    const leanDirZ = Math.floor(chunkRng() * 3) - 1;
+    const leanStrength = isTall ? (chunkRng() < 0.35 ? 1 : 0) : (chunkRng() < 0.18 ? 1 : 0);
+    const roughness = isTall ? 0.20 : 0.32;
+
+    for (let h = 0; h < height + 1; h++) {
+        const ty = startY + h;
+        if (ty < 1 || ty >= WORLD_HEIGHT) continue;
+
+        const t = h / Math.max(1, height);
+        let cx = centerX;
+        let cz = centerZ;
+        if (leanStrength) {
+            // Slight stepped lean so very tall spikes are not perfectly plumb.
+            cx += Math.round(leanDirX * t * leanStrength);
+            cz += Math.round(leanDirZ * t * leanStrength);
         }
-        // 'classic' preset uses the layer editor
-        _generateSuperflatChunk(cx, cz);
+
+        let rx, rz;
+        if (isTall && t > needleStart) {
+            const tipT = (t - needleStart) / Math.max(0.01, (1 - needleStart));
+            rx = Math.max(0, Math.round(baseRadiusX * (1 - tipT * 1.35)));
+            rz = Math.max(0, Math.round(baseRadiusZ * (1 - tipT * 1.35)));
+        } else {
+            const taper = Math.pow(1 - t, taperPower);
+            rx = Math.max(0, Math.round(baseRadiusX * taper));
+            rz = Math.max(0, Math.round(baseRadiusZ * taper));
+        }
+
+        // Keep lower rows fuller so the spike looks rooted, and force the top
+        // rows into one-block tips rather than flat cutoffs.
+        if (h <= 1) { rx = Math.max(rx, Math.min(2, baseRadiusX)); rz = Math.max(rz, Math.min(2, baseRadiusZ)); }
+        if (h >= height - 1) { rx = 0; rz = 0; }
+
+        for (let dx = -rx; dx <= rx; dx++) {
+            for (let dz = -rz; dz <= rz; dz++) {
+                const nx = rx <= 0 ? 0 : dx / Math.max(0.01, rx + 0.15);
+                const nz = rz <= 0 ? 0 : dz / Math.max(0.01, rz + 0.15);
+                const dist = nx * nx + nz * nz;
+                if (dist > 1.08) continue;
+
+                // Randomly chip away some edge blocks, but never the center
+                // column. This breaks up the repeated cone/cylinder look.
+                const edge = dist > 0.62;
+                if (edge && chunkRng() < roughness * (0.35 + t * 0.65)) continue;
+
+                setVoxel(cx + dx, ty, cz + dz, 138); // Packed Ice
+            }
+        }
+    }
+
+    // A few short packed-ice roots around the base, similar to the way vanilla
+    // spikes feel embedded in surrounding snow/ice instead of sitting on top.
+    const rootRadius = Math.max(baseRadiusX, baseRadiusZ) + (isTall ? 0 : 1);
+    for (let dx = -rootRadius; dx <= rootRadius; dx++) {
+        for (let dz = -rootRadius; dz <= rootRadius; dz++) {
+            const distSq = dx*dx + dz*dz;
+            if (distSq > rootRadius * rootRadius + 0.5) continue;
+            if (chunkRng() < 0.28) continue;
+            const wx = centerX + dx;
+            const wz = centerZ + dz;
+            for (let y = baseY + 1; y >= baseY - 2; y--) {
+                const id = getVoxel(wx, y, wz) & 0xFF;
+                if (id === 39 || id === 2 || id === 40 || id === 138) {
+                    setVoxel(wx, y, wz, 138);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+function _getIceSpikeMargin(isTall, chunkRng) {
+    // Conservative footprint margin matching the possible randomized base
+    // radii above. Keeps feature writes inside this chunk.
+    return isTall ? 3 : 4;
+}
+
+// v341: ice patch — 5x5 disk of packed ice replacing the local surface
+// block (snow or dirt). Matches MC's "Ice Patch" feature: the wiki
+// describes it as a 5x5 pattern with corners removed, and "each block
+// adapts to the height of the surface block it replaces" — so we scan
+// for the local surface y rather than assuming a flat slab.
+function _generateIcePatch(centerX, centerSurfaceY, centerZ) {
+    // 5x5 with corners trimmed → 21 tiles, vaguely circular.
+    const pattern = [
+        [0, 1, 1, 1, 0],
+        [1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1],
+        [0, 1, 1, 1, 0]
+    ];
+    for (let dz = -2; dz <= 2; dz++) {
+        for (let dx = -2; dx <= 2; dx++) {
+            if (pattern[dz + 2][dx + 2] === 0) continue;
+            const wx = centerX + dx;
+            const wz = centerZ + dz;
+            // Find local surface y near the patch center (snow layers above
+            // the surface block are transparent and don't count).
+            let localY = -1;
+            for (let y = centerSurfaceY + 3; y >= centerSurfaceY - 3; y--) {
+                if (y < 1 || y >= WORLD_HEIGHT) continue;
+                const id = getVoxel(wx, y, wz) & 0xFF;
+                if (id !== 0 && id !== 40) { localY = y; break; }
+            }
+            if (localY < 0) continue;
+            // Only replace snow or dirt — avoid clobbering existing ice or
+            // overwriting spikes we just placed.
+            const surfId = getVoxel(wx, localY, wz) & 0xFF;
+            if (surfId === 39 || surfId === 2) {
+                setVoxel(wx, localY, wz, 138);
+            }
+        }
+    }
+}
+
+function _applyBadlandsColumnBlock(x, y, z, depth) {
+    if (depth === 0 && _isBadlandsRedSandCap(x, y, z)) {
+        setVoxel(x, y, z, BADLANDS_RED_SAND);
         return;
     }
-    
-    _generateNormalChunk(cx, cz);
+
+    // Red sandstone naturally sits below red sand. Otherwise fill the exposed
+    // mesa body with colored terracotta bands down to a stone transition.
+    const aboveId = getVoxel(x, y + 1, z) & 0xFF;
+    if (depth > 0 && depth <= 3 && (aboveId === BADLANDS_RED_SAND || aboveId === BADLANDS_RED_SANDSTONE)) {
+        setVoxel(x, y, z, BADLANDS_RED_SANDSTONE);
+        return;
+    }
+
+    if (y >= GEN_SEA_LEVEL - 18) {
+        setVoxel(x, y, z, _getBadlandsTerracottaBlock(x, y, z));
+    }
+    // Below the terracotta body, leave the original stone in place.
+}
+
+
+
+// ==========================================
+// SKYBLOCK PROTOTYPE WORLDGEN
+// ==========================================
+// World type 5: classic Skyblock prototype. The overworld is void except for
+// a small L-shaped dirt/grass starter island at world origin, one oak tree,
+// and one starter chest. This function is safe in both main thread and the
+// worldgen worker: setVoxel captures cross-chunk tree leaves as overflow in
+// the worker, while the main thread applies them directly.
+function _generateSkyblockChunk(cx, cz) {
+    _markChunkGenerated(cx, cz);
+    _getOrCreateChunkFast(cx, cz);
+
+    const halfW = WORLD_WIDTH / 2;
+    const halfD = WORLD_DEPTH / 2;
+    const startX = cx * CHUNK_SIZE - halfW;
+    const startZ = cz * CHUNK_SIZE - halfD;
+
+    // Biome tint should remain normal/plains for the void world.
+    if (typeof biomeMap !== 'undefined' && biomeMap) {
+        for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+            for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+                const wx = startX + lx;
+                const wz = startZ + lz;
+                const gIdx = (wx + halfW) + (wz + halfD) * WORLD_WIDTH;
+                if (gIdx >= 0 && gIdx < WORLD_WIDTH * WORLD_DEPTH) biomeMap[gIdx] = 'plains';
+            }
+        }
+    }
+
+    // Only the center-area chunk receives blocks. All other chunks are real
+    // generated void chunks so the lazy streamer stops re-requesting them.
+    const inThisChunk = (x, z) => x >= startX && x < startX + CHUNK_SIZE && z >= startZ && z < startZ + CHUNK_SIZE;
+    const topY = 64;
+    const dirtBottomY = 61;
+
+    // Classic L footprint: a 5x5 island with the north-east 2x2 corner missing.
+    // Top layer is grass; lower layers are dirt.
+    for (let x = -2; x <= 2; x++) {
+        for (let z = -2; z <= 2; z++) {
+            const inL = (z <= 0) || (x <= 0);
+            if (!inL) continue;
+            if (!inThisChunk(x, z)) continue;
+            for (let y = dirtBottomY; y < topY; y++) setVoxel(x, y, z, 2);
+            setVoxel(x, topY, z, 1);
+        }
+    }
+
+    // Tree is generated later on the main thread by setupSkyblockStarterTree(),
+    // using the existing sapling growTree() code path. Do not generate a custom
+    // leaf blob here; the worker does not have access to growTree().
+
+    // Starter chest on the front/right arm of the L.
+    if (inThisChunk(2, -1)) setVoxel(2, topY + 1, -1, 69);
+}
+
+// Create the custom Skyblock starter chest inventory on the main thread after
+// the island chunk has been generated. The chest block itself is placed during
+// worldgen; this fills its persistent chest data.
+function setupSkyblockStarterChest() {
+    if (typeof getOrCreateChest !== 'function') return;
+    const chest = getOrCreateChest(2, 65, -1);
+    if (!chest || !chest.slots) return;
+
+    const alreadyFilled = chest.slots.some(s => s && s.id && s.count > 0);
+    if (alreadyFilled) return;
+
+    const contents = [
+        { id: 224, count: 1 }, // Water Bucket
+        { id: 225, count: 1 }, // Lava Bucket
+        { id: 116, count: 1 }, // Oak Sapling
+        { id: 20,  count: 1 }, // Cactus
+        { id: 52,  count: 1 }, // Sugarcane
+        { id: 128, count: 1 }, // Seeds
+        { id: 2,   count: 3 }, // Dirt
+        { id: 15,  count: 1 }, // Sand
+        { id: 5,   count: 1 }  // Gravel
+    ];
+
+    for (let i = 0; i < contents.length; i++) {
+        chest.slots[i].id = contents[i].id;
+        chest.slots[i].count = contents[i].count;
+    }
+}
+if (typeof window !== 'undefined') window.setupSkyblockStarterChest = setupSkyblockStarterChest;
+
+
+// Grow the Skyblock starter oak through the exact same runtime sapling tree
+// generator used elsewhere in the game. This avoids a special custom Skyblock
+// canopy and keeps the starter tree visually consistent with normal oak trees.
+function setupSkyblockStarterTree() {
+    if (typeof growTree !== 'function') return;
+    const x = -2, y = 65, z = -2; // corner of the island; ground is y=64
+
+    // Do not duplicate trees if this hook is ever called twice.
+    let hasTree = false;
+    for (let yy = y; yy <= y + 8; yy++) {
+        const id = getVoxel(x, yy, z) & 0xFF;
+        if (id === 13 || id === 14) { hasTree = true; break; }
+    }
+    if (hasTree) return;
+
+    // Place a real oak sapling and immediately grow it with the existing tree
+    // system. growTree consumes the sapling, places logs/leaves, and queues
+    // lighting updates exactly like normal sapling growth.
+    setVoxel(x, y, z, 116);
+    growTree(x, y, z, 116);
+
+    if (typeof updateChunksInBounds === 'function') {
+        updateChunksInBounds(x - 3, x + 3, z - 3, z + 3);
+    }
+}
+if (typeof window !== 'undefined') window.setupSkyblockStarterTree = setupSkyblockStarterTree;
+
+
+function generateChunkColumn(cx, cz) {
+    if (_isChunkGenerated(cx, cz)) return;
+    // v332 Fix C: open the worldgen-allocate window. Tree leaves on a
+    // chunk edge can spill into neighbor chunks via setVoxel; those
+    // legitimately need to allocate the neighbor slot. Outside this
+    // window, setVoxel refuses to allocate.
+    _enterWorldGen();
+    try {
+        // Skyblock prototype world type
+        if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 5) {
+            _generateSkyblockChunk(cx, cz);
+            return;
+        }
+
+        // Superflat world type
+        if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 1) {
+            // 'overworld' preset uses normal generator with flattened heightmap
+            if (typeof GEN_SUPERFLAT_PRESET !== 'undefined' && GEN_SUPERFLAT_PRESET === 'overworld') {
+                _generateNormalChunk(cx, cz);
+                return;
+            }
+            // 'classic' preset uses the layer editor
+            _generateSuperflatChunk(cx, cz);
+            return;
+        }
+
+        _generateNormalChunk(cx, cz);
+    } finally {
+        _exitWorldGen();
+    }
 }
 
 function _generateSuperflatChunk(cx, cz) {
@@ -160,13 +594,51 @@ function _generateNormalChunk(cx, cz) {
             
             baseHeight = biomeData.heightMap[bIdx];
             volatility = biomeData.volMap[bIdx];
-            
-            // --- NEW: SHORELINE DAMPENING MULTIPLIER ---
-            // Fades from 1.0 (inland) to 0.0 (in the ocean)
+            const biomeNameForTerrain = BIOME_NAMES[biomeData.biomes[bIdx]];
+
+            // v336: compute shoreDampen FIRST (was further down), then use
+            // it to gate the spire bonus. The bug it fixes: v334's smooth
+            // badlandsWeight extends the spire bonus ~24 blocks past the
+            // strict Voronoi cell boundary. Adjacent ocean cells were
+            // catching that bonus (weight ~0.2–0.4 within the blur radius),
+            // which let stone columns shoot 15–25 blocks above sea level
+            // out of the water — clearly broken in screenshots. The
+            // elevation-noise and mountain contributions are already
+            // shore-dampened; the spire bonus needs the same gate.
             const oceanNoise = _wgPerlinOcean.fbm(x / (_wgBiomeScale * 2.5), z / (_wgBiomeScale * 2.5), 3);
             let shoreDampen = 1.0;
             if (oceanNoise < 0.1) {
-                shoreDampen = Math.max(0.0, (oceanNoise - (-0.15)) / 0.25); 
+                shoreDampen = Math.max(0.0, (oceanNoise - (-0.15)) / 0.25);
+            }
+
+            // v334: smoothly-blended badlands continuity weight. 1.0 in the
+            // middle of a badlands cell, fading to 0 across the ~24-block
+            // blur radius at the biome boundary. The previous code applied
+            // the spire bonus inside a binary `biome === 'badlands'` check,
+            // which created visible height cliffs where a spire's noise lobe
+            // happened to cross the biome border. By multiplying the spire
+            // bonus through this weight, spires now feather out into
+            // neighboring terrain the same way the base heightmap does.
+            const badlandsWeight = (biomeData.badlandsWeight
+                ? biomeData.badlandsWeight[bIdx]
+                : (biomeNameForTerrain === 'badlands' ? 1.0 : 0.0));
+            if (badlandsWeight > 0.001) {
+                // v336: spires need to die in any ocean cell, not just deep
+                // ocean. Linear × shoreDampen leaves a residual 2–5 block
+                // bump in shallow water (shoreDampen ≈ 0.2–0.5) — visible
+                // as small stone bumps poking out of the sea right at the
+                // badlands shore. The smoothstep(0.5, 1.0, shoreDampen)
+                // gate clamps to zero whenever shoreDampen < 0.5 (i.e.,
+                // any ocean cell at all) and ramps up smoothly to full
+                // contribution once we're well inland.
+                const shoreSpireGate = _smoothstep(0.5, 1.0, shoreDampen);
+                const spireBonus = _badlandsSpireHeightBonus(x, z) * _wgTerrainMult * badlandsWeight * shoreSpireGate;
+                if (spireBonus > 0.25) {
+                    baseHeight += spireBonus;
+                    // More vertical and jagged than normal rolling terrain, but not so
+                    // noisy that the spires dissolve into floating blobs.
+                    volatility += Math.min(18, spireBonus * 0.18);
+                }
             }
 
             // Standard rolling elevation (Dampened near shores)
@@ -249,6 +721,10 @@ function _generateNormalChunk(cx, cz) {
             
             const snowDepth = 2 + Math.floor((_wgPerlinElevation.noise2D(x * 0.1, z * 0.1) * 0.5 + 0.5) * 2);
             const dirtDepth = 2 + Math.floor((_wgPerlinVolatility.noise2D(x * 0.1, z * 0.1) * 0.5 + 0.5) * 2);
+            // v334: wooded-badlands per-column verdict, latched on depth==0
+            // and reused for depth 1..N so the grass cap and dirt subsurface
+            // belong to the same column choice.
+            let _wbColumnCache = false;
             
             let depth = -1;
             for (let y = WORLD_HEIGHT - 1; y >= 1; y--) {
@@ -258,17 +734,47 @@ function _generateNormalChunk(cx, cz) {
                 
                 if (block === 3) {
                     depth++;
+                    // v334: extend the badlands surface (terracotta / red
+                    // sand / wooded grass) into the smoothly-blended border
+                    // zone, not just the strict Voronoi cell. The heightmap
+                    // already lifts terrain through that 24-block buffer,
+                    // so without this the mesa rises into a grass-topped
+                    // hill at the cell edge — clearly wrong. Using the
+                    // blurred badlandsWeight here aligns the surface
+                    // texture with the height transition.
+                    const useBadlandsSurface = (biome === 'badlands')
+                        || (biomeData.badlandsWeight && biomeData.badlandsWeight[bIdx] > 0.5);
+                    if (useBadlandsSurface) {
+                        // Wooded Badlands: noise-masked columns on the mesa
+                        // plateaus get a plains-style cap (grass over dirt
+                        // over stone) instead of red sand + terracotta.
+                        // Decided per-column at depth==0 and cached so all
+                        // four depth layers make a consistent choice.
+                        if (depth === 0) _wbColumnCache = _isWoodedBadlandsColumn(x, y, z);
+                        if (_wbColumnCache) {
+                            if (depth === 0) {
+                                setVoxel(x, y, z, 1); // Grass block
+                            } else if (depth <= dirtDepth) {
+                                setVoxel(x, y, z, 2); // Dirt
+                            }
+                            // Below dirtDepth: leave stone in place.
+                            continue;
+                        }
+                        _applyBadlandsColumnBlock(x, y, z, depth);
+                        continue;
+                    }
                     if (depth === 0) {
                         if (y >= GEN_SEA_LEVEL - 1) {
                             let surfId = 1;
                             if (biome === 'desert') surfId = 15;
                             else if (biome === 'tundra') surfId = 39;
+                            else if (biome === 'ice_spikes') surfId = 39; // v341: snow block top, same as tundra
                             else if (biome === 'ocean') surfId = 15; // Sandy beaches right at the edge
                             
                             // Beach override — skipped in flat overworld preset since ALL land is at sea level
                             if (!isOverworldPreset) {
-                                if (y <= GEN_SEA_LEVEL + 1 && biome !== 'tundra' && biome !== 'taiga' && biome !== 'swamp') surfId = 15;
-                                else if (y <= GEN_SEA_LEVEL + 1 && (biome === 'tundra' || biome === 'taiga')) surfId = 5;
+                                if (y <= GEN_SEA_LEVEL + 1 && biome !== 'tundra' && biome !== 'taiga' && biome !== 'swamp' && biome !== 'ice_spikes') surfId = 15;
+                                else if (y <= GEN_SEA_LEVEL + 1 && (biome === 'tundra' || biome === 'taiga' || biome === 'ice_spikes')) surfId = 5;
                             }
                             
                             // Swamp: use dirt for blocks at or below water level
@@ -325,6 +831,20 @@ function _generateNormalChunk(cx, cz) {
                             } else {
                                 if (depth < dirtDepth) setVoxel(x, y, z, 2);
                             }
+                        } else if (biome === 'ice_spikes') {
+                            // v341: ice_spikes shares tundra's snow + dirt
+                            // stack. Surface treatment is otherwise identical
+                            // — the unique features (packed-ice spikes, ice
+                            // patches) come later, after surface generation.
+                            // MC's biome is technically "snowy plains spikes"
+                            // i.e. snowy plains underneath, so we want this
+                            // to match tundra's snow/dirt subsurface exactly.
+                            if (y >= GEN_SEA_LEVEL - 1) {
+                                if (depth < snowDepth) setVoxel(x, y, z, 39);
+                                else if (depth < snowDepth + dirtDepth) setVoxel(x, y, z, 2);
+                            } else {
+                                if (depth < dirtDepth) setVoxel(x, y, z, 2);
+                            }
                         } else {
                             // ... keep your existing default sub-surface logic here ...
                             if (depth < 3) {
@@ -344,13 +864,13 @@ function _generateNormalChunk(cx, cz) {
         }
     }
     
-    // PHASE 2.5: Ice on water in snowy biomes (tundra, taiga)
+    // PHASE 2.5: Ice on water in snowy biomes (tundra, taiga, ice_spikes)
     // Replace the top water source block at sea level with ice where the block above is air
     for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         for (let lz = 0; lz < CHUNK_SIZE; lz++) {
             const bIdx = lx + lz * CHUNK_SIZE;
             const biome = BIOME_NAMES[biomeData.biomes[bIdx]];
-            if (biome !== 'tundra' && biome !== 'taiga') continue;
+            if (biome !== 'tundra' && biome !== 'taiga' && biome !== 'ice_spikes') continue;
             
             const x = startX + lx;
             const z = startZ + lz;
@@ -721,7 +1241,11 @@ function _generateNormalChunk(cx, cz) {
                             }
                             
                             // Apply biome-appropriate surface layers
-                            if (rimBiome === 'desert') {
+                            if (rimBiome === 'badlands') {
+                                _applyBadlandsColumnBlock(wx, colSurfY, wz, 0);
+                                if ((getVoxel(wx, colSurfY - 1, wz) & 0xFF) === 3) _applyBadlandsColumnBlock(wx, colSurfY - 1, wz, 1);
+                                if ((getVoxel(wx, colSurfY - 2, wz) & 0xFF) === 3) _applyBadlandsColumnBlock(wx, colSurfY - 2, wz, 2);
+                            } else if (rimBiome === 'desert') {
                                 // Sand on top, sandstone below
                                 setVoxel(wx, colSurfY, wz, 15); // Sand
                                 if ((getVoxel(wx, colSurfY - 1, wz) & 0xFF) === 3) {
@@ -752,6 +1276,60 @@ function _generateNormalChunk(cx, cz) {
         }
     }
     
+    // PHASE 3.6: Ice Spikes + Ice Patches (v341)
+    // Surface features for the ice_spikes biome — MC-style packed-ice
+    // spikes (two variants) and 5x5 ice patches. Runs AFTER caves and
+    // ravines so we don't carve through a placed spike, and BEFORE ores
+    // (which target stone underground) and trees (which we'd want growing
+    // around spikes, except this biome has no trees anyway).
+    //
+    // Density: ~1.2% per-column for spikes (~3 per chunk on average), of
+    // which ~20% are tall variants — gives ~2-3 short and 0-1 tall per
+    // 16x16, matching MC's visual density. Ice patches at ~1.8% per
+    // column, on top of that.
+    //
+    // Chunk boundaries: each spike footprint must fit entirely within the
+    // chunk so the worker doesn't have to write into neighbor cells (which
+    // it can't, except via fragile margin tricks). We skip spawn attempts
+    // near the chunk edge by a `margin` matching the spike base radius.
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+            const bIdx = lx + lz * CHUNK_SIZE;
+            const biome = BIOME_NAMES[biomeData.biomes[bIdx]];
+            if (biome !== 'ice_spikes') continue;
+
+            const x = startX + lx;
+            const z = startZ + lz;
+
+            // Locate the surface (skip snow-layer overlays).
+            let surfaceY = -1;
+            for (let y = WORLD_HEIGHT - 1; y >= 1; y--) {
+                const id = getVoxel(x, y, z) & 0xFF;
+                if (id !== 0 && id !== 40) { surfaceY = y; break; }
+            }
+            if (surfaceY < GEN_SEA_LEVEL) continue; // skip underwater columns
+            const surfId = getVoxel(x, surfaceY, z) & 0xFF;
+            if (surfId !== 39 && surfId !== 2) continue; // only on snow or dirt
+
+            const roll = seededRandom();
+            if (roll < 0.0135) {
+                // Spike attempt. Around 20% tall, 80% short, with the shape
+                // itself randomized in _generateIceSpike so repeated spikes
+                // no longer look like cloned cones/columns.
+                const isTall = seededRandom() < 0.20;
+                const margin = _getIceSpikeMargin(isTall, seededRandom);
+                if (lx < margin || lx >= CHUNK_SIZE - margin || lz < margin || lz >= CHUNK_SIZE - margin) continue;
+                _generateIceSpike(x, surfaceY + 1, z, isTall, seededRandom);
+            } else if (roll < 0.0315) {
+                // Ice patch attempt. The patch fits in a 5x5 footprint, so
+                // we use a 2-block margin for it too — keeps the disk inside
+                // the chunk and avoids the per-tile boundary writes.
+                if (lx < 2 || lx >= CHUNK_SIZE - 2 || lz < 2 || lz >= CHUNK_SIZE - 2) continue;
+                _generateIcePatch(x, surfaceY, z);
+            }
+        }
+    }
+
     // PHASE 4: Ores (per-chunk)
     const abundanceMult = (GEN_ORE_ABUNDANCE / 100);
     
@@ -836,7 +1414,14 @@ function _generateNormalChunk(cx, cz) {
                 else if (biome === 'taiga') treeChance = 0.02;
                 else if (biome === 'plains') treeChance = 0.0005;
                 else if (biome === 'tundra') treeChance = 0.001;
+                else if (biome === 'ice_spikes') treeChance = 0; // v341: no trees in MC ice spikes
                 else if (biome === 'desert') treeChance = 0.002;
+                else if (biome === 'badlands') {
+                    // v334: wooded badlands sections (grass surface) want
+                    // visible oak coverage; the regular red-sand basin keeps
+                    // its sparse dead-bush look unchanged.
+                    treeChance = (surfId === 1) ? 0.010 : 0.002;
+                }
                 else if (biome === 'swamp') treeChance = 0.008;
                 else if (biome === 'jungle') treeChance = 0.035;
                 else if (biome === 'extreme_hills') treeChance = 0.003;
@@ -849,7 +1434,7 @@ function _generateNormalChunk(cx, cz) {
                 }
                 
                 if (seededRandom() < treeChance) {
-                    if (biome === 'desert' && surfId === 15) {
+                    if ((biome === 'desert' && surfId === 15) || (biome === 'badlands' && surfId === BADLANDS_RED_SAND)) {
                         const ch = 1 + Math.floor(seededRandom() * 3);
                         let canPlace = true;
                         for (const [dx, dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
@@ -1061,7 +1646,7 @@ function _generateNormalChunk(cx, cz) {
                                 }
                             }
                         }
-                    } else if ((biome === 'forest' || biome === 'alpha_forest' || biome === 'rainforest' || biome === 'plains' || biome === 'extreme_hills') && surfId === 1) {
+                    } else if ((biome === 'forest' || biome === 'alpha_forest' || biome === 'rainforest' || biome === 'plains' || biome === 'extreme_hills' || biome === 'badlands') && surfId === 1) {
                         let logId = 13, leafId = 14, isBirch = false;
                         
                         if (biome === 'forest' && seededRandom() < 0.3) {
@@ -1356,7 +1941,7 @@ function _generateNormalChunk(cx, cz) {
                     const r = seededRandom();
                     
                     if (biome === 'plains' && surfId === 1) {
-                        if (r < 0.3 * folMult) setVoxel(x, y+1, z, 16);
+                        if (r < 0.3 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
                         else if (r < 0.32 * folMult) setVoxel(x, y+1, z, 23);
                         else if (r < 0.33 * folMult) setVoxel(x, y+1, z, 24);
                         else if (r < 0.35 * folMult) setVoxel(x, y+1, z, 53);
@@ -1365,22 +1950,59 @@ function _generateNormalChunk(cx, cz) {
                         if (r < 0.017 * folMult) setVoxel(x, y+1, z, 23); // Rose
                         else if (r < 0.020 * folMult) setVoxel(x, y+1, z, 53); // Dandelion
                     } else if ((biome === 'forest' || biome === 'rainforest') && surfId === 1) {
-                        if (r < 0.15 * folMult) setVoxel(x, y+1, z, 16);
+                        if (r < 0.15 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
                         else if (r < 0.17 * folMult) setVoxel(x, y+1, z, 23);
                         else if (r < 0.18 * folMult) setVoxel(x, y+1, z, 24);
                         else if (r < 0.20 * folMult) setVoxel(x, y+1, z, 53);
                     } else if (biome === 'taiga' && surfId === 1) {
-                        if (r < 0.15 * folMult) setVoxel(x, y+1, z, 16);
+                        if (r < 0.15 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
                     } else if (biome === 'tundra' && surfId === 39) {
                         setVoxel(x, y+1, z, 40, 1);
+                    } else if (biome === 'ice_spikes' && surfId === 39) {
+                        // v341: ice_spikes biome has the highest snow
+                        // accumulation in MC. We already place the base
+                        // snow layer here; the heavier stacking happens via
+                        // the spike-placement pass which can deposit
+                        // additional layers around the spike bases. For now
+                        // a single layer matches the visible "thick snow"
+                        // look without overcomplicating the worldgen.
+                        setVoxel(x, y+1, z, 40, 1);
                     } else if (biome === 'swamp' && surfId === 1) {
-                        if (r < 0.25 * folMult) setVoxel(x, y+1, z, 16); // Tall grass
+                        if (r < 0.25 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
                         else if (r < 0.26 * folMult) setVoxel(x, y+1, z, 24); // Bush
                     } else if (biome === 'jungle' && surfId === 1) {
                         // Very dense ground cover like MC jungle
-                        if (r < 0.45 * folMult) setVoxel(x, y+1, z, 16); // Tall grass (very dense)
+                        if (r < 0.45 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
                         else if (r < 0.52 * folMult) setVoxel(x, y+1, z, 24); // Bush
                         else if (r < 0.54 * folMult) setVoxel(x, y+1, z, 23); // Rose
+                    } else if (biome === 'badlands' && surfId === 1) {
+                        // v334 Wooded Badlands: sparse tall grass on the
+                        // grass-capped plateau columns. Non-wooded badlands
+                        // (red sand / terracotta surface) don't enter this
+                        // branch, so they keep their dead-bush look.
+                        // v335: route through the 1/2-block tall grass
+                        // helper so wooded badlands gets the same mix
+                        // MC wooded badlands does.
+                        if (r < 0.08 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
+                    } else if (biome === 'desert' && surfId === 15) {
+                        // Deserts: vanilla-style dead bushes on sand, with cactus handled by the
+                        // existing sparse cactus pass above. Keep density lower than badlands.
+                        if (r < 0.035 * folMult) setVoxel(x, y+1, z, BADLANDS_DEAD_BUSH);
+                    } else if (biome === 'badlands' && surfId === BADLANDS_RED_SAND) {
+                        // Badlands: frequent dead bushes, rare cactus, no grass/flowers.
+                        if (r < 0.10 * folMult) setVoxel(x, y+1, z, BADLANDS_DEAD_BUSH);
+                        else if (r < 0.115 * folMult) {
+                            const ch = 1 + Math.floor(seededRandom() * 3);
+                            let canPlaceCactus = true;
+                            for (const [dx, dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+                                if ((getVoxel(x+dx, y+1, z+dz) & 0xFF) !== 0) canPlaceCactus = false;
+                            }
+                            if (canPlaceCactus) {
+                                for (let cy = 1; cy <= ch; cy++) {
+                                    if ((getVoxel(x, y+cy, z) & 0xFF) === 0) setVoxel(x, y+cy, z, 20);
+                                }
+                            }
+                        }
                     } else if (biome === 'extreme_hills' && surfId === 1) {
                         if (r < 0.08 * folMult) setVoxel(x, y+1, z, 16); // Sparse tall grass
                     }
@@ -1427,7 +2049,7 @@ function _generateNormalChunk(cx, cz) {
 
         const groundId = getVoxel(sx, sy, sz) & 0xFF;
         
-        if (groundId === 1 || groundId === 2 || groundId === 15 || groundId === 5) {
+        if (groundId === 1 || groundId === 2 || groundId === 15 || groundId === 5 || groundId === BADLANDS_RED_SAND) {
             if ((getVoxel(sx, sy + 1, sz) & 0xFF) === 0) {
                 let hasWater = false;
                 for (const [dx, dy, dz] of [[1,0,0], [-1,0,0], [0,0,1], [0,0,-1]]) {
@@ -1502,7 +2124,7 @@ function _generateNormalChunk(cx, cz) {
             const z = startZ + lz;
             const bIdx = lx + lz * CHUNK_SIZE;
             const biome = BIOME_NAMES[biomeData.biomes[bIdx]];
-            if (biome === 'tundra' || biome === 'taiga') {
+            if (biome === 'tundra' || biome === 'taiga' || biome === 'ice_spikes') {
                 // Scan from sea level down to find the top water source
                 for (let sy = GEN_SEA_LEVEL; sy >= GEN_SEA_LEVEL - 2; sy--) {
                     const bid = getVoxel(x, sy, z) & 0xFF;
@@ -1782,8 +2404,28 @@ function simulateAetherFluids(startX, startZ, endX, endZ) {
             const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
             for (const [dx,dy,dz] of dirs) {
                 const nVal = getVoxel(x+dx,y+dy,z+dz); const nId = nVal & 0xFF;
-                if (id===27 && nId===4) { setVoxel(x,y,z,isSource?28:3); interacted=true; for(const [ndx,ndy,ndz] of dirs) fluidSimQueue.add(getVoxelIndex(x+ndx,y+ndy,z+ndz)); break; }
-                if (id===4 && nId===27) { const nSource=(nVal>>13)&0x1; setVoxel(x+dx,y+dy,z+dz,nSource?28:3); for(const [ndx,ndy,ndz] of dirs) fluidSimQueue.add(getVoxelIndex(x+dx+ndx,y+dy+ndy,z+dz+ndz)); }
+                if (id===27 && nId===4) {
+                    const waterSource=(nVal>>13)&0x1;
+                    if (isSource) {
+                        setVoxel(x,y,z,28); // water touches lava source -> obsidian
+                        interacted=true;
+                        for(const [ndx,ndy,ndz] of dirs) fluidSimQueue.add(getVoxelIndex(x+ndx,y+ndy,z+ndz));
+                        break;
+                    } else if (waterSource) {
+                        setVoxel(x+dx,y+dy,z+dz,3); // flowing lava into water source -> stone
+                        for(const [ndx,ndy,ndz] of dirs) fluidSimQueue.add(getVoxelIndex(x+dx+ndx,y+dy+ndy,z+dz+ndz));
+                    } else {
+                        setVoxel(x,y,z,33); // flowing lava + flowing water -> cobblestone
+                        interacted=true;
+                        for(const [ndx,ndy,ndz] of dirs) fluidSimQueue.add(getVoxelIndex(x+ndx,y+ndy,z+ndz));
+                        break;
+                    }
+                }
+                if (id===4 && nId===27) {
+                    const nSource=(nVal>>13)&0x1;
+                    setVoxel(x+dx,y+dy,z+dz,nSource?28:33); // water converts lava source to obsidian, flowing lava to cobble
+                    for(const [ndx,ndy,ndz] of dirs) fluidSimQueue.add(getVoxelIndex(x+dx+ndx,y+dy+ndy,z+dz+ndz));
+                }
             }
             if (interacted) continue;
             val = getVoxel(x,y,z); id = val & 0xFF; if (!isFluidBlock(id)) continue;
@@ -1922,14 +2564,19 @@ async function generateWorld() {
     if (typeof loadFireTexture === 'function') await loadFireTexture();
 
     textureAtlas = await loadTextureAtlas();
+    textureAtlasMip = (typeof loadMipTextureAtlas === 'function') ? await loadMipTextureAtlas() : textureAtlas;
     await loadToolAtlas();
     solidMaterial = new THREE.MeshBasicMaterial({ map: textureAtlas, alphaTest: 0.5, transparent: false, side: THREE.FrontSide, vertexColors: true });
     injectLightingShader(solidMaterial);
+    solidMaterialMip = new THREE.MeshBasicMaterial({ map: textureAtlasMip || textureAtlas, alphaTest: 0.5, transparent: false, side: THREE.FrontSide, vertexColors: true });
+    injectLightingShader(solidMaterialMip);
     if (typeof createPortalMaterial === 'function') createPortalMaterial(textureAtlas);
     if (typeof createAetherPortalMaterial === 'function') createAetherPortalMaterial(textureAtlas);
     
     glassMaterial = new THREE.MeshBasicMaterial({ map: textureAtlas, transparent: true, opacity: 1.0, alphaTest: 0.0, side: THREE.FrontSide, vertexColors: true, depthWrite: false });
     injectLightingShader(glassMaterial);
+    glassMaterialMip = new THREE.MeshBasicMaterial({ map: textureAtlasMip || textureAtlas, transparent: true, opacity: 1.0, alphaTest: 0.0, side: THREE.FrontSide, vertexColors: true, depthWrite: false });
+    injectLightingShader(glassMaterialMip);
     
     const waterTex = await loadWaterTexture();
     waterMaterial = createFluidMaterial(waterTex, true);

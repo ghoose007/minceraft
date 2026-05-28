@@ -601,6 +601,21 @@ function _bindTouchEvents() {
     const sneakBtn = document.getElementById('mobile-btn-sneak');
     const pauseBtn = document.getElementById('mobile-btn-pause');
     const invBtn = document.getElementById('mobile-btn-inventory');
+    const camBtn = document.getElementById('mobile-btn-camera');
+
+    // If the mobile UI failed to build completely, do not let one missing
+    // element crash the whole game. This can happen after hot reloads, browser
+    // restore, or partial DOM rebuilds on mobile/tablet browsers.
+    if (!jumpBtn || !sneakBtn || !pauseBtn || !invBtn) {
+        console.warn('[mobile] Missing one or more required mobile buttons; skipping touch button bindings.', {
+            jumpBtn: !!jumpBtn,
+            sneakBtn: !!sneakBtn,
+            pauseBtn: !!pauseBtn,
+            invBtn: !!invBtn,
+            camBtn: !!camBtn
+        });
+        return;
+    }
 
     // Jump
     let _jumpLastTap = 0;
@@ -1585,6 +1600,38 @@ function _handleTap(screenX, screenY) {
 
         if (typeof canPlaceBlock === 'function' && !canPlaceBlock(currentBuildBlock, dx, dy, dz, target.normal)) return;
 
+        // v340: Tall Grass (item id 219) → mobile path mirrors the desktop
+        // logic in init.js. Places 219 at (dx, dy, dz) and 220 directly above.
+        if (currentBuildBlock === 219) {
+            const aboveId = getVoxel(dx, dy + 1, dz) & 0xFF;
+            if (aboveId !== 0) return; // need air for the top half
+            setVoxel(dx, dy, dz, 219);
+            setVoxel(dx, dy + 1, dz, 220);
+            if (typeof pendingBlockUpdates !== 'undefined') {
+                pendingBlockUpdates.push({x: dx, y: dy, z: dz});
+                pendingBlockUpdates.push({x: dx, y: dy + 1, z: dz});
+            }
+            if (typeof updateChunks === 'function') {
+                updateChunks(dx, dy, dz);
+                updateChunks(dx, dy + 1, dz);
+            }
+            if (typeof queueNeighbors === 'function') {
+                queueNeighbors(dx, dy, dz);
+                queueNeighbors(dx, dy + 1, dz);
+            }
+            if (typeof window._soundPlaceBlock === 'function') window._soundPlaceBlock(219, dx, dy, dz);
+            if (typeof gameMode !== 'undefined' && gameMode === 'survival' && inventory[activeSlot]) {
+                inventory[activeSlot].count--;
+                if (inventory[activeSlot].count <= 0) {
+                    inventory[activeSlot].id = 0;
+                    inventory[activeSlot].count = 0;
+                }
+                if (typeof buildUI === 'function') buildUI();
+                if (typeof selectSlot === 'function') selectSlot(activeSlot);
+            }
+            return;
+        }
+
         // v270: Door item (151) → place door block (149) as 2-block-tall structure.
         // Without this branch the door item falls through to default placement
         // which sets a voxel of id 151 (the item) and renders as a missing
@@ -1851,14 +1898,16 @@ function _isToolItem(id) {
            t.type === 'hoe' || t.type === 'bow';
 }
 
-// Items with IDs >= 100 that ARE valid placeable blocks (matches desktop init.js whitelist)
-const _placeableHighIds = [116, 117, 118, 128, 136, 137, 138, 139, 140, 141, 144, 145, 146, 147, 148, 150, 151, 152, 154, 155, 156, 157, 158, 190, 191, 192, 193, 194, 195, 196, 200, 201, 202, 203, 205, 206, 207, 208, 210, 212, 213, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251];
+// Items with IDs >= 100 that ARE valid special-use items even when they are not block records.
+// Registered BLOCK_DATA entries are placeable automatically, which prevents new high-ID blocks
+// from breaking whenever another block family is added.
+const _placeableHighIds = [128, 136, 151, 190, 191, 192, 193, 194, 195, 196];
 
 function _canPlaceItem(id) {
+    id = Number(id);
     if (id === 0) return false;
-    // Low IDs (< 100) are always blocks
     if (id < 100) return true;
-    // High IDs must be in the whitelist — everything else is a tool/armor/item
+    if (typeof BLOCK_DATA !== 'undefined' && BLOCK_DATA[id]) return true;
     return _placeableHighIds.includes(id);
 }
 

@@ -177,6 +177,11 @@ let useLazyGeneration = true;
 function updateLoadingBar() {}
 async function yieldToUI() {}
 
+// v332 Fix C regression shim: see worldgen-worker.js for context.
+function _enterWorldGen() {}
+function _exitWorldGen() {}
+function _isInWorldGen() { return true; }
+
 // ----- Load source files -----
 try {
     importScripts(

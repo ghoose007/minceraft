@@ -17,10 +17,29 @@ const toolMaterials = {};
 
 // Router for items
 window.buildItemMesh = function(id) {
+    id = Number(id);
+    const itemDataForModel = (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[id]) || (typeof BLOCK_DATA !== 'undefined' && BLOCK_DATA[id]);
+    // v323: Let the registry force plant/material item models. This prevents
+    // blocks like sugarcane from accidentally falling through to cube models.
+    if (itemDataForModel && itemDataForModel.itemModel === 'material') return buildMaterialMesh(id);
+    if (itemDataForModel && itemDataForModel.itemModel === 'flat') return buildFlatBlockItemMesh(id);
+    // v317: New mesa/terracotta blocks are normal full-cube blocks. Force them
+    // through the same cube item model path as stone/sand/sandstone before any
+    // broad item-id ranges, spawn egg ranges, or tool ranges are considered.
+    if (typeof isMesaBlock === 'function' && isMesaBlock(id)) {
+        return typeof buildBlockItemMesh === 'function' ? buildBlockItemMesh(id) : new THREE.Group();
+    }
     // Route materials, saplings, flowers, and bushes to the 3D extruded material mesher
+    // v335: id 219 (Tall Grass item) joins this set so its held/dropped/inventory
+    // icon renders as the same extruded-cross mesh saplings use. The override
+    // to atlas 218 (leafier top) lives in buildMaterialMesh via itemAtlasIdx.
+    // v339: id 16 (Grass — the 1-block plant) also joins so it gets the same
+    // 3D extruded held/dropped treatment saplings have. Without this, it was
+    // falling through to buildBlockItemMesh (the cube path), which made the
+    // held model look like a tiny green box instead of a leaf sprite.
     if ((id >= 112 && id <= 123) || id === 128 || id === 129 || id === 134 || id === 135 || id === 137 || id === 142 || id === 143 || id === 151 || id === 153 || id === 165 || id === 186 || id === 187 || id === 188
         || id === 197 || id === 198 || id === 199 || id === 202 || id === 205 || id === 206 || id === 211 || id === 212 || id === 213
-        || id === 23 || id === 53 || id === 24 || id === 116 || id === 117 || id === 118
+        || id === 16 || id === 23 || id === 53 || id === 24 || id === 26 || id === 52 || id === 116 || id === 117 || id === 118 || id === 219
         || id === 17) return buildMaterialMesh(id);
     // Spawn eggs — use composited canvas texture as flat sprite
     if (id >= 190 && id <= 196) return buildSpawnEggMesh(id);
@@ -41,7 +60,11 @@ function buildMaterialMesh(id) {
         console.warn("Could not read pixel data for material extrusion.", e);
     }
 
-    const atlasIdx = itemData.atlasIdx;
+    // v335: an item can override its inventory/held/dropped texture by
+    // specifying `itemAtlasIdx`. Used by Tall Grass (id 219), whose world
+    // block uses atlas 217 (wispy bottom half) but whose icon should show
+    // the leafier atlas 218 — same convention MC uses for two-tall plants.
+    const atlasIdx = (itemData.itemAtlasIdx !== undefined) ? itemData.itemAtlasIdx : itemData.atlasIdx;
     const atlasX = (atlasIdx % 16) * 16;
     const atlasY = Math.floor(atlasIdx / 16) * 16;
     
@@ -93,6 +116,19 @@ function buildMaterialMesh(id) {
     const colors = new Float32Array(positions.length).fill(1);
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     const biomeTints = new Float32Array(positions.length).fill(1);
+    if (id === 16 || id === 219) {
+        // v339: id 16 (Grass) and id 219 (Tall Grass) both ship greyscale
+        // atlas textures and are biome-tinted in the world via the grass-tint
+        // path. Their item forms have no world position to sample biome from,
+        // so we bake a fixed plains-green tint into the inventory / held /
+        // dropped mesh, matching MC's default outside-world appearance.
+        const PLAINS_GRASS_TINT = [0.55, 0.75, 0.4];
+        for (let i = 0; i < biomeTints.length; i += 3) {
+            biomeTints[i]     = PLAINS_GRASS_TINT[0];
+            biomeTints[i + 1] = PLAINS_GRASS_TINT[1];
+            biomeTints[i + 2] = PLAINS_GRASS_TINT[2];
+        }
+    }
     geo.setAttribute('aBiomeTint', new THREE.BufferAttribute(biomeTints, 3));
 
     if (!toolMaterials[id]) {

@@ -104,12 +104,27 @@ var worldSizeChunksMobile = [16, 32];
 function _getWorldSizeLabels() { return (window._deviceChoice === 'mobile') ? worldSizeLabelsMobile : worldSizeLabelsDesktop; }
 function _getWorldSizeChunks() { return (window._deviceChoice === 'mobile') ? worldSizeChunksMobile : worldSizeChunksDesktop; }
 
-const worldTypeLabels = ['Default', 'Superflat', 'Amplified', 'Single Biome', 'Alpha'];
-const singleBiomeList = ['plains', 'forest', 'desert', 'tundra', 'taiga', 'rainforest', 'swamp', 'jungle', 'extreme_hills'];
-const singleBiomeLabels = ['Plains', 'Forest', 'Desert', 'Tundra', 'Taiga', 'Rainforest', 'Swamp', 'Jungle', 'Extreme Hills'];
+const worldTypeLabels = ['Default', 'Superflat', 'Amplified', 'Single Biome', 'Alpha', 'Skyblock'];
+const singleBiomeList = ['plains', 'forest', 'desert', 'badlands', 'tundra', 'ice_spikes', 'taiga', 'rainforest', 'swamp', 'jungle', 'extreme_hills'];
+const singleBiomeLabels = ['Plains', 'Forest', 'Desert', 'Badlands', 'Tundra', 'Ice Spikes', 'Taiga', 'Rainforest', 'Swamp', 'Jungle', 'Extreme Hills'];
+
+function _forceSkyblockWorldSizeIfNeeded() {
+    if (worldOptions.worldtype !== 5) return;
+    var chunks = _getWorldSizeChunks();
+    var idx = chunks.indexOf(64); // 1024x1024 = 64 chunks
+    if (idx < 0) idx = Math.min(1, chunks.length - 1);
+    worldOptions.worldsize = idx;
+    var labels = _getWorldSizeLabels();
+    var el = document.getElementById('opt-worldsize');
+    if (el) el.textContent = labels[worldOptions.worldsize];
+}
 
 function toggleOption(key) {
     if (key === 'worldsize') {
+        if (worldOptions.worldtype === 5) {
+            _forceSkyblockWorldSizeIfNeeded();
+            return;
+        }
         var labels = _getWorldSizeLabels();
         worldOptions.worldsize = (worldOptions.worldsize + 1) % labels.length;
         document.getElementById('opt-worldsize').textContent = labels[worldOptions.worldsize];
@@ -117,16 +132,22 @@ function toggleOption(key) {
         worldOptions.gamemode = worldOptions.gamemode === 'survival' ? 'creative' : 'survival';
         document.getElementById('opt-gamemode').textContent = worldOptions.gamemode === 'survival' ? 'Survival' : 'Creative';
     } else if (key === 'worldtype') {
-        worldOptions.worldtype = (worldOptions.worldtype + 1) % 5;
+        worldOptions.worldtype = (worldOptions.worldtype + 1) % worldTypeLabels.length;
         document.getElementById('opt-worldtype').textContent = worldTypeLabels[worldOptions.worldtype];
         const biomeGroup = document.getElementById('single-biome-group');
         if (biomeGroup) biomeGroup.style.display = worldOptions.worldtype === 3 ? 'block' : 'none';
+        if (worldOptions.worldtype === 5) _forceSkyblockWorldSizeIfNeeded();
         if (typeof _applySuperflatGreyout === 'function') _applySuperflatGreyout();
-        // v310: Alpha preset disables Advanced Settings button
+        // Alpha and Skyblock disable Advanced Settings; Skyblock is a locked prototype preset.
         const advBtn = document.getElementById('btn-advanced-settings');
         if (advBtn) {
-            if (worldOptions.worldtype === 4) advBtn.classList.add('disabled');
+            if (worldOptions.worldtype === 4 || worldOptions.worldtype === 5) advBtn.classList.add('disabled');
             else advBtn.classList.remove('disabled');
+        }
+        const worldSizeBtn = document.getElementById('opt-worldsize');
+        if (worldSizeBtn) {
+            if (worldOptions.worldtype === 5) worldSizeBtn.classList.add('disabled');
+            else worldSizeBtn.classList.remove('disabled');
         }
     } else if (key === 'singlebiome') {
         worldOptions.singleBiome = (worldOptions.singleBiome + 1) % singleBiomeList.length;
@@ -215,7 +236,9 @@ const BIOME_TUNE_LIST = [
     { key: 'plains', label: 'Plains' },
     { key: 'forest', label: 'Forest' },
     { key: 'desert', label: 'Desert' },
+    { key: 'badlands', label: 'Badlands' },
     { key: 'tundra', label: 'Tundra' },
+    { key: 'ice_spikes', label: 'Ice Spikes' }, // v341
     { key: 'taiga', label: 'Taiga' },
     { key: 'rainforest', label: 'Rainforest' },
     { key: 'swamp', label: 'Swamp' },
@@ -243,6 +266,12 @@ function _buildBiomeTuningUI() {
             { suffix: 'tree', label: 'Tree Density', min: 0, max: 200, val: 100 },
             { suffix: 'foliage', label: 'Foliage Density', min: 0, max: 200, val: 100 }
         ];
+        // v335: badlands gets an extra slider that scales the noise
+        // frequency of all badlands sub-features (spires, wooded patches,
+        // red-sand mask, terracotta layers) in one place.
+        if (biome.key === 'badlands') {
+            params.push({ suffix: 'subsize', label: 'Sub-Biome Size', min: 25, max: 300, val: 100 });
+        }
 
         for (var p = 0; p < params.length; p++) {
             var param = params[p];
@@ -342,6 +371,12 @@ function _resetBiomeOverrides() {
         var key = BIOME_TUNE_LIST[i].key;
         GEN_BIOME_OVERRIDES[key] = { height: 100, variation: 100, treeDensity: 100, foliageDensity: 100 };
     }
+    // v335: badlands-only "Sub-Biome Size" multiplier that scales noise
+    // frequency for hoodoo spires, wooded patches, red-sand mask, and
+    // terracotta layer offset. 100% = current sizes; higher = bigger
+    // features, lower = smaller. Lives on the same override object so it
+    // ships to the worker through the existing settings channel.
+    GEN_BIOME_OVERRIDES.badlands.subBiomeSize = 100;
 }
 _resetBiomeOverrides();
 
@@ -398,9 +433,13 @@ function _readBiomeOverrides() {
             foliageDensity: _readSlider('sl-biome-' + key + '-foliage', 100)
         };
     }
+    // v335: badlands-only sub-biome size — read after the loop so we don't
+    // need to teach the loop about per-biome extra fields.
+    GEN_BIOME_OVERRIDES.badlands.subBiomeSize = _readSlider('sl-biome-badlands-subsize', 100);
 }
 
 async function startWorldCreation() {
+    if (worldOptions.worldtype === 5) _forceSkyblockWorldSizeIfNeeded();
     var seedStr = document.getElementById('world-seed').value.trim();
     var worldName = document.getElementById('world-name').value.trim() || 'New World';
 
@@ -550,23 +589,44 @@ const SUPERFLAT_DISABLED_CATEGORIES = ['terrain', 'biomes', 'caves', 'nature', '
 
 function _applySuperflatGreyout() {
     const isSuperflat = (worldOptions.worldtype === 1);
-    // Toggle disabled class on greyed-out categories
+    const isSkyblock = (worldOptions.worldtype === 5);
+
+    // Toggle disabled class on greyed-out categories. Skyblock is a locked
+    // preset, so all custom worldgen categories are greyed out.
     for (const cat of SUPERFLAT_DISABLED_CATEGORIES) {
         const btn = document.getElementById('adv-cat-btn-' + cat);
         if (btn) {
-            if (isSuperflat) btn.classList.add('disabled');
+            if (isSuperflat || isSkyblock) btn.classList.add('disabled');
             else btn.classList.remove('disabled');
         }
     }
+
+    if (isSkyblock) {
+        const allAdvBtns = document.querySelectorAll('[id^="adv-cat-btn-"]');
+        for (let i = 0; i < allAdvBtns.length; i++) allAdvBtns[i].classList.add('disabled');
+    }
+
     // Show/hide Superflat Settings button
     const superflatBtn = document.getElementById('adv-cat-btn-superflat');
-    if (superflatBtn) superflatBtn.style.display = isSuperflat ? 'block' : 'none';
-    
+    if (superflatBtn) {
+        superflatBtn.style.display = isSuperflat ? 'block' : 'none';
+        if (isSkyblock) superflatBtn.classList.add('disabled');
+    }
+
+    const worldSizeBtn = document.getElementById('opt-worldsize');
+    if (worldSizeBtn) {
+        if (isSkyblock) worldSizeBtn.classList.add('disabled');
+        else worldSizeBtn.classList.remove('disabled');
+    }
+    if (isSkyblock) _forceSkyblockWorldSizeIfNeeded();
+
     // If currently viewing a disabled category, switch to a visible one
     const visibleCat = document.querySelector('.adv-category[style*="block"]');
-    if (visibleCat && isSuperflat) {
+    if (visibleCat && (isSuperflat || isSkyblock)) {
         const catName = visibleCat.id.replace('adv-', '');
-        if (SUPERFLAT_DISABLED_CATEGORIES.includes(catName)) {
+        if (isSkyblock) {
+            showAdvCategory('superflat');
+        } else if (SUPERFLAT_DISABLED_CATEGORIES.includes(catName)) {
             showAdvCategory('superflat');
         }
     }

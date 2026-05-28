@@ -2,14 +2,14 @@
 // CONFIGURATION CONSTANTS
 // ==========================================
 
-const ASSET_VERSION = "312";
+const ASSET_VERSION = "350";
 
 const CHUNK_SIZE = 16;
 const CHUNK_HEIGHT = 256; 
-let CHUNKS_X_ACTIVE = 64;
-let CHUNKS_Z_ACTIVE = 64;
-let CHUNKS_X = 64; 
-let CHUNKS_Z = 64; 
+let CHUNKS_X_ACTIVE = 96;
+let CHUNKS_Z_ACTIVE = 96;
+let CHUNKS_X = 96; 
+let CHUNKS_Z = 96; 
 let WORLD_WIDTH = CHUNKS_X * CHUNK_SIZE; 
 let WORLD_DEPTH = CHUNKS_Z * CHUNK_SIZE; 
 const WORLD_HEIGHT = 256; 
@@ -32,8 +32,8 @@ const FLIGHT_SPRINT_SPEED = 21.84;
 
 const GUI_SCALES = [1, 2, 3, "Auto"];
 
-const RENDER_DISTANCES = [4, 8, 12, 16];
-const RENDER_NAMES = ["Short", "Normal", "Far", "Extreme"];
+const RENDER_DISTANCES = Array.from({ length: 31 }, (_, i) => i + 2); // 2..32 chunks
+const RENDER_NAMES = RENDER_DISTANCES.map(d => `${d} Chunks`);
 
 const DAY_TIME = 720, NIGHT_TIME = 480, TOTAL_TIME = DAY_TIME + NIGHT_TIME; 
 
@@ -71,7 +71,12 @@ const BIOME_COLORS = {
     'swamp': [106/255, 112/255, 57/255],
     'jungle': [89/255, 174/255, 48/255],
     'extreme_hills': [0x8A/255, 0xB6/255, 0x89/255],
-    'alpha_forest': [199/255, 255/255, 140/255]
+    'badlands': [0x90/255, 0x81/255, 0x4D/255],
+    'alpha_forest': [199/255, 255/255, 140/255],
+    // v341: ice_spikes — pale frosty grass/foliage tint. Slightly cooler
+    // (more blue) than tundra so any rare exposed grass / spruce tree blends
+    // into the snow-and-packed-ice landscape without standing out.
+    'ice_spikes': [144/255, 188/255, 178/255]
 };
 
 // MC-accurate foliage (leaf) tint colors per biome
@@ -86,7 +91,9 @@ const BIOME_FOLIAGE_COLORS = {
     'swamp': [106/255, 112/255, 57/255],
     'jungle': [48/255, 150/255, 22/255],
     'extreme_hills': [0x6D/255, 0xA3/255, 0x6B/255],
-    'alpha_forest': [199/255, 255/255, 140/255]
+    'badlands': [0x9E/255, 0x81/255, 0x4D/255],
+    'alpha_forest': [199/255, 255/255, 140/255],
+    'ice_spikes': [120/255, 165/255, 145/255] // v341
 };
 
 // MC-accurate water tint colors per biome
@@ -101,6 +108,8 @@ const BIOME_WATER_COLORS = {
     'rainforest':    [0x1B/255, 0x9E/255, 0xD8/255],
     'ocean':         [0x3F/255, 0x76/255, 0xE4/255],
     'extreme_hills': [0x00/255, 0x7B/255, 0xF7/255],
+    'badlands':      [0x3F/255, 0x76/255, 0xE4/255],
+    'ice_spikes':    [0x32/255, 0x47/255, 0xA5/255], // v341: deep frozen-water blue
     'aether_skyforest': [0.1, 1.8, 1.35],
     'aether_void':      [0.1, 1.8, 1.35],
     'aether_lake':      [0.1, 1.8, 1.35]
@@ -114,19 +123,19 @@ const BLOCK_IDS = {
     AIR: 0,
     WATER: 4,
     OAK_LEAVES: 14,
-    FLOWER_YELLOW: 16,
+    FLOWER_YELLOW: 53,
     TORCH: 17,
     CACTUS: 20,
     BIRCH_LEAVES: 22,
-    TALL_GRASS: 23,
+    TALL_GRASS: 16,
     FERN: 24,
     DEAD_BUSH: 26,
     LAVA: 27,
-    SUGAR_CANE: 38,
+    SUGAR_CANE: 52,
     SNOW_LAYER: 40,
     MUSHROOM_RED: 42,
     JUNGLE_LEAVES: 43,
-    ROSE: 52,
+    ROSE: 23,
     DANDELION: 53,
     FURNACE: 59,
     FARMLAND: 62,
@@ -181,7 +190,28 @@ const BLOCK_IDS = {
     REDSTONE_TORCH: 206,
     PISTON: 207,
     STICKY_PISTON: 208,
-    AETHER_PORTAL: 209
+    AETHER_PORTAL: 209,
+
+    // v315 mesa / terracotta blocks
+    RED_SAND: 25,
+    RED_SANDSTONE: 45,
+    GREEN_TERRACOTTA: 46,
+    LIGHT_BLUE_TERRACOTTA: 47,
+    LIME_TERRACOTTA: 55,
+    MAGENTA_TERRACOTTA: 56,
+    ORANGE_TERRACOTTA: 57,
+    PINK_TERRACOTTA: 78,
+    PURPLE_TERRACOTTA: 79,
+    RED_TERRACOTTA: 166,
+    LIGHT_GREY_TERRACOTTA: 167,
+    TERRACOTTA: 168,
+    BLACK_TERRACOTTA: 169,
+    BLUE_TERRACOTTA: 189,
+    BROWN_TERRACOTTA: 204,
+    CYAN_TERRACOTTA: 252,
+    GREY_TERRACOTTA: 253,
+    WHITE_TERRACOTTA: 254,
+    YELLOW_TERRACOTTA: 255
 };
 
 // --- AETHER DIMENSION ---

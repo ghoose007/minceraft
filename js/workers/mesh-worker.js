@@ -54,7 +54,7 @@ var generatedChunksArr = null;
 var biomeMap = null;
 
 // Biome ID → name lookup (sent in init)
-var BIOME_NAMES_LIST = ['desert', 'rainforest', 'tundra', 'taiga', 'plains', 'forest', 'ocean', 'swamp', 'jungle', 'extreme_hills', 'aether_skyforest', 'aether_void', 'aether_lake', 'alpha_forest'];
+var BIOME_NAMES_LIST = ['desert', 'rainforest', 'tundra', 'taiga', 'plains', 'forest', 'ocean', 'swamp', 'jungle', 'extreme_hills', 'aether_skyforest', 'aether_void', 'aether_lake', 'alpha_forest', 'badlands'];
 
 // Stubs for the THREE.js assembly path — chunk-mesh.js declares them but we never call assembly
 const chunkMeshes = new Map();
@@ -196,7 +196,7 @@ function getCornerHeight(bx, y, bz, dx, dz, fluidId) {
 //   5. chunk-mesh.js — defines _buildChunkMeshDataOnly
 
 // Inline what we need from constants.js (avoid the let CHUNKS_X redeclaration issue)
-const RENDER_DISTANCES = [4, 8, 12, 16];
+const RENDER_DISTANCES = Array.from({ length: 31 }, (_, i) => i + 2);
 const NETHER_HEIGHT = 128;
 
 // Biome color tables (same as constants.js + aether.js post-load assignments)
@@ -211,6 +211,7 @@ const BIOME_COLORS = {
     'swamp': [106/255, 112/255, 57/255],
     'jungle': [89/255, 174/255, 48/255],
     'extreme_hills': [0x8A/255, 0xB6/255, 0x89/255],
+    'badlands': [0x90/255, 0x81/255, 0x4D/255],
     'alpha_forest': [199/255, 255/255, 140/255],
     // Aether — values must match aether.js BIOME_COLORS assignments
     'aether_skyforest': [0.65, 0.82, 0.55],
@@ -228,6 +229,7 @@ const BIOME_FOLIAGE_COLORS = {
     'swamp': [106/255, 112/255, 57/255],
     'jungle': [48/255, 150/255, 22/255],
     'extreme_hills': [0x6D/255, 0xA3/255, 0x6B/255],
+    'badlands': [0x9E/255, 0x81/255, 0x4D/255],
     'alpha_forest': [199/255, 255/255, 140/255],
     // Aether — golden-amber leaves
     'aether_skyforest': [0.80, 0.72, 0.38],
@@ -245,6 +247,7 @@ const BIOME_WATER_COLORS = {
     'rainforest':    [0x1B/255, 0x9E/255, 0xD8/255],
     'ocean':         [0x3F/255, 0x76/255, 0xE4/255],
     'extreme_hills': [0x00/255, 0x7B/255, 0xF7/255],
+    'badlands':      [0x3F/255, 0x76/255, 0xE4/255],
     'aether_skyforest': [0.1, 1.8, 1.35],
     'aether_void':      [0.1, 1.8, 1.35],
     'aether_lake':      [0.1, 1.8, 1.35]

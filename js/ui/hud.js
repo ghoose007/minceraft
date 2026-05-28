@@ -379,8 +379,13 @@ function getIconStyle(blockId) {
     if (block.atlasIdx === -2) return `background-image: url('textures/lava.png?v=${ASSET_VERSION}'); background-size: 400% 100%; background-position: 0 0; image-rendering: pixelated;`;
     
     let texIndex = id === 1 ? 0 : (typeof block.atlasIdx === 'object' ? (block.atlasIdx.front !== undefined ? block.atlasIdx.front : block.atlasIdx.side) : block.atlasIdx);
+    // v339: respect itemAtlasIdx when set so the inventory tile uses the
+    // intended "item appearance" instead of the world-block appearance.
+    // Currently only id 219 (Tall Grass) uses this — its world bottom-half
+    // is atlas 217 (wispy), but the icon should show atlas 218 (leafier top).
+    if (block.itemAtlasIdx !== undefined) texIndex = block.itemAtlasIdx;
     const col = texIndex % 16, row = Math.floor(texIndex / 16);
-    let filterStr = [1, 14, 16, 22, 24, 66, 67].includes(id) ? 'filter: sepia(1) hue-rotate(55deg) saturate(3.5) brightness(0.9);' : '';
+    let filterStr = [1, 14, 16, 22, 24, 66, 67, 219].includes(id) ? 'filter: sepia(1) hue-rotate(55deg) saturate(3.5) brightness(0.9);' : '';
     return `background-image: url('textures/terrain.png?v=${ASSET_VERSION}'); background-position: -${col * 100}% -${row * 100}%; background-size: 1600% 1600%; image-rendering: pixelated; ${filterStr}`;
 }
 
@@ -391,7 +396,7 @@ function createIconElement(id) {
     
     // Terrain Items (Sticks, Saplings, Food, Seeds 128, Wheat 129, Nether Brick 142, Gold Ingot 143, Quartz 153)
     if ((parsedId >= 112 && parsedId <= 123) || parsedId === 128 || parsedId === 129 || parsedId === 134 || parsedId === 135 || parsedId === 137 || parsedId === 142 || parsedId === 143 || parsedId === 151 || parsedId === 153 || parsedId === 165 || parsedId === 186 || parsedId === 187 || parsedId === 188
-        || parsedId === 197 || parsedId === 198 || parsedId === 199 || parsedId === 202 || parsedId === 205 || parsedId === 206 || parsedId === 211) {
+        || parsedId === 197 || parsedId === 198 || parsedId === 199 || parsedId === 202 || parsedId === 205 || parsedId === 206 || parsedId === 211 || parsedId === 26) {
         const data = BLOCK_DATA[parsedId] || TOOL_DATA[parsedId];
         if (data) {
             const atlasIdx = data.atlasIdx;
@@ -430,7 +435,10 @@ function createIconElement(id) {
         const block = BLOCK_DATA[parsedId];
         if (!block) return icon;
         
-        const flatRenderIds = [4, 27, 16, 23, 24, 17, 40, 52, 53, 66, 67, 68, 116, 117, 118, 137, 150, 158, 212, 213];
+        // v339: 219 (Tall Grass) joins the flat-icon list so its inventory
+        // tile renders as a 2D atlas swatch (using its itemAtlasIdx = 218,
+        // see getIconStyle below) rather than the 3D-block icon path.
+        const flatRenderIds = [4, 27, 16, 23, 24, 26, 17, 40, 52, 53, 66, 67, 68, 116, 117, 118, 137, 150, 158, 212, 213, 219];
         if (flatRenderIds.includes(parsedId)) {
             icon.style = getIconStyle(parsedId); 
         } else if (typeof isFenceBlock === 'function' && isFenceBlock(parsedId)) {

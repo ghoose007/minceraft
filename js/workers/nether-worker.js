@@ -168,6 +168,11 @@ const updateLavaQueue = { clear() {}, add() {} };
 // Biome cache — not used in nether but might be referenced
 const chunkBiomeCache = new Map();
 
+// v332 Fix C regression shim: see worldgen-worker.js for context.
+function _enterWorldGen() {}
+function _exitWorldGen() {}
+function _isInWorldGen() { return true; }
+
 // ----- Now load the source files -----
 // Order matters: noise.js defines PerlinNoise (used by _initNetherNoise)
 try {

@@ -6,6 +6,52 @@
 const _cm_firePos = [], _cm_fireNrm = [], _cm_fireUv = [], _cm_fireCol = [], _cm_fireBt = [];
 const _cm_portalPos = [], _cm_portalNrm = [], _cm_portalUv = [], _cm_portalCol = [], _cm_portalBt = [];
 const _cm_aPortalPos = [], _cm_aPortalNrm = [], _cm_aPortalUv = [], _cm_aPortalCol = [], _cm_aPortalBt = [];
+
+// --- Distance atlas LOD / manual mip atlas support ---
+// Uses textures/terrain.png for near chunks and textures/terrain_mip_map.png
+// for far chunks. Both atlases keep the same 16x16 tile-index layout; only
+// the mip atlas uses 8x8 pixels per tile instead of 16x16.
+const CHUNK_MIP_START_DISTANCE = 8; // chunks from player before switching to mip atlas
+const CHUNK_MIP_END_DISTANCE = 7;   // small hysteresis so chunks don't flicker at boundary
+
+function _chunkDistanceFromPlayer(cx, cz, pCx = null, pCz = null) {
+    if (pCx === null || pCz === null) {
+        if (typeof player === 'undefined' || typeof CHUNK_SIZE === 'undefined') return 0;
+        pCx = Math.floor(player.x / CHUNK_SIZE);
+        pCz = Math.floor(player.z / CHUNK_SIZE);
+    }
+    const dx = cx - pCx, dz = cz - pCz;
+    return Math.sqrt(dx * dx + dz * dz);
+}
+
+function _shouldChunkUseMipAtlas(cx, cz, previousState = false, pCx = null, pCz = null) {
+    if (typeof solidMaterialMip === 'undefined' || !solidMaterialMip) return false;
+    const d = _chunkDistanceFromPlayer(cx, cz, pCx, pCz);
+    if (previousState) return d >= CHUNK_MIP_END_DISTANCE;
+    return d >= CHUNK_MIP_START_DISTANCE;
+}
+
+function _solidMaterialForChunk(cx, cz) {
+    return _shouldChunkUseMipAtlas(cx, cz) ? solidMaterialMip : solidMaterial;
+}
+
+function _glassMaterialForChunk(cx, cz) {
+    return _shouldChunkUseMipAtlas(cx, cz) ? (glassMaterialMip || glassMaterial) : glassMaterial;
+}
+
+function updateChunkMipMaterials(group, cx, cz, pCx = null, pCz = null) {
+    if (!group || typeof solidMaterial === 'undefined') return;
+    const previous = !!group.userData.usesMipAtlas;
+    const useMip = _shouldChunkUseMipAtlas(cx, cz, previous, pCx, pCz);
+    if (previous === useMip) return;
+    group.userData.usesMipAtlas = useMip;
+    group.traverse(child => {
+        if (!child || !child.isMesh || !child.userData) return;
+        if (child.userData.atlasRole === 'solid') child.material = useMip ? (solidMaterialMip || solidMaterial) : solidMaterial;
+        else if (child.userData.atlasRole === 'glass') child.material = useMip ? (glassMaterialMip || glassMaterial) : glassMaterial;
+    });
+}
+
 const _cm_solidPos = [], _cm_solidNrm = [], _cm_solidUv = [], _cm_solidCol = [], _cm_solidBt = [];
 const _cm_glassPos = [], _cm_glassNrm = [], _cm_glassUv = [], _cm_glassCol = [], _cm_glassBt = [];
 const _cm_waterPos = [], _cm_waterNrm = [], _cm_waterUv = [], _cm_waterCol = [], _cm_waterBt = [], _cm_waterFt = [], _cm_waterFd = [];
@@ -499,9 +545,17 @@ function _buildChunkMeshDataOnly(cx, cz) {
                 // Standard Cross Block Rendering (Skipping Fire)
                 if (isCrossBlock(id) && id !== 89) { 
                     let offset = null;
-                    if (id !== 17 && id !== 52 && id !== 116 && id !== 117 && id !== 118) { 
-                        const hash1 = getBlockHash(x, y, z);
-                        const hash2 = getBlockHash(x + 1, y, z);
+                    if (id !== 17 && id !== 52 && id !== 116 && id !== 117 && id !== 118) {
+                        // v338: 2-block tall grass — the top half (220) must
+                        // pick up the SAME random offset and rotation as the
+                        // bottom half (219) directly below it. Hashing
+                        // (x, y, z) gives different jitter to each half, so
+                        // the leafier top would visibly slide off-center
+                        // from the wispier bottom. Lock the top's hashY to
+                        // y-1 so both halves share a single random seed.
+                        const hashY = (id === 220) ? y - 1 : y;
+                        const hash1 = getBlockHash(x, hashY, z);
+                        const hash2 = getBlockHash(x + 1, hashY, z);
                         offset = { x: (hash1 * 2 - 1) * 0.25, z: (hash2 * 2 - 1) * 0.25, rot: hash1 * Math.PI };
                     }
                     for (let cFace of crossFaces) { pushFace(x, y, z, cFace, solidPositions, solidNormals, solidUvs, solidColors, solidBiomeTints, id, null, offset, val); }
@@ -1957,7 +2011,9 @@ function _assembleChunkMeshFromArrays(cx, cz) {
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(solidColors, 3));
         geometry.setAttribute('aBiomeTint', new THREE.Float32BufferAttribute(solidBiomeTints, 3));
         geometry.computeBoundingSphere();
-        chunkGroup.add(new THREE.Mesh(geometry, solidMaterial));
+        const solidMesh = new THREE.Mesh(geometry, _solidMaterialForChunk(cx, cz));
+        solidMesh.userData.atlasRole = 'solid';
+        chunkGroup.add(solidMesh);
     }
     if (glassPositions.length > 0) {
         const geometry = new THREE.BufferGeometry();
@@ -1967,7 +2023,8 @@ function _assembleChunkMeshFromArrays(cx, cz) {
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(glassColors, 3));
         geometry.setAttribute('aBiomeTint', new THREE.Float32BufferAttribute(glassBiomeTints, 3));
         geometry.computeBoundingSphere();
-        const glassMesh = new THREE.Mesh(geometry, glassMaterial);
+        const glassMesh = new THREE.Mesh(geometry, _glassMaterialForChunk(cx, cz));
+        glassMesh.userData.atlasRole = 'glass';
         glassMesh.renderOrder = 1;
         chunkGroup.add(glassMesh);
     }
@@ -2061,6 +2118,9 @@ function _assembleChunkMeshFromArrays(cx, cz) {
             const _ddx = cx - _pCx, _ddz = cz - _pCz;
             chunkGroup.visible = (_ddx * _ddx + _ddz * _ddz) <= (_r * _r);
         }
+        chunkGroup.userData.cx = cx;
+        chunkGroup.userData.cz = cz;
+        chunkGroup.userData.usesMipAtlas = _shouldChunkUseMipAtlas(cx, cz);
         scene.add(chunkGroup);
         chunkMeshes.set(chunkKey, chunkGroup);
     }
@@ -2087,7 +2147,9 @@ function _assembleChunkMeshFromTypedArrays(cx, cz, m) {
         geometry.setAttribute('color', new THREE.BufferAttribute(m.solidCol, 3));
         geometry.setAttribute('aBiomeTint', new THREE.BufferAttribute(m.solidBt, 3));
         geometry.computeBoundingSphere();
-        chunkGroup.add(new THREE.Mesh(geometry, solidMaterial));
+        const solidMesh = new THREE.Mesh(geometry, _solidMaterialForChunk(cx, cz));
+        solidMesh.userData.atlasRole = 'solid';
+        chunkGroup.add(solidMesh);
     }
     if (m.glassPos.length > 0) {
         const geometry = new THREE.BufferGeometry();
@@ -2097,7 +2159,8 @@ function _assembleChunkMeshFromTypedArrays(cx, cz, m) {
         geometry.setAttribute('color', new THREE.BufferAttribute(m.glassCol, 3));
         geometry.setAttribute('aBiomeTint', new THREE.BufferAttribute(m.glassBt, 3));
         geometry.computeBoundingSphere();
-        const glassMesh = new THREE.Mesh(geometry, glassMaterial);
+        const glassMesh = new THREE.Mesh(geometry, _glassMaterialForChunk(cx, cz));
+        glassMesh.userData.atlasRole = 'glass';
         glassMesh.renderOrder = 1;
         chunkGroup.add(glassMesh);
     }
@@ -2179,6 +2242,9 @@ function _assembleChunkMeshFromTypedArrays(cx, cz, m) {
             const _ddx = cx - _pCx, _ddz = cz - _pCz;
             chunkGroup.visible = (_ddx * _ddx + _ddz * _ddz) <= (_r * _r);
         }
+        chunkGroup.userData.cx = cx;
+        chunkGroup.userData.cz = cz;
+        chunkGroup.userData.usesMipAtlas = _shouldChunkUseMipAtlas(cx, cz);
         scene.add(chunkGroup);
         chunkMeshes.set(chunkKey, chunkGroup);
     }

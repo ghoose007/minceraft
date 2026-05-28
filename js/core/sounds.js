@@ -218,7 +218,8 @@
         for (const id of ids) _blockSoundLUT[id] = catIdx;
     }
 
-    _setCategory([1, 65, 64, 14, 22, 43, 97, 116, 117, 118, 137, 66, 16, 24, 23, 53, 52, 67, 26, 42, 212, 213], 0);
+    // v335: include tall-grass halves (219 bottom, 220 top) in the grass category.
+    _setCategory([1, 65, 64, 14, 22, 43, 97, 116, 117, 118, 137, 66, 16, 24, 23, 53, 52, 67, 26, 42, 212, 213, 219, 220], 0);
     _setCategory([13, 21, 41, 96, 29, 30, 44, 98, 58, 69, 93, 51, 70, 71, 72, 77, 80, 81, 82, 94, 144, 145, 146, 147, 149, 150, 17, 200, 203, 206], 1);
     _setCategory([3, 33, 32, 10, 11, 12, 48, 6, 7, 8, 9, 49, 50, 88, 31, 28, 87, 59, 91,
                   73, 74, 75, 76, 83, 84, 85, 86, 54, 60, 38, 68, 95,
@@ -227,11 +228,13 @@
                   226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237,
                   238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249,
                   // v262 sandstone and quartz stairs
-                  250, 251], 2);
+                  250, 251,
+                  // v315 red sandstone and terracotta blocks — stone-class sounds
+                  45, 46, 47, 55, 56, 57, 78, 79, 166, 167, 168, 169, 189, 204, 252, 253, 254, 255], 2);
     _setCategory([2, 5, 92, 61, 62, 63], 3);
     _setCategory([39, 40], 4);
     _setCategory([34, 35, 36, 37, 20], 5);
-    _setCategory([15], 6);
+    _setCategory([15, 25], 6);
     _setCategory([90, 209], 7); // Portals use glass sounds
 
     function getBlockSoundCategory(blockId) {

@@ -220,6 +220,19 @@ function simulateAetherFluids() {}
 const updateWaterQueue = { clear() {} };
 const updateLavaQueue = { clear() {} };
 
+// v332 Fix C regression shim: generateChunkColumn now calls _enterWorldGen /
+// _exitWorldGen (defined in world/voxel.js on the main thread, which the
+// worker does NOT importScripts). Without these shims, the worker throws
+// `ReferenceError: _enterWorldGen is not defined` on every chunk gen, sends
+// `genError`, and lazy gen silently spins forever requesting chunks that
+// never land. In the worker context, allocation is already gated by the
+// worker's own _getOrCreateChunkFast / setVoxel shims (which only ever
+// touch _workerChunk), so the gen-window is irrelevant here — these stay
+// no-ops.
+function _enterWorldGen() {}
+function _exitWorldGen() {}
+function _isInWorldGen() { return true; }
+
 // ----- Now load the existing worldgen sources -----
 // IMPORTANT: importScripts is synchronous. The order matters.
 // noise.js defines PerlinNoise (used by noise-init.js)

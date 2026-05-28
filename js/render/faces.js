@@ -347,40 +347,40 @@ function getVertexLighting(bx, by, bz, nx, ny, nz, dx, dy, dz) {
     const iy0 = cy | 0;
     const iz0 = (cz | 0) + _halfD;
     
-    let val0 = 0, val1 = 0, val2 = 0, val3 = 0;
-    
-    // Voxel 0 (cx, cy, cz)
-    if ((ix0 >>> 0) < WORLD_WIDTH && (iy0 >>> 0) < WORLD_HEIGHT && (iz0 >>> 0) < WORLD_DEPTH) {
-        const chunk0 = chunkStorageArr[(ix0 >> 4) * CHUNKS_Z + (iz0 >> 4)];
-        if (chunk0) val0 = chunk0[(ix0 & 15) + (iy0 << 4) + ((iz0 & 15) << 12)];
+    const SKY_AIR_VALUE = 15 << 14;
+    function _sampleLightingVoxel(ix, iy, iz) {
+        // Smooth-lighting samples can reach unloaded neighbor chunks while a
+        // saved world or high render distance is still streaming in. Treat
+        // missing/out-of-world air as sky-lit air instead of zero-light air;
+        // otherwise those vertices look artificially dark until a later block
+        // update/neighbor load rebuilds the mesh.
+        if (iy >= WORLD_HEIGHT) return SKY_AIR_VALUE;
+        if ((ix >>> 0) >= WORLD_WIDTH || (iy >>> 0) >= WORLD_HEIGHT || (iz >>> 0) >= WORLD_DEPTH) return SKY_AIR_VALUE;
+        const chunk = chunkStorageArr[(ix >> 4) * CHUNKS_Z + (iz >> 4)];
+        if (!chunk) return SKY_AIR_VALUE;
+        return chunk[(ix & 15) + (iy << 4) + ((iz & 15) << 12)];
     }
+
+    // Voxel 0 (cx, cy, cz)
+    let val0 = _sampleLightingVoxel(ix0, iy0, iz0);
     
     // Voxel 1 (cx + d1, cy + d1, cz + d1)
     const ix1 = ((cx + d1x) | 0) + _halfW;
     const iy1 = (cy + d1y) | 0;
     const iz1 = ((cz + d1z) | 0) + _halfD;
-    if ((ix1 >>> 0) < WORLD_WIDTH && (iy1 >>> 0) < WORLD_HEIGHT && (iz1 >>> 0) < WORLD_DEPTH) {
-        const chunk1 = chunkStorageArr[(ix1 >> 4) * CHUNKS_Z + (iz1 >> 4)];
-        if (chunk1) val1 = chunk1[(ix1 & 15) + (iy1 << 4) + ((iz1 & 15) << 12)];
-    }
+    let val1 = _sampleLightingVoxel(ix1, iy1, iz1);
     
     // Voxel 2 (cx + d2, cy + d2, cz + d2)
     const ix2 = ((cx + d2x) | 0) + _halfW;
     const iy2 = (cy + d2y) | 0;
     const iz2 = ((cz + d2z) | 0) + _halfD;
-    if ((ix2 >>> 0) < WORLD_WIDTH && (iy2 >>> 0) < WORLD_HEIGHT && (iz2 >>> 0) < WORLD_DEPTH) {
-        const chunk2 = chunkStorageArr[(ix2 >> 4) * CHUNKS_Z + (iz2 >> 4)];
-        if (chunk2) val2 = chunk2[(ix2 & 15) + (iy2 << 4) + ((iz2 & 15) << 12)];
-    }
+    let val2 = _sampleLightingVoxel(ix2, iy2, iz2);
     
     // Voxel 3 (cx + dx, cy + dy, cz + dz)
     const ix3 = ((cx + dx) | 0) + _halfW;
     const iy3 = (cy + dy) | 0;
     const iz3 = ((cz + dz) | 0) + _halfD;
-    if ((ix3 >>> 0) < WORLD_WIDTH && (iy3 >>> 0) < WORLD_HEIGHT && (iz3 >>> 0) < WORLD_DEPTH) {
-        const chunk3 = chunkStorageArr[(ix3 >> 4) * CHUNKS_Z + (iz3 >> 4)];
-        if (chunk3) val3 = chunk3[(ix3 & 15) + (iy3 << 4) + ((iz3 & 15) << 12)];
-    }
+    let val3 = _sampleLightingVoxel(ix3, iy3, iz3);
 
     const id0 = val0 & 0xFF, id1 = val1 & 0xFF, id2 = val2 & 0xFF, id3 = val3 & 0xFF;
     // Direct LUT access - avoids function call overhead vs isBlockTransparent()
@@ -420,8 +420,8 @@ function pushFace(x, y, z, face, positions, normals, uvs, colors, biomeTints, bl
     // not a plant/cactus/torch, no foliage tinting needed, atlasIdx is a simple number.
     // ==========================================
     const _isFast = !heights && !offset
-        && blockId !== 16 && blockId !== 23 && blockId !== 24
-        && blockId !== 116 && blockId !== 117 && blockId !== 118
+        && blockId !== 16 && blockId !== 23 && blockId !== 24 && blockId !== 26
+        && blockId !== 116 && blockId !== 117 && blockId !== 118 && blockId !== 137
         && blockId !== 20 && blockId !== 17 && blockId !== 206
         && blockId !== 14 && blockId !== 97 && blockId !== 66
         && blockId !== 22 && blockId !== 67
@@ -630,7 +630,11 @@ function pushFace(x, y, z, face, positions, normals, uvs, colors, biomeTints, bl
     // Foliage-tinted blocks: oak leaves (14), jungle leaves (97), vines (66)
     const isFoliageTinted = blockId === 14 || blockId === 97 || blockId === 66;
     // Grass-tinted blocks: tall grass (16), flowers/bushes (22, 24), lily pad (67)
-    const isGrassTinted = blockId === 16 || blockId === 22 || blockId === 24 || blockId === 67;
+    // v335: 2-block tall grass (219 bottom, 220 top) — both halves use the
+    // grass-tint path. The greyscale texture takes the smoothed biome tint
+    // at the world position, so plains looks plains-green, swamp looks
+    // murky, jungle looks deep green, wooded badlands looks brown-orange.
+    const isGrassTinted = blockId === 16 || blockId === 22 || blockId === 24 || blockId === 67 || blockId === 219 || blockId === 220;
 
     if (blockId === 43) {
         tintColor = BIRCH_LEAF_TINT;
@@ -719,7 +723,7 @@ function pushFace(x, y, z, face, positions, normals, uvs, colors, biomeTints, bl
         c.color = [sunStrength * shadeAO, torchStrength * shadeAO, shadeAO];
     }
     
-    const isPlant = blockId === 16 || blockId === 23 || blockId === 24 || blockId === 116 || blockId === 117 || blockId === 118;
+    const isPlant = blockId === 16 || blockId === 23 || blockId === 24 || blockId === 26 || blockId === 116 || blockId === 117 || blockId === 118 || blockId === 137;
     const isCactus = blockId === 20;
     const isTorch = blockId === 17 || blockId === 206; 
 

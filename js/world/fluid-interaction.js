@@ -2,62 +2,82 @@
 // FLUID-BLOCK INTERACTION
 // ==========================================
 
+function _fluidFizz(x, y, z) {
+    if (typeof window.playFizzSound === 'function') window.playFizzSound(x, y, z);
+}
+
+function _fluidMarkChanged(x, y, z) {
+    pendingBlockUpdates.push({x, y, z});
+    if (typeof queueNeighbors === 'function') queueNeighbors(x, y, z);
+    if (typeof queueLavaNeighbors === 'function') queueLavaNeighbors(x, y, z);
+    if (typeof updateWaterQueue !== 'undefined') updateWaterQueue.add(getVoxelIndex(x, y, z));
+    if (typeof updateLavaQueue !== 'undefined') updateLavaQueue.add(getVoxelIndex(x, y, z));
+}
+
+// Minecraft-like liquid mixing:
+// - Water touching lava source converts that lava source to obsidian.
+// - Water touching flowing lava converts that flowing lava to cobblestone.
+// - Lava flowing into a water source converts the water source to stone.
+// - Flowing lava meeting flowing water converts the flowing lava to cobblestone.
+// The important part is that lava-source obsidian and water-source stone are
+// source-sensitive, while flowing/flowing contact is cobblestone.
 function checkFluidInteraction(x, y, z) {
     const val = getVoxel(x, y, z);
     const id = val & 0xFF;
     if (id !== 4 && id !== 27) return false;
-    
-    const isSource = (val >> 13) & 0x1;
-    const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
-    
-    if (id === 27) {
-        // THIS block is lava — check if any neighbor is water
-        for (const [dx, dy, dz] of dirs) {
-            const nVal = getVoxel(x+dx, y+dy, z+dz);
-            const nId = nVal & 0xFF;
-            if (nId === 4) {
-                if (isSource) {
-                    // Lava SOURCE touched by water → lava becomes obsidian
-                    setVoxel(x, y, z, 28);
-                    pendingBlockUpdates.push({x, y, z});
-                    queueNeighbors(x, y, z);
-                    if (typeof window.playFizzSound === 'function') window.playFizzSound(x, y, z);
-                    return true; // lava block was destroyed
-                } else {
-                    // FLOWING lava touched by water → water becomes cobblestone, lava survives
-                    setVoxel(x+dx, y+dy, z+dz, 33); // cobblestone replaces the water
-                    pendingBlockUpdates.push({x: x+dx, y: y+dy, z: z+dz});
-                    queueNeighbors(x+dx, y+dy, z+dz);
-                    if (typeof window.playFizzSound === 'function') window.playFizzSound(x+dx, y+dy, z+dz);
-                    // Don't return — lava survives and should continue flowing
-                }
-            }
-        }
-    }
-    
+
+    const isSource = ((val >> 13) & 0x1) === 1;
+    const dirs = [[0,-1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,1,0]];
+
     if (id === 4) {
-        // THIS block is water — check if any neighbor is lava
+        // Water updates are the water-driven side of the rules. Water converts
+        // the lava block it touches; water itself survives.
         for (const [dx, dy, dz] of dirs) {
-            const nVal = getVoxel(x+dx, y+dy, z+dz);
-            const nId = nVal & 0xFF;
-            if (nId === 27) {
-                const nSource = (nVal >> 13) & 0x1;
-                if (nSource) {
-                    // Water touching lava SOURCE → lava becomes obsidian
-                    setVoxel(x+dx, y+dy, z+dz, 28);
-                } else {
-                    // Water touching FLOWING lava → lava becomes cobblestone
-                    setVoxel(x+dx, y+dy, z+dz, 33);
-                }
-                if (typeof window.playFizzSound === 'function') window.playFizzSound(x+dx, y+dy, z+dz);
-                pendingBlockUpdates.push({x: x+dx, y: y+dy, z: z+dz});
-                queueLavaNeighbors(x+dx, y+dy, z+dz);
-                queueNeighbors(x+dx, y+dy, z+dz);
-                return false; // water itself survives
+            const nx = x + dx, ny = y + dy, nz = z + dz;
+            const nVal = getVoxel(nx, ny, nz);
+            if ((nVal & 0xFF) !== 27) continue;
+
+            const lavaSource = ((nVal >> 13) & 0x1) === 1;
+            setVoxel(nx, ny, nz, lavaSource ? 28 : 33);
+            _fluidFizz(nx, ny, nz);
+            _fluidMarkChanged(nx, ny, nz);
+            return false; // current water block survives
+        }
+        return false;
+    }
+
+    // Lava updates are the lava-driven side of the rules.
+    if (id === 27) {
+        for (const [dx, dy, dz] of dirs) {
+            const nx = x + dx, ny = y + dy, nz = z + dz;
+            const nVal = getVoxel(nx, ny, nz);
+            if ((nVal & 0xFF) !== 4) continue;
+
+            const waterSource = ((nVal >> 13) & 0x1) === 1;
+            if (isSource) {
+                // Source lava touching water is obsidian.
+                setVoxel(x, y, z, 28);
+                _fluidFizz(x, y, z);
+                _fluidMarkChanged(x, y, z);
+                return true; // current lava block was replaced
             }
+
+            if (waterSource) {
+                // Flowing lava into a water source makes stone at the water.
+                setVoxel(nx, ny, nz, 3);
+                _fluidFizz(nx, ny, nz);
+                _fluidMarkChanged(nx, ny, nz);
+                return false; // flowing lava survives for normal decay/flow
+            }
+
+            // Flowing lava + flowing water makes cobblestone, replacing lava.
+            setVoxel(x, y, z, 33);
+            _fluidFizz(x, y, z);
+            _fluidMarkChanged(x, y, z);
+            return true; // current lava block was replaced
         }
     }
-    
+
     return false;
 }
 

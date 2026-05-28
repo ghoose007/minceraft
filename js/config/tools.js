@@ -119,10 +119,16 @@ const TOOL_DATA = {
     218: { name: 'Emerald Shovel', atlasIdx: 51, type: 'shovel', tier: 4, speed: 10.0, damage: 5, maxDurability: 3122 },
 
     // Emerald Armor (double diamond durability, same defense + extra heart per piece)
-    219: { name: 'Emerald Helmet', atlasIdx: 46, type: 'armor', armorSlot: 'helmet', defense: 3, maxDurability: 726, bonusHealth: 2 },
-    220: { name: 'Emerald Chestplate', atlasIdx: 45, type: 'armor', armorSlot: 'chestplate', defense: 8, maxDurability: 1056, bonusHealth: 2 },
-    221: { name: 'Emerald Leggings', atlasIdx: 44, type: 'armor', armorSlot: 'leggings', defense: 6, maxDurability: 990, bonusHealth: 2 },
-    222: { name: 'Emerald Boots', atlasIdx: 43, type: 'armor', armorSlot: 'boots', defense: 3, maxDurability: 858, bonusHealth: 2 }
+    // v339: moved from 219-222 to 256-259 to resolve a hard ID collision with
+    // the new Tall Grass blocks (BLOCK_DATA 219/220). Armor items live only
+    // in inventory data structures (never as voxels), so they can use IDs
+    // above the 8-bit voxel range without issues — the JSON save format
+    // stores them as plain integers. Two consumers outside this file were
+    // updated alongside (`ui/inventory-doll.js`, `ui/crafting.js`).
+    256: { name: 'Emerald Helmet', atlasIdx: 46, type: 'armor', armorSlot: 'helmet', defense: 3, maxDurability: 726, bonusHealth: 2 },
+    257: { name: 'Emerald Chestplate', atlasIdx: 45, type: 'armor', armorSlot: 'chestplate', defense: 8, maxDurability: 1056, bonusHealth: 2 },
+    258: { name: 'Emerald Leggings', atlasIdx: 44, type: 'armor', armorSlot: 'leggings', defense: 6, maxDurability: 990, bonusHealth: 2 },
+    259: { name: 'Emerald Boots', atlasIdx: 43, type: 'armor', armorSlot: 'boots', defense: 3, maxDurability: 858, bonusHealth: 2 }
 };
 
 // v284: Hunger system food data. Values match Minecraft's food

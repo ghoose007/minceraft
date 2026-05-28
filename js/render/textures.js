@@ -41,6 +41,7 @@ function loadTextureAsync(url, useMipmaps = true) {
 
 // We pass false to useMipmaps to ensure our atlas stays crisp
 async function loadTextureAtlas() { return await loadTextureAsync('textures/terrain.png', false); }
+async function loadMipTextureAtlas() { return await loadTextureAsync('textures/terrain_mip_map.png', false); }
 async function loadWaterTexture() { return await loadTextureAsync('textures/water.png', false); }
 async function loadLavaTexture() { return await loadTextureAsync('textures/lava.png', false); }
 

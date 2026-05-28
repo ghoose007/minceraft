@@ -65,7 +65,10 @@ function checkRecipe(gridData, gridSize) {
             // Block emerald tools/armor recipes when aether is disabled
             if (typeof GEN_AETHER_ENABLED !== 'undefined' && !GEN_AETHER_ENABLED) {
                 const outId = recipe.output.id;
-                if (outId >= 214 && outId <= 222) continue;
+                // v339: emerald tools stay at 214-218; emerald armor moved to 256-259
+                // (tall-grass conflict resolution). Cover both ranges so the aether-disabled
+                // gate still hides all emerald recipes.
+                if ((outId >= 214 && outId <= 218) || (outId >= 256 && outId <= 259)) continue;
             }
             return recipe.output;
         }

@@ -18,7 +18,7 @@ const BLOCK_DATA = {
     13: { name: 'Oak Log', atlasIdx: { top: 12, bottom: 12, side: 13 }, hardness: 2.0 },
     14: { name: 'Oak Leaves', atlasIdx: 14, hardness: 0.2 }, 
     15: { name: 'Sand', atlasIdx: 15, hardness: 0.5 },
-    16: { name: 'Tall Grass', atlasIdx: 16, hardness: 0.0, dropId: 0 }, 
+    16: { name: 'Grass', atlasIdx: 16, hardness: 0.0, dropId: 0 }, // v339: renamed from "Tall Grass" — the 2-block plant at id 219 is now the canonical "Tall Grass"
     17: { name: 'Torch', atlasIdx: 17, hardness: 0.0 },
     18: { name: 'Bedrock', atlasIdx: 18, hardness: -1, dropId: 0 },
     19: { name: 'Sandstone', atlasIdx: { top: 19, bottom: 19, side: 20 }, hardness: 0.8 },
@@ -27,6 +27,7 @@ const BLOCK_DATA = {
     22: { name: 'Spruce Leaves', atlasIdx: 25, hardness: 0.2 }, 
     23: { name: 'Rose', atlasIdx: 26, hardness: 0.0 }, 
     24: { name: 'Bush', atlasIdx: 27, hardness: 0.0 }, 
+    26: { name: 'Dead Bush', atlasIdx: 216, hardness: 0.0, dropId: 0, itemModel: 'material' },
     27: { name: 'Lava', atlasIdx: -2, hardness: -1, dropId: 0 },
     28: { name: 'Obsidian', atlasIdx: 31, hardness: 50.0 },
     29: { name: 'Oak Planks', atlasIdx: 32, hardness: 2.0 },
@@ -48,7 +49,7 @@ const BLOCK_DATA = {
     49: { name: 'Redstone Ore', atlasIdx: 49, hardness: 3.0, dropId: 202 },
     50: { name: 'Lapis Lazuli Ore', atlasIdx: 50, hardness: 3.0, dropId: 199 },
     51: { name: 'Pumpkin', atlasIdx: { top: 51, bottom: 51, side: 52 }, hardness: 1.0 },
-    52: { name: 'Sugarcane', atlasIdx: 53, hardness: 0.0 },
+    52: { name: 'Sugarcane', atlasIdx: 53, hardness: 0.0, itemModel: 'material' },
     53: { name: 'Dandelion', atlasIdx: 54, hardness: 0.0 },
     54: { name: 'Monster Spawner', atlasIdx: 82, hardness: 5.0, dropId: 0 }, 
     58: { name: 'Crafting Table', atlasIdx: { top: 67, bottom: 32, side: 65, sideX: 66, sideZ: 65 }, hardness: 2.5 },
@@ -127,6 +128,17 @@ const BLOCK_DATA = {
     212: { name: 'Cyan Flower', atlasIdx: 176, hardness: 0.0 },
     213: { name: 'Orange Flower', atlasIdx: 177, hardness: 0.0 },
 
+    // v335: Tall Grass — 2-block-tall plant. The world block at the player's
+    // feet uses atlas 217 (the wispier bottom half); the engine-placed top
+    // half (id 220) uses atlas 218 (the leafier top). There is only ONE
+    // item form: id 219. Its inventory / held / dropped icon uses atlas
+    // 218 (the leafier silhouette reads better as an item) — see
+    // `itemAtlasIdx` and the buildMaterialMesh fallback in item-mesh.js.
+    // Greyscale texture, biome-tinted through the grass-tint path so it
+    // looks right in plains, swamp, jungle, wooded badlands, etc.
+    219: { name: 'Tall Grass',         atlasIdx: 217, itemAtlasIdx: 218, hardness: 0.0, dropId: 0 },
+    220: { name: 'Tall Grass (Top)',   atlasIdx: 218, hardness: 0.0, dropId: 0 },
+
     // ----- NEW BUILDING BLOCKS (v258) -----
     // Stone brick variants
     226: { name: 'Chiseled Stone Bricks', atlasIdx: 178, hardness: 1.5, dropId: 226 },
@@ -168,7 +180,31 @@ const BLOCK_DATA = {
     // v262: stair variants for sandstone (separate top/side textures via topTex)
     // and quartz (single texture). The stair renderer reads topTex if present.
     250: { name: 'Sandstone Stairs', atlasIdx: 20, topTex: 19, hardness: 0.8, type: 'stair', parentTex: 20 },
-    251: { name: 'Quartz Stairs',    atlasIdx: 140,            hardness: 0.8, type: 'stair', parentTex: 140 }
+    251: { name: 'Quartz Stairs',    atlasIdx: 140,            hardness: 0.8, type: 'stair', parentTex: 140 },
+
+    // ----- MESA / TERRACOTTA BLOCKS (v315) -----
+    // These use currently-free 8-bit voxel IDs. Texture indices are the terrain.png
+    // atlas indices supplied by the user. Keep IDs <= 255 because voxel IDs are
+    // stored in the low 8 bits throughout the engine.
+    25:  { name: 'Red Sand', atlasIdx: 195, hardness: 0.5, dropId: 25, itemModel: 'block' },
+    45:  { name: 'Red Sandstone', atlasIdx: { top: 196, side: 197, bottom: 198 }, hardness: 0.8, dropId: 45, itemModel: 'block' },
+    46:  { name: 'Green Terracotta', atlasIdx: 199, hardness: 1.25, dropId: 46, itemModel: 'block' },
+    47:  { name: 'Light Blue Terracotta', atlasIdx: 200, hardness: 1.25, dropId: 47, itemModel: 'block' },
+    55:  { name: 'Lime Terracotta', atlasIdx: 201, hardness: 1.25, dropId: 55, itemModel: 'block' },
+    56:  { name: 'Magenta Terracotta', atlasIdx: 202, hardness: 1.25, dropId: 56, itemModel: 'block' },
+    57:  { name: 'Orange Terracotta', atlasIdx: 203, hardness: 1.25, dropId: 57, itemModel: 'block' },
+    78:  { name: 'Pink Terracotta', atlasIdx: 204, hardness: 1.25, dropId: 78, itemModel: 'block' },
+    79:  { name: 'Purple Terracotta', atlasIdx: 205, hardness: 1.25, dropId: 79, itemModel: 'block' },
+    166: { name: 'Red Terracotta', atlasIdx: 206, hardness: 1.25, dropId: 166, itemModel: 'block' },
+    167: { name: 'Light Grey Terracotta', atlasIdx: 207, hardness: 1.25, dropId: 167, itemModel: 'block' },
+    168: { name: 'Terracotta', atlasIdx: 208, hardness: 1.25, dropId: 168, itemModel: 'block' },
+    169: { name: 'Black Terracotta', atlasIdx: 209, hardness: 1.25, dropId: 169, itemModel: 'block' },
+    189: { name: 'Blue Terracotta', atlasIdx: 210, hardness: 1.25, dropId: 189, itemModel: 'block' },
+    204: { name: 'Brown Terracotta', atlasIdx: 211, hardness: 1.25, dropId: 204, itemModel: 'block' },
+    252: { name: 'Cyan Terracotta', atlasIdx: 212, hardness: 1.25, dropId: 252, itemModel: 'block' },
+    253: { name: 'Grey Terracotta', atlasIdx: 213, hardness: 1.25, dropId: 253, itemModel: 'block' },
+    254: { name: 'White Terracotta', atlasIdx: 214, hardness: 1.25, dropId: 254, itemModel: 'block' },
+    255: { name: 'Yellow Terracotta', atlasIdx: 215, hardness: 1.25, dropId: 255, itemModel: 'block' }
 };
 
 const blockRequirements = {
@@ -224,8 +260,27 @@ const blockRequirements = {
     248: { reqTool: 'pickaxe', reqTier: 0 },  // Sandstone Slab
     249: { reqTool: 'pickaxe', reqTier: 0 },   // Quartz Slab
     250: { reqTool: 'pickaxe', reqTier: 0 },   // Sandstone Stairs
-    251: { reqTool: 'pickaxe', reqTier: 0 }    // Quartz Stairs
+    251: { reqTool: 'pickaxe', reqTier: 0 },    // Quartz Stairs
+
+    // v315 mesa / terracotta blocks
+    25: { optTool: 'shovel' },                 // Red Sand
+    45: { reqTool: 'pickaxe', reqTier: 0 },     // Red Sandstone
+    46: { reqTool: 'pickaxe', reqTier: 0 }, 47: { reqTool: 'pickaxe', reqTier: 0 },
+    55: { reqTool: 'pickaxe', reqTier: 0 }, 56: { reqTool: 'pickaxe', reqTier: 0 },
+    57: { reqTool: 'pickaxe', reqTier: 0 }, 78: { reqTool: 'pickaxe', reqTier: 0 },
+    79: { reqTool: 'pickaxe', reqTier: 0 }, 166: { reqTool: 'pickaxe', reqTier: 0 },
+    167: { reqTool: 'pickaxe', reqTier: 0 }, 168: { reqTool: 'pickaxe', reqTier: 0 },
+    169: { reqTool: 'pickaxe', reqTier: 0 }, 189: { reqTool: 'pickaxe', reqTier: 0 },
+    204: { reqTool: 'pickaxe', reqTier: 0 }, 252: { reqTool: 'pickaxe', reqTier: 0 },
+    253: { reqTool: 'pickaxe', reqTier: 0 }, 254: { reqTool: 'pickaxe', reqTier: 0 },
+    255: { reqTool: 'pickaxe', reqTier: 0 }
 };
 for (let id in blockRequirements) {
     if (BLOCK_DATA[id]) Object.assign(BLOCK_DATA[id], blockRequirements[id]);
 }
+
+// v317: Explicit mesa block family list. These are normal full-cube block models,
+// so item/held/drop renderers should never route them through flat material/spawn-egg paths.
+const MESA_BLOCK_IDS = [25,45,46,47,55,56,57,78,79,166,167,168,169,189,204,252,253,254,255];
+const MESA_BLOCK_ID_SET = new Set(MESA_BLOCK_IDS);
+function isMesaBlock(id) { return MESA_BLOCK_ID_SET.has(Number(id)); }

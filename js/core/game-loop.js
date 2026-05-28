@@ -19,6 +19,45 @@ const _pendingWorkerChunks = new Set(); // Set of "cx,cz" keys currently being g
 const _pendingLightingChunks = []; // Array of {cx_center, cz_center} added when worker chunks come back
 let _workerCompletedThisFrame = 0; // Diagnostic: chunks completed by worker this frame
 
+// Bounded manual flush used by save/load repair paths. This reuses the same
+// lighting->dirty handoff logic as the live frame loop so saves don't snapshot
+// a half-adopted chunk frontier.
+window.flushPendingWorldWorkNow = function(lightBudgetMs, meshBudgetMs, meshCap) {
+    const lb = Math.max(1, lightBudgetMs || 4);
+    const mb = Math.max(1, meshBudgetMs || 4);
+    const cap = Math.max(1, meshCap || 16);
+
+    const lightStart = performance.now();
+    while (_pendingLightingChunks.length > 0 && (performance.now() - lightStart) < lb) {
+        const p = _pendingLightingChunks.shift();
+        const cyCenter = (p.cy_center !== undefined) ? p.cy_center : 64;
+        recalculateLighting(p.cx_center, cyCenter, p.cz_center);
+        if (p.meshKeys) for (const k of p.meshKeys) dirtyChunks.add(k);
+    }
+    if (window._pendingMeshFromWorker && window._pendingMeshFromWorker.length > 0) {
+        for (const k of window._pendingMeshFromWorker) dirtyChunks.add(k);
+        window._pendingMeshFromWorker.length = 0;
+    }
+
+    const meshStart = performance.now();
+    let built = 0;
+    while (dirtyChunks.size > 0 && built < cap && (performance.now() - meshStart) < mb) {
+        const key = dirtyChunks.values().next().value;
+        if (key === undefined) break;
+        dirtyChunks.delete(key);
+        const sep = key.indexOf(',');
+        const cx = parseInt(key.substring(0, sep));
+        const cz = parseInt(key.substring(sep + 1));
+        try {
+            const ok = (typeof requestMeshFromWorker === 'function') ? requestMeshFromWorker(cx, cz) : false;
+            if (!ok) buildChunkMesh(cx, cz);
+        } catch (e) {
+            console.warn('[save-flush] mesh flush failed for', key, e);
+        }
+        built++;
+    }
+};
+
 // v267: async readiness handshake. Resolves when the worker emits 'initDone'.
 // init() awaits this before scheduling initial chunk gen so all gen goes
 // through the worker (the inline gen path is now a fallback only).
@@ -882,6 +921,26 @@ function notifyDimensionChange() {
     // Clear pending lighting queue so we don't apply old-dimension lighting
     // to new-dimension chunks.
     _pendingLightingChunks.length = 0;
+
+    // v332 Fix D: clear fluid sim and block-update queues. The voxel
+    // indices in these queues were computed with the previous dimension's
+    // WORLD_WIDTH, so unpacking them with the new WORLD_WIDTH would yield
+    // completely wrong (wx, wz) coords. Worse, the subsequent setVoxel
+    // call could spread fluids into uninitialized cells of the new
+    // dimension. We don't carry fluid state across dimensions anyway —
+    // each dimension's fluid sim seeds itself from existing fluid blocks.
+    if (typeof updateWaterQueue !== 'undefined' && updateWaterQueue && updateWaterQueue.clear) {
+        updateWaterQueue.clear();
+    }
+    if (typeof updateLavaQueue !== 'undefined' && updateLavaQueue && updateLavaQueue.clear) {
+        updateLavaQueue.clear();
+    }
+    if (typeof window !== 'undefined' && Array.isArray(window._fluidSchedule)) {
+        window._fluidSchedule.length = 0;
+    }
+    if (typeof pendingBlockUpdates !== 'undefined' && Array.isArray(pendingBlockUpdates)) {
+        pendingBlockUpdates.length = 0;
+    }
     
     // Reset the mesh worker on dimension change. The worker holds a mirror
     // of chunkStorageArr and biomeMap; if we don't reset, it would still
@@ -1139,6 +1198,7 @@ function _syncChunkToMeshWorker(scx, scz) {
                     case 'aether_void': id = 11; break;
                     case 'aether_lake': id = 12; break;
                     case 'alpha_forest': id = 13; break;
+                    case 'badlands': id = 14; break;
                 }
                 biomeStrip[lx + lz * CHUNK_SIZE] = id;
             }
@@ -1235,6 +1295,7 @@ let _fn_updateHerobrineEntities, _fn_tickEnchantBooks, _fn_updateXPOrbs, _fn_tic
 let _fn_soundUpdateListener, _fn_soundCheckDigTick, _fn_soundCheckFootsteps;
 let _fn_soundCheckWaterSplash, _fn_soundCheckSwim, _fn_soundCheckAmbientFluids;
 let _fn_getTargetedMob, _fn_breakBlock, _fn_damageHeldTool, _fn_addToInventory;
+let _lastVisibleMeshValidate = 0;
 let _fn_playItemSound, _fn_playFizzSound, _fn_spawnFireSmoke, _fn_spawnWaterSplash;
 let _fn_playWaterSplashAt, _fn_igniteTNT, _fn_animatePlayerModel;
 let _fn_updateThirdPersonCamera, _fn_updateFireEffects, _fn_getWaterFlowDirection;
@@ -1295,6 +1356,57 @@ function refreshOpenUI() {
             if (typeof renderEnchanting === 'function') renderEnchanting();
         }
     }, 50);
+}
+
+
+// --- Chunk loading performance policy ---
+// Keeps high render distances playable while chunks are still being generated/meshed.
+// Higher settings load faster but intentionally spend more frame time on chunk work.
+const _CHUNK_LOADING_PROFILES = {
+    smooth:   { gen: 4,  meshBudget: 5,  lightBudget: 2.0, maxMeshInFlight: 8,  dirtyPause: 60,  dirtySlow: 32,  workerInFlight: 8,  simThrottle: 4 },
+    balanced: { gen: 8,  meshBudget: 8,  lightBudget: 3.0, maxMeshInFlight: 12, dirtyPause: 120, dirtySlow: 64,  workerInFlight: 12, simThrottle: 3 },
+    fast:     { gen: 14, meshBudget: 12, lightBudget: 4.5, maxMeshInFlight: 18, dirtyPause: 220, dirtySlow: 120, workerInFlight: 18, simThrottle: 2 },
+    extreme:  { gen: 24, meshBudget: 18, lightBudget: 6.0, maxMeshInFlight: 28, dirtyPause: 420, dirtySlow: 260, workerInFlight: 32, simThrottle: 1 }
+};
+let _chunkPerfFrameCounter = 0;
+
+function _getChunkLoadingProfile() {
+    const key = (typeof settingChunkLoadSpeed !== 'undefined' ? settingChunkLoadSpeed : 'balanced');
+    return _CHUNK_LOADING_PROFILES[key] || _CHUNK_LOADING_PROFILES.balanced;
+}
+
+function _getChunkLoadingPressure() {
+    const dirty = (typeof dirtyChunks !== 'undefined' && dirtyChunks) ? dirtyChunks.size : 0;
+    const meshPending = (typeof _pendingMeshRequests !== 'undefined' && _pendingMeshRequests) ? _pendingMeshRequests.size : 0;
+    const lightPending = (typeof _pendingLightingChunks !== 'undefined' && _pendingLightingChunks) ? _pendingLightingChunks.length : 0;
+    const pendingGen = Math.max(
+        (typeof _pendingWorkerChunks !== 'undefined' && _pendingWorkerChunks) ? _pendingWorkerChunks.size : 0,
+        (typeof _pendingNetherChunks !== 'undefined' && _pendingNetherChunks) ? _pendingNetherChunks.size : 0,
+        (typeof _pendingAetherChunks !== 'undefined' && _pendingAetherChunks) ? _pendingAetherChunks.size : 0
+    );
+    return { dirty, meshPending, lightPending, pendingGen, total: dirty + meshPending + lightPending + pendingGen };
+}
+
+function _isHeavyChunkLoading() {
+    const p = _getChunkLoadingPressure();
+    return p.total > 48 || p.dirty > 32 || p.lightPending > 6 || p.pendingGen > 6;
+}
+
+function _getChunkMeshPriority(cx, cz, pcx, pcz) {
+    const dx = cx - pcx;
+    const dz = cz - pcz;
+    const dist = dx * dx + dz * dz;
+    // Small camera-direction bonus so chunks in front of the player are meshed first.
+    let viewBonus = 0;
+    if (typeof player !== 'undefined' && player) {
+        const fx = -Math.sin(player.yaw || 0);
+        const fz = -Math.cos(player.yaw || 0);
+        const len = Math.sqrt(dx * dx + dz * dz) || 1;
+        const dot = (dx / len) * fx + (dz / len) * fz;
+        if (dot > 0.55) viewBonus = -3;
+        else if (dot < -0.35) viewBonus = 2;
+    }
+    return dist + viewBonus;
 }
 
 // --- Helper: dispose and clean up a particle ---
@@ -1403,24 +1515,33 @@ function animate() {
     } else _currentSkyColor.copy(_skyColorNight);
 
     if (!isPaused) {
+        _chunkPerfFrameCounter++;
+        const _chunkProfile = _getChunkLoadingProfile();
+        const _heavyChunkLoadingNow = _isHeavyChunkLoading();
+        const _simThrottle = _heavyChunkLoadingNow ? _chunkProfile.simThrottle : 1;
+        window._chunkLoadingModeActive = _heavyChunkLoadingNow;
+        window._lastChunkLoadSpeed = (typeof settingChunkLoadSpeed !== 'undefined' ? settingChunkLoadSpeed : 'balanced');
+
         randomTickTimer += dt;
         if (randomTickTimer >= 0.05) { 
             randomTickTimer = 0;
-            if (_fn_doRandomTicks) _fn_doRandomTicks();
+            if (_fn_doRandomTicks && (!_heavyChunkLoadingNow || (_chunkPerfFrameCounter % Math.max(2, _simThrottle) === 0))) _fn_doRandomTicks();
         }
 
         window.blockBreakCooldown = window.blockBreakCooldown || 0;
         if (window.blockBreakCooldown > 0) window.blockBreakCooldown -= dt;
 
-        if (_fn_updateMobs) _fn_updateMobs(dt);
-        if (_fn_tickMobSpawning) _fn_tickMobSpawning(dt);
+        // During heavy 32-chunk loading, keep player-critical systems responsive
+        // but slow expensive simulation that is not immediately visible.
+        if (_fn_updateMobs && (!_heavyChunkLoadingNow || (_chunkPerfFrameCounter % _simThrottle === 0))) _fn_updateMobs(dt * _simThrottle);
+        if (_fn_tickMobSpawning && (!_heavyChunkLoadingNow || (_chunkPerfFrameCounter % (_simThrottle + 1) === 0))) _fn_tickMobSpawning(dt * (_simThrottle + 1));
         if (_fn_updateArrows) _fn_updateArrows(dt);
-        if (_fn_tickSpawnerBlocks) _fn_tickSpawnerBlocks(dt);
+        if (_fn_tickSpawnerBlocks && (!_heavyChunkLoadingNow || (_chunkPerfFrameCounter % _simThrottle === 0))) _fn_tickSpawnerBlocks(dt * _simThrottle);
         if (_fn_updateTNTEntities) _fn_updateTNTEntities(dt);
-        if (_fn_updateHerobrineEntities) _fn_updateHerobrineEntities(dt);
+        if (_fn_updateHerobrineEntities && (!_heavyChunkLoadingNow || (_chunkPerfFrameCounter % _simThrottle === 0))) _fn_updateHerobrineEntities(dt * _simThrottle);
         if (_fn_tickEnchantBooks) _fn_tickEnchantBooks(dt);
-        if (_fn_updateXPOrbs) _fn_updateXPOrbs(dt);
-        if (_fn_tickRedstone) _fn_tickRedstone(dt);
+        if (_fn_updateXPOrbs && (!_heavyChunkLoadingNow || (_chunkPerfFrameCounter % _simThrottle === 0))) _fn_updateXPOrbs(dt * _simThrottle);
+        if (_fn_tickRedstone && (!_heavyChunkLoadingNow || (_chunkPerfFrameCounter % _simThrottle === 0))) _fn_tickRedstone(dt * _simThrottle);
 
         // Sound system — update listener position for spatial audio, then tick sounds
         if (_fn_soundUpdateListener) _fn_soundUpdateListener();
@@ -2059,7 +2180,7 @@ function animate() {
             let workerLightTime = 0;
             if (_pendingLightingChunks.length > 0) {
                 const lightStart = performance.now();
-                const lightFrameBudget = 6; // ms — leftover chunks roll to next frame
+                const lightFrameBudget = _getChunkLoadingProfile().lightBudget; // ms — leftover chunks roll to next frame
                 let lightProcessed = 0;
                 while (_pendingLightingChunks.length > 0 && (performance.now() - lightStart) < lightFrameBudget) {
                     const p = _pendingLightingChunks.shift();
@@ -2090,22 +2211,18 @@ function animate() {
 
             if (dirtyChunks.size > 0) {
                 const meshStartTime = performance.now();
-                // Mesh budget — bumped when worker is active because we have a backlog
-                // and the rendering is GPU-cheap. Want to drain the queue fast.
-                // When the backlog is huge, allocate even more time per frame.
-                const workerActive2 = _workerReady && _worldgenWorker;
-                let meshBudget;
-                if (workerActive2) {
-                    if (dirtyChunks.size > 200) {
-                        meshBudget = debugFrameTime < 14 ? 28 : 18; // aggressive: drain large backlog
-                    } else if (dirtyChunks.size > 50) {
-                        meshBudget = debugFrameTime < 12 ? 22 : 14;
-                    } else {
-                        meshBudget = debugFrameTime < 12 ? 18 : 10;
-                    }
-                } else {
-                    meshBudget = debugFrameTime < 12 ? 18 : (debugFrameTime < 20 ? 10 : 4);
-                }
+                // Frame-budgeted mesh dispatch. The old code drained large backlogs
+                // aggressively, which loaded fast but caused 32-chunk render distance spikes.
+                // This keeps a predictable per-frame cost and lets the new Chunk Loading
+                // setting control the tradeoff between smoothness and load speed.
+                const workerActive2 = (_meshWorkerReady && _meshWorker) || (_workerReady && _worldgenWorker);
+                const _meshProfile = _getChunkLoadingProfile();
+                const _pressure = _getChunkLoadingPressure();
+                let meshBudget = _meshProfile.meshBudget;
+                if (debugFrameTime > 24) meshBudget = Math.max(2, meshBudget * 0.45);
+                else if (debugFrameTime > 18) meshBudget = Math.max(3, meshBudget * 0.65);
+                else if (_pressure.total > 180 && debugFrameTime < 13) meshBudget += 2;
+                if (!workerActive2) meshBudget = Math.min(meshBudget, debugFrameTime < 16 ? 8 : 4);
                 let processed = 0;
                 window._lastMeshBuildStart = meshStartTime;
                 const pCx = Math.floor(player.x / CHUNK_SIZE);
@@ -2114,7 +2231,7 @@ function animate() {
                 // When mesh worker is active, dispatching is async and fast.
                 // Cap concurrent in-flight requests to avoid flooding the worker.
                 const meshWorkerActive = _meshWorkerReady && _meshWorker;
-                const maxInFlight = 24;
+                const maxInFlight = _getChunkLoadingProfile().maxMeshInFlight;
                 
                 if (dirtyChunks.size > 8) {
                     // Reuse persistent array to avoid GC from allocating objects every frame
@@ -2125,7 +2242,7 @@ function animate() {
                         const sep = key.indexOf(',');
                         const kx = parseInt(key.substring(0, sep));
                         const kz = parseInt(key.substring(sep + 1));
-                        const dist = (kx - pCx) * (kx - pCx) + (kz - pCz) * (kz - pCz);
+                        const dist = _getChunkMeshPriority(kx, kz, pCx, pCz);
                         keysToProcess.push({key, cx: kx, cz: kz, dist});
                     }
                     keysToProcess.sort((a, b) => a.dist - b.dist);
@@ -2186,7 +2303,7 @@ function animate() {
                 window._lastMeshChunks = 0;
             }
             
-            if (useLazyGeneration) {
+            if (useLazyGeneration && !(window._saveInProgress === true)) {
                 const lazyStartTime = performance.now();
                 const pCx = ((player.x | 0) + _halfW) >> 4;
                 const pCz = ((player.z | 0) + _halfD) >> 4;
@@ -2212,15 +2329,18 @@ function animate() {
                                : _isNether ? _pendingNetherChunks.size
                                : _pendingWorkerChunks.size;
                 let maxGen;
+                const _genProfile = _getChunkLoadingProfile();
                 if (workerActive) {
-                    if (dirtyBacklog > 100) maxGen = 0;        // Pause: mesh way behind
-                    else if (dirtyBacklog > 50) maxGen = 4;    // Slow down
-                    else if (inFlight > 16) maxGen = 0;        // Worker queue saturated
-                    else maxGen = 12;                           // Normal pace
+                    if (dirtyBacklog > _genProfile.dirtyPause) maxGen = 0;               // Pause: mesh way behind
+                    else if (dirtyBacklog > _genProfile.dirtySlow) maxGen = Math.max(1, Math.floor(_genProfile.gen * 0.35));
+                    else if (inFlight > _genProfile.workerInFlight) maxGen = 0;          // Worker queue saturated
+                    else maxGen = _genProfile.gen;                                      // Profile-controlled pace
+                    if (debugFrameTime > 24) maxGen = Math.min(maxGen, 2);
+                    else if (debugFrameTime > 18) maxGen = Math.min(maxGen, Math.max(2, Math.floor(_genProfile.gen * 0.5)));
                 } else {
-                    maxGen = debugFrameTime < 12 ? 12 : (debugFrameTime < 20 ? 6 : 2);
+                    maxGen = debugFrameTime < 12 ? Math.min(_genProfile.gen, 8) : (debugFrameTime < 20 ? 4 : 1);
                 }
-                const lazyBudget = workerActive ? 3 : (debugFrameTime < 12 ? 14 : 7);
+                const lazyBudget = workerActive ? Math.max(1.5, Math.min(6, _genProfile.meshBudget * 0.35)) : (debugFrameTime < 12 ? 8 : 4);
                 let dispatched = 0;
                 let inlineGenerated = 0;
                 
@@ -2765,6 +2885,27 @@ function animate() {
     }
 
     const pCx = Math.floor(player.x / CHUNK_SIZE), pCz = Math.floor(player.z / CHUNK_SIZE);
+
+    // Safety net: if a visible generated chunk somehow has no mesh (for example
+    // after a save/load frontier race), periodically mark it dirty even without
+    // waiting for the player to cross into a new chunk.
+    if ((time - _lastVisibleMeshValidate) > 0.75) {
+        _lastVisibleMeshValidate = time;
+        const vr = RENDER_DISTANCES[currentRenderDistIndex];
+        const rSq2 = vr * vr;
+        for (let dcx = -vr; dcx <= vr; dcx++) {
+            for (let dcz = -vr; dcz <= vr; dcz++) {
+                if (dcx * dcx + dcz * dcz > rSq2) continue;
+                const wcx = pCx + dcx, wcz = pCz + dcz;
+                const key = wcx + ',' + wcz;
+                if (chunkMeshes.has(key)) continue;
+                const scx = wcx + (CHUNKS_X >> 1), scz = wcz + (CHUNKS_Z >> 1);
+                if (scx < 0 || scx >= CHUNKS_X || scz < 0 || scz >= CHUNKS_Z) continue;
+                const idx = scx * CHUNKS_Z + scz;
+                if (generatedChunksArr[idx] && chunkStorageArr[idx]) dirtyChunks.add(key);
+            }
+        }
+    }
     
     // ==========================================
     // CHUNK MESH PRUNING & VISIBILITY (only on chunk crossing or radius change)
@@ -2794,6 +2935,9 @@ function animate() {
                 toPrune.push(key);
             } else {
                 group.visible = (distSq <= rSq);
+                if (typeof updateChunkMipMaterials === 'function') {
+                    updateChunkMipMaterials(group, cx, cz, pCx, pCz);
+                }
             }
         }
         
@@ -2926,6 +3070,7 @@ function animate() {
 FPS: ${debugFps} | Frame: ${debugFrameTime.toFixed(1)}ms | Ticks/s: ${debugTickRate}
 Draw calls: ${drawCalls} | Triangles: ${(triangles/1000).toFixed(0)}k | Chunks: ${meshChunks}
 Gen: ${genN}ch ${genT}ms | Light: ${lightT}ms | Mesh: ${meshN}ch ${meshT}ms
+Load: ${window._lastChunkLoadSpeed || 'balanced'}${window._chunkLoadingModeActive ? ' (throttled)' : ''} | LightQ: ${window._lastWorkerLightPending || 0}
 ${workerStatus}
 ${meshWorkerStatus}
 Dimension: ${currentDimension === 'nether' ? 'The Nether' : currentDimension === 'aether' ? 'The Aether' : 'Overworld'}

@@ -13,8 +13,8 @@ const _transparentFancyLUT = new Uint8Array(256);
     // Added 62, 63, 64 for Farming, 66 for Vine, 67 for Lily Pad, 70-76 Slabs, 80-86 Stairs
     // v258: also added 238-249 for new slab/stair variants and sandstone/quartz slabs
     // v262: 250-251 sandstone/quartz stairs
-    const transparentIds = [0, 4, 14, 16, 17, 20, 22, 23, 24, 26, 27, 38, 40, 42, 43, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 89, 90, 93, 94, 95, 97, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206, 209, 212, 213, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251];
-    const transparentFastIds = [0, 4, 16, 17, 20, 23, 24, 26, 27, 38, 40, 42, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 90, 93, 94, 95, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206, 209, 212, 213, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251]; // leaves opaque in Fast mode
+    const transparentIds = [0, 4, 14, 16, 17, 20, 22, 23, 24, 26, 27, 38, 40, 42, 43, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 89, 90, 93, 94, 95, 97, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206, 209, 212, 213, 219, 220, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251];
+    const transparentFastIds = [0, 4, 16, 17, 20, 23, 24, 26, 27, 38, 40, 42, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 90, 93, 94, 95, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206, 209, 212, 213, 219, 220, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251]; // leaves opaque in Fast mode
     for (const id of transparentIds) _transparentFancyLUT[id] = 1;
     for (const id of transparentFastIds) _transparentLUT[id] = 1;
 })();
@@ -30,6 +30,8 @@ function isFluidBlock(id) { return _fluidLUT[id]; }
 const _crossLUT = new Uint8Array(256);
 _crossLUT[16] = 1; _crossLUT[23] = 1; _crossLUT[24] = 1; _crossLUT[26] = 1; _crossLUT[42] = 1; _crossLUT[52] = 1; _crossLUT[53] = 1; _crossLUT[89] = 1; _crossLUT[212] = 1; _crossLUT[213] = 1;
 _crossLUT[116] = 1; _crossLUT[117] = 1; _crossLUT[118] = 1; _crossLUT[137] = 1;
+// v335: 2-block-tall grass (bottom + top halves) — both render as cross-block X-pattern.
+_crossLUT[219] = 1; _crossLUT[220] = 1;
 function isCrossBlock(id) { return _crossLUT[id]; }
 
 function isSnowLayer(id) {
@@ -271,7 +273,7 @@ function canPlaceBlock(id, x, y, z, normal) {
         
         if (id === 52) { 
             if (below === 52) return true;
-            if (below !== 1 && below !== 2 && below !== 15 && below !== 5) return false;
+            if (below !== 1 && below !== 2 && below !== 15 && below !== 25 && below !== 5) return false;
             let hasWater = false;
             for (let [dx, dy, dz] of [[1,0,0], [-1,0,0], [0,0,1], [0,0,-1]]) {
                 if ((getVoxel(x+dx, y-1, z+dz) & 0xFF) === 4) { hasWater = true; break; }
@@ -281,6 +283,17 @@ function canPlaceBlock(id, x, y, z, normal) {
         if (id === 64) {
             return (below === 62 || below === 63);
         }
+        if (id === 26) return (below === 1 || below === 2 || below === 15 || below === 25 || below === 168 || below === 57 || below === 166 || below === 167 || below === 204 || below === 254 || below === 255);
+        // v335: Tall Grass — bottom (219) needs grass/dirt support AND the
+        // cell above must be free for the top half. Top (220) needs the
+        // bottom half directly below; the engine places it, but a creative
+        // player putting just a top half in midair shouldn't validate.
+        if (id === 219) {
+            if (below !== 1 && below !== 2) return false;
+            const above = getVoxel(x, y+1, z) & 0xFF;
+            return (above === 0 || above === 4);
+        }
+        if (id === 220) return (below === 219);
         return (below === 1 || below === 2); 
     }
     if (id === 17) {
@@ -293,7 +306,7 @@ function canPlaceBlock(id, x, y, z, normal) {
     }
     if (id === 20) {
         const below = getVoxel(x, y-1, z) & 0xFF;
-        return (below === 15 || below === 20); 
+        return (below === 15 || below === 25 || below === 20); 
     }
     return true;
 }
@@ -308,7 +321,7 @@ function checkSupport(x, y, z) {
         
         if (id === 52) {
             if (below === 52) return true;
-            if (below !== 1 && below !== 2 && below !== 15 && below !== 5) return false;
+            if (below !== 1 && below !== 2 && below !== 15 && below !== 25 && below !== 5) return false;
             let hasWater = false;
             for (let [dx, dy, dz] of [[1,0,0], [-1,0,0], [0,0,1], [0,0,-1]]) {
                 if ((getVoxel(x+dx, y-1, z+dz) & 0xFF) === 4) { hasWater = true; break; }
@@ -318,6 +331,12 @@ function checkSupport(x, y, z) {
         if (id === 64) {
             return (below === 62 || below === 63);
         }
+        if (id === 26) return (below === 1 || below === 2 || below === 15 || below === 25 || below === 168 || below === 57 || below === 166 || below === 167 || below === 204 || below === 254 || below === 255);
+        // v335: Tall Grass — bottom (219) needs grass/dirt below, top (220)
+        // needs the bottom half directly below. When grass/dirt is broken,
+        // the bottom loses support → breaks → top loses support → cascades.
+        if (id === 219) return (below === 1 || below === 2);
+        if (id === 220) return (below === 219);
         return (below === 1 || below === 2);
     }
     if (id === 17 || id === 206) {
@@ -331,7 +350,7 @@ function checkSupport(x, y, z) {
     }
     if (id === 20) {
         const below = getVoxel(x, y-1, z) & 0xFF;
-        return (below === 15 || below === 20);
+        return (below === 15 || below === 25 || below === 20);
     }
     // Vine: needs solid anchor block on its face OR a vine/leaf block above
     if (id === 66) {

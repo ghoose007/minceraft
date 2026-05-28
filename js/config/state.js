@@ -171,6 +171,8 @@ let settingSoundVolume = 1.0;       // 0.0 to 1.0
 let settingSensitivity = 1.0;       // 0.25 to 2.0 (maps to 25%-200%)
 let settingDifficulty = 'normal';   // 'easy', 'normal', 'hard'
 let settingDamageMultiplier = 1.0;  // derived from difficulty
+let settingChunkLoadSpeed = 'balanced'; // 'smooth', 'balanced', 'fast', 'extreme'
+let settingChunkLoadingSpeed = 'normal'; // 'low', 'normal', 'fast', 'extreme'
 
 // --- ARMOR ---
 // armorSlots[0]=helmet, [1]=chestplate, [2]=leggings, [3]=boots
@@ -224,13 +226,13 @@ let settingGraphicsFabulous = false;  // Fabulous! shader-quality graphics
 let settingSmoothLighting = true;
 let settingViewBobbing = true;
 let currentGUIScaleIndex = 3;
-let currentRenderDistIndex = 1;
+let currentRenderDistIndex = 6; // 8 chunks in RENDER_DISTANCES (2..32)
 
 let scene, camera, uiScene, uiCamera, renderer;
 let biomeMap = []; 
 
 const chunkMeshes = new Map();
-let textureAtlas, solidMaterial, glassMaterial, waterMaterial, lavaMaterial; 
+let textureAtlas, textureAtlasMip, solidMaterial, solidMaterialMip, glassMaterial, glassMaterialMip, waterMaterial, lavaMaterial; 
 let highlightBox;
 let activeHighlight = null;
 const updateWaterQueue = new Set();

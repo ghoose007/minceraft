@@ -47,7 +47,13 @@ function getParticleGeometry(blockId) {
     const tints = [];
     let pTint = [1,1,1];
     
-    if ([14, 16, 22, 24, 43, 66, 67, 97].includes(blockId)) pTint = [0.55, 0.75, 0.4];
+    // v340: 219 and 220 (Tall Grass halves) join the grass-tint list so
+    // their break particles use the plains-green default instead of the
+    // raw greyscale atlas texture. World rendering of these blocks
+    // already applies biome grass tint; the static particle path has no
+    // world-position context (it just gets a blockId), so we use the
+    // same default plains green used for the held/dropped item.
+    if ([14, 16, 22, 24, 43, 66, 67, 97, 219, 220].includes(blockId)) pTint = [0.55, 0.75, 0.4];
 
     for (let i=0; i<uvs.length/2; i++) {
         colors.push(1, 1, 1);
@@ -158,7 +164,7 @@ function checkGravity(x, y, z, _visited) {
     
     const val = getVoxel(x, y, z);
     const id = val & 0xFF;
-    if (id !== 5 && id !== 15) return; 
+    if (id !== 5 && id !== 15 && id !== 25) return; 
     
     const belowVal = getVoxel(x, y - 1, z);
     const belowId = belowVal & 0xFF;

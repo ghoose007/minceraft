@@ -61,13 +61,22 @@ function _generateSuperflatNetherChunk(cx, cz) {
 
 function generateNetherChunkColumn(cx, cz) {
     if (_isChunkGenerated(cx, cz)) return;
-    
-    // Superflat dispatch
-    if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 1) {
-        _generateSuperflatNetherChunk(cx, cz);
-        return;
+    // v332 Fix C: open the worldgen-allocate window.
+    _enterWorldGen();
+    try {
+        // Superflat dispatch
+        if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 1) {
+            _generateSuperflatNetherChunk(cx, cz);
+            return;
+        }
+
+        _generateNetherChunkColumnInner(cx, cz);
+    } finally {
+        _exitWorldGen();
     }
-    
+}
+
+function _generateNetherChunkColumnInner(cx, cz) {
     _markChunkGenerated(cx, cz);
 
     const startX = cx * CHUNK_SIZE - Math.floor(WORLD_WIDTH / 2);

@@ -48,10 +48,11 @@ window.spawnDroppedItem = function(x, y, z, id, count = 1, customVx = null, cust
     // Reset the inner mesh's first-person display transforms so ground items look correct
     const isMaterial = (id >= 112 && id <= 123) || id === 128 || id === 129 || id === 134 || id === 135 || id === 137 || id === 142 || id === 143 || id === 151
                     || id === 197 || id === 198 || id === 199
-                    || id === 23 || id === 53 || id === 24 || id === 116 || id === 117 || id === 118 || id === 17;
+                    || id === 23 || id === 53 || id === 24 || id === 26 || id === 116 || id === 117 || id === 118 || id === 17;
     const isFlatBlock = (id === 66 || id === 67);
     const isToolItem = (id >= 100 && typeof TOOL_DATA !== 'undefined' && TOOL_DATA[id]);
-    const is2D = isMaterial || isFlatBlock || isToolItem;
+    const forceCubeBlock = (typeof isMesaBlock === 'function' && isMesaBlock(id));
+    const is2D = !forceCubeBlock && (isMaterial || isFlatBlock || isToolItem);
     
     // Strip the first-person display transforms from the inner mesh FIRST
     const inner = mesh.children[0];

@@ -186,10 +186,11 @@ const RECIPES = [
     { pattern: [[211, 211], [112, 0], [112, 0]], output: { id: 216, count: 1 } },             // Emerald Hoe (Right)
 
     // --- Emerald Armor (211 = emerald) ---
-    { pattern: [[211, 211, 211], [211, 0, 211]], output: { id: 219, count: 1 } },             // Emerald Helmet
-    { pattern: [[211, 0, 211], [211, 211, 211], [211, 211, 211]], output: { id: 220, count: 1 } }, // Emerald Chestplate
-    { pattern: [[211, 211, 211], [211, 0, 211], [211, 0, 211]], output: { id: 221, count: 1 } },   // Emerald Leggings
-    { pattern: [[211, 0, 211], [211, 0, 211]], output: { id: 222, count: 1 } },               // Emerald Boots
+    // v339: output IDs moved 219-222 → 256-259 to resolve tall-grass collision
+    { pattern: [[211, 211, 211], [211, 0, 211]], output: { id: 256, count: 1 } },             // Emerald Helmet
+    { pattern: [[211, 0, 211], [211, 211, 211], [211, 211, 211]], output: { id: 257, count: 1 } }, // Emerald Chestplate
+    { pattern: [[211, 211, 211], [211, 0, 211], [211, 0, 211]], output: { id: 258, count: 1 } },   // Emerald Leggings
+    { pattern: [[211, 0, 211], [211, 0, 211]], output: { id: 259, count: 1 } },               // Emerald Boots
 
     // --- Gold Armor (143 = gold ingot) ---
     { pattern: [[143, 143, 143], [143, 0, 143]], output: { id: 182, count: 1 } }, // Gold Helmet
@@ -282,7 +283,10 @@ const RECIPES = [
     { pattern: [[0, 0, 19], [0, 19, 19], [19, 19, 19]], output: { id: 250, count: 4 } },
     // Quartz Stairs (4 quartz blocks in L)
     { pattern: [[154, 0, 0], [154, 154, 0], [154, 154, 154]], output: { id: 251, count: 4 } },
-    { pattern: [[0, 0, 154], [0, 154, 154], [154, 154, 154]], output: { id: 251, count: 4 } }
+    { pattern: [[0, 0, 154], [0, 154, 154], [154, 154, 154]], output: { id: 251, count: 4 } },
+
+    // v315: Red Sandstone from Red Sand — 2x2 recipe, returns 4 blocks.
+    { pattern: [[25, 25], [25, 25]], output: { id: 45, count: 4 } }
 
 ];
 

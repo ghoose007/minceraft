@@ -236,6 +236,19 @@ function spawnHerobrine(x, y, z) {
 window.updateHerobrineEntities = function(dt) {
     if (typeof player === 'undefined' || !player) return;
     if (typeof scene === 'undefined' || !scene) return;
+
+    // Skyblock is a tiny void-island test preset; Herobrine's render-distance
+    // edge spawning/fleeing logic does not fit it and can spawn him in the void.
+    if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 5) {
+        if (_herobrineEntities.length > 0) {
+            for (const hb of _herobrineEntities) {
+                if (hb && hb.mesh && hb.mesh.parent) hb.mesh.parent.remove(hb.mesh);
+            }
+            _herobrineEntities.length = 0;
+        }
+        _herobrineSpawned = true;
+        return;
+    }
     
     // --- AUTO-SPAWN: one Herobrine, once, after the world is loaded ---
     if (!_herobrineSpawned && typeof getHighestBlock === 'function') {
