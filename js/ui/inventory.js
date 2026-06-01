@@ -148,6 +148,7 @@ function renderInventory() {
             updateDurabilityBar(slot, item); bindHoverEvents(slot, item.id);
         }
         slot.addEventListener('mousedown', (e) => { e.stopPropagation(); handleInventoryClick(i, e); });
+        slot.addEventListener('mouseenter', (e) => { if (window._continueRightDragInventorySlot) window._continueRightDragInventorySlot(i, e); });
         invHotbar.appendChild(slot);
     }
 
@@ -168,6 +169,7 @@ function renderInventory() {
                 updateDurabilityBar(slot, item); bindHoverEvents(slot, item.id);
             }
             slot.addEventListener('mousedown', (e) => { e.stopPropagation(); handleCraftingClick(i, type, e); });
+            slot.addEventListener('mouseenter', (e) => { if (window._continueRightDragCraftingSlot) window._continueRightDragCraftingSlot(i, type, e); });
             el.appendChild(slot);
         });
 
@@ -209,6 +211,7 @@ function renderInventory() {
                 updateDurabilityBar(slot, item); bindHoverEvents(slot, item.id);
             }
             slot.addEventListener('mousedown', (e) => { e.stopPropagation(); handleInventoryClick(i, e); });
+            slot.addEventListener('mouseenter', (e) => { if (window._continueRightDragInventorySlot) window._continueRightDragInventorySlot(i, e); });
             container.appendChild(slot);
         }
     };

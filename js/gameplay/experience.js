@@ -392,7 +392,7 @@ function buildXPBarUI() {
         top: -14px;
         left: 50%;
         transform: translateX(-50%);
-        font-family: 'Minecraft', monospace;
+        font-family: 'MinecraftBitmap', 'Courier New', monospace;
         font-size: 16px;
         line-height: 16px;
         color: #80FF32;

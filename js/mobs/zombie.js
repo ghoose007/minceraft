@@ -315,10 +315,9 @@ class Zombie extends Mob {
                 this._swingAnim = 1.0;
                 if (gameMode === 'survival') {
                     window.applyPlayerDamage(2);
-                    const kbDist = distXZ || 1;
-                    player.vx += (dx / kbDist) * 5.0;
-                    player.vz += (dz / kbDist) * 5.0;
-                    player.vy  = Math.max(player.vy, 3.5);
+                    if (typeof window.applyPlayerKnockback === 'function') {
+                        window.applyPlayerKnockback(this.x, this.z, 4.2, 2.2);
+                    }
                 }
             }
         } else {
@@ -455,7 +454,7 @@ class Zombie extends Mob {
 }
 
 // Override takeDamage to support optional fire-damage flag, and trigger custom hurt/death sounds!
-Zombie.prototype.takeDamage = function(amount, sourceX, sourceZ, isFireDamage) {
+Zombie.prototype.takeDamage = function(amount, sourceX, sourceZ, isFireDamage, kbDirX, kbDirZ) {
     if (this.hurtTime > 0 || this.dying || this.dead) return;
     this.health -= amount;
     this.hurtTime = 0.5;
@@ -475,12 +474,7 @@ Zombie.prototype.takeDamage = function(amount, sourceX, sourceZ, isFireDamage) {
 
     if (!isFireDamage) {
         this.material.color.setHex(0xff7777);
-        const dx = this.x - sourceX, dz = this.z - sourceZ;
-        const dist = Math.sqrt(dx*dx + dz*dz) || 1;
-        this.vx = (dx / dist) * 6.0;
-        this.vz = (dz / dist) * 6.0;
-        this.vy = 6.0;
-        this.onGround = false;
+        this.applyKnockback(sourceX, sourceZ, 7.0, 2.2, kbDirX, kbDirZ);
         this.isAggro = true;
     } else {
         this.material.color.setHex(0xff8844);

@@ -146,7 +146,7 @@ function buildMaterialMesh(id) {
     // Material geometry is centered [-0.5..0.5] on XY, flat on Z
     // MC generated.json firstperson: same visual treatment as handheld
     mesh.scale.set(0.68 / 0.35, 0.68 / 0.35, 0.68 / 0.35);
-    mesh.position.set(1.13 / 16, -1.0 / 16, -0.35);
+    mesh.position.set(1.13 / 16, 3.5 / 16, 0.35);
     mesh.rotation.set(0, -45 * Math.PI / 180, 25 * Math.PI / 180); 
     
     const group = new THREE.Group();
@@ -251,7 +251,7 @@ function buildToolMesh(id) {
     //   - Scale 0.68 is MC's handheld scale; /0.35 compensates for heldItemGroup.scale
     mesh.scale.set(0.68 / 0.35, 0.68 / 0.35, 0.68 / 0.35);
     mesh.rotation.set(0, -45 * Math.PI / 180, 25 * Math.PI / 180);
-    mesh.position.set(-0.5 + 1.13 / 16, -0.5 + -1.0 / 16, -0.35);
+    mesh.position.set(-0.5 + 1.13 / 16, -0.5 + -2.5 / 16, 0.35);
     
     const group = new THREE.Group();
     group.add(mesh);
@@ -294,9 +294,9 @@ function buildBlockItemMesh(blockId) {
         const biomeTints = new Float32Array(geo.attributes.position.count * 3).fill(1);
         geo.setAttribute('aBiomeTint', new THREE.BufferAttribute(biomeTints, 3));
         const mesh = new THREE.Mesh(geo, solidMaterial);
-        mesh.position.set(-0.5, -0.75, -0.5);
+        mesh.position.set(-0.44, -0.56, 0.18);
         mesh.rotation.set(0, 45 * Math.PI / 180, 0);
-        mesh.scale.set(0.40 / 0.35, 0.40 / 0.35, 0.40 / 0.35);
+        mesh.scale.set(0.46 / 0.35, 0.46 / 0.35, 0.46 / 0.35);
         const group = new THREE.Group();
         group.add(mesh);
         return group;
@@ -348,9 +348,9 @@ function buildBlockItemMesh(blockId) {
         
         const mat = blockId === 68 ? (typeof glassMaterial !== 'undefined' ? glassMaterial : solidMaterial) : solidMaterial;
         const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set(-0.5, -0.5, -0.5);
+        mesh.position.set(-0.44, -0.56, 0.18);
         mesh.rotation.set(0, 45 * Math.PI / 180, 0);
-        mesh.scale.set(0.40 / 0.35, 0.40 / 0.35, 0.40 / 0.35);
+        mesh.scale.set(0.46 / 0.35, 0.46 / 0.35, 0.46 / 0.35);
         const group = new THREE.Group();
         group.add(mesh);
         return group;
@@ -406,9 +406,9 @@ function buildBlockItemMesh(blockId) {
         geo.setAttribute('aBiomeTint', new THREE.BufferAttribute(new Float32Array(pos.length).fill(1), 3));
         
         const mesh = new THREE.Mesh(geo, solidMaterial);
-        mesh.position.set(-0.5, -0.5, -0.5);
+        mesh.position.set(-0.44, -0.56, 0.18);
         mesh.rotation.set(0, 45 * Math.PI / 180, 0);
-        mesh.scale.set(0.40 / 0.35, 0.40 / 0.35, 0.40 / 0.35);
+        mesh.scale.set(0.46 / 0.35, 0.46 / 0.35, 0.46 / 0.35);
         const group = new THREE.Group();
         group.add(mesh);
         return group;
@@ -475,9 +475,9 @@ function buildBlockItemMesh(blockId) {
         geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
         geo.setAttribute('aBiomeTint', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 3).fill(1), 3));
         const mesh = new THREE.Mesh(geo, solidMaterial);
-        mesh.position.set(-0.5, -0.625, -0.5);
+        mesh.position.set(-0.44, -0.61, 0.18);
         mesh.rotation.set(0, 45 * Math.PI / 180, 0);
-        mesh.scale.set(0.40 / 0.35, 0.40 / 0.35, 0.40 / 0.35);
+        mesh.scale.set(0.46 / 0.35, 0.46 / 0.35, 0.46 / 0.35);
         const group = new THREE.Group();
         group.add(mesh);
         return group;
@@ -538,10 +538,10 @@ function buildBlockItemMesh(blockId) {
     
     const mesh = new THREE.Mesh(geo, solidMaterial);
     
-    // MC block.json firstperson_righthand: rotation [0, 45, 0], translation [0, 0, 0], scale [0.40]
-    mesh.position.set(-0.5, -0.5, -0.5); 
-    mesh.rotation.set(0, 45 * Math.PI / 180, 0);
-    mesh.scale.set(0.40 / 0.35, 0.40 / 0.35, 0.40 / 0.35); // ~1.143, compensates for heldItemGroup.scale 
+    // v374: MC-style first-person held block: raised slightly, close to camera, upright/flat, 45° yaw around the vertical up/down axis.
+    mesh.position.set(-0.24, -0.26, -0.18); 
+    mesh.rotation.set(0, 90 * Math.PI / 180, 0);
+    mesh.scale.set(0.46 / 0.35, 0.46 / 0.35, 0.46 / 0.35); // v372: closer, larger MC-style held block 
     
     const group = new THREE.Group();
     group.add(mesh);

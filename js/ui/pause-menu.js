@@ -285,7 +285,12 @@ function initSlider(btnId, thumbId, labelId, getValue, setValue, formatLabel) {
 // Sound volume slider: 0% to 100%
 initSlider('sound-slider-btn', 'sound-thumb', 'sound-label',
     () => settingSoundVolume,
-    (frac) => { settingSoundVolume = Math.round(frac * 20) / 20; }, // snap to 5% increments
+    (frac) => {
+        settingSoundVolume = Math.round(frac * 20) / 20;
+        if (window.MusicManager && typeof window.MusicManager.updateVolumeFromSettings === 'function') {
+            window.MusicManager.updateVolumeFromSettings();
+        }
+    }, // snap to 5% increments
     (val) => 'Sound: ' + Math.round(val * 100) + '%'
 );
 
@@ -401,6 +406,30 @@ window.applyPlayerDamage = function(amount) {
     if (player.health <= 0 && !player._dead) {
         if (typeof window.killPlayer === 'function') window.killPlayer();
     }
+};
+
+
+// v382: shared Minecraft-style directional player knockback.
+// Damage and knockback are intentionally separate so environmental damage
+// can hurt without pushing, while mob/arrow attacks can push directionally.
+window.applyPlayerKnockback = function(sourceX, sourceZ, strength, vertical) {
+    if (typeof player === 'undefined' || !player || player._dead) return;
+    if (typeof sourceX !== 'number' || typeof sourceZ !== 'number') return;
+    const dx = player.x - sourceX;
+    const dz = player.z - sourceZ;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist < 0.001) return;
+    const nx = dx / dist;
+    const nz = dz / dist;
+    const h = (typeof strength === 'number') ? strength : 4.2;
+    const v = (typeof vertical === 'number') ? vertical : 2.2;
+
+    player.knockbackX = (player.knockbackX || 0) * 0.5 + nx * h;
+    player.knockbackZ = (player.knockbackZ || 0) * 0.5 + nz * h;
+    player.vx *= 0.5;
+    player.vz *= 0.5;
+    player.vy = Math.max(player.vy || 0, v);
+    player.onGround = false;
 };
 
 // ==========================================

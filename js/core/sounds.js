@@ -251,7 +251,12 @@
     // CORE PLAY FUNCTIONS
     // =============================================
 
-    const MAX_SOUND_DIST = 32;
+    // v378: Tighter positional audio range.
+    // Zombies/skeletons/etc. were audible from too far away because every
+    // spatial sound used a 32-block hard cutoff with linear falloff.
+    // 16 blocks keeps nearby mobs audible but prevents distant mobs from
+    // carrying across caves/terrain.
+    const MAX_SOUND_DIST = 16;
 
     function playSound(type, category, volume, pitchMin, pitchMax) {
         const ctx = getAudioCtx();
@@ -308,10 +313,10 @@
 
         const panner = ctx.createPanner();
         panner.panningModel = 'equalpower'; 
-        panner.distanceModel = 'linear';
-        panner.refDistance = 1;
+        panner.distanceModel = 'inverse';
+        panner.refDistance = 2;
         panner.maxDistance = MAX_SOUND_DIST;
-        panner.rolloffFactor = 1;
+        panner.rolloffFactor = 2.4;
 
         panner.positionX.value = wx;
         panner.positionY.value = wy;

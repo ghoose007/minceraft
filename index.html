@@ -9,17 +9,31 @@
     <title>Mincecraft</title>
     <style>
         * {
-            font-family: 'Silkscreen', monospace;
+            box-sizing: border-box;
             image-rendering: pixelated;
         }
 
-        * { box-sizing: border-box; }
+        html, body, button, input, textarea, select,
+        div, span, p, label, h1, h2, h3, h4, h5, h6,
+        .mc-screen, .mc-screen *, .mc-button, .mc-button *,
+        .item-count, .tooltip, #hud, #hud *, #hotbar, #hotbar *,
+        #inventory-modal, #inventory-modal *, #survival-inventory-modal, #survival-inventory-modal *,
+        #crafting-table-modal, #crafting-table-modal *, #furnace-modal, #furnace-modal *,
+        #chest-modal, #chest-modal *, #enchanting-modal, #enchanting-modal *,
+        #debug, #debug *, #mobile-controls, #mobile-controls * {
+            font-family: 'MinecraftBitmap', 'Courier New', monospace !important;
+            -webkit-font-smoothing: none;
+            -moz-osx-font-smoothing: grayscale;
+            font-smooth: never;
+            text-rendering: geometricPrecision;
+        }
+
 
         body {
             margin: 0;
             overflow: hidden;
             background-color: #87CEEB;
-            font-family: 'MinecraftBitmap', monospace;
+            font-family: 'MinecraftBitmap', 'Courier New', monospace;
             user-select: none;
         }
 
@@ -66,7 +80,7 @@
         }
 
         .mc-logo {
-            font-family: 'MinecraftBitmap', monospace;
+            font-family: 'MinecraftBitmap', 'Courier New', monospace;
             font-size: 52px;
             font-weight: 700;
             color: #fff;
@@ -86,7 +100,7 @@
         .mc-logo-shadow {
             position: absolute;
             top: 4px; left: 4px;
-            font-family: 'MinecraftBitmap', monospace;
+            font-family: 'MinecraftBitmap', 'Courier New', monospace;
             font-size: 52px;
             font-weight: 700;
             color: #3f3f3f;
@@ -124,7 +138,7 @@
             background-color: #7A7A7A;
             border: 2px solid #000;
             color: #E0E0E0;
-            font-family: 'MinecraftBitmap', monospace;
+            font-family: 'MinecraftBitmap', 'Courier New', monospace;
             font-size: 14px;
             text-shadow: 2px 2px 0px #3f3f3f;
             cursor: pointer;
@@ -189,7 +203,7 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            font-family: 'MinecraftBitmap', monospace;
+            font-family: 'MinecraftBitmap', 'Courier New', monospace;
             font-size: 14px;
             color: #E0E0E0;
             text-shadow: 2px 2px 0px #3f3f3f;
@@ -296,7 +310,7 @@
             border-right-color: #505050;
             border-bottom-color: #505050;
             color: #e0e0e0;
-            font-family: 'MinecraftBitmap', monospace;
+            font-family: 'MinecraftBitmap', 'Courier New', monospace;
             font-size: 12px;
             padding: 0 8px;
             outline: none;
@@ -358,7 +372,7 @@
         }
         .world-slot-info { flex: 1; min-width: 0; }
         .world-slot-name {
-            font-family: 'MinecraftBitmap', monospace; font-size: 13px; color: #fff;
+            font-family: 'MinecraftBitmap', 'Courier New', monospace; font-size: 13px; color: #fff;
             text-shadow: 1px 1px 0 #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .world-slot-details { font-size: 10px; color: #aaa; text-shadow: 1px 1px 0 #222; margin-top: 2px; }
@@ -378,7 +392,7 @@
             align-items: center;
             z-index: 100;
             color: white;
-            font-family: 'MinecraftBitmap', monospace;
+            font-family: 'MinecraftBitmap', 'Courier New', monospace;
         }
         #loading-screen h1 {
             font-size: 24px;
@@ -416,7 +430,7 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            font-family: 'MinecraftBitmap', monospace;
+            font-family: 'MinecraftBitmap', 'Courier New', monospace;
         }
 
         .menu-screen {
@@ -666,6 +680,7 @@
         
         .item-count {
             position: absolute;
+            font-family: 'MinecraftBitmap', 'Courier New', monospace !important;
             bottom: 1px;
             right: 3px;
             color: white;
@@ -1250,7 +1265,7 @@
             padding: 16px;
             display: flex;
             flex-direction: column;
-            font-family: 'MinecraftBitmap', monospace;
+            font-family: 'MinecraftBitmap', 'Courier New', monospace;
         }
         #structure-modal h2 { margin: 0 0 12px 0; font-size: 16px; color: #333; text-align: center; }
         .struct-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
@@ -1275,7 +1290,7 @@
             border: 2px solid #25005A;
             border-radius: 0px;
             padding: 4px 6px;
-            font-family: 'MinecraftBitmap', monospace;
+            font-family: 'MinecraftBitmap', 'Courier New', monospace;
             font-size: 13px;
             pointer-events: none;
             z-index: 20;
@@ -1346,7 +1361,7 @@
             top: 50px; left: 50%;
             transform: translateX(-50%);
             color: white;
-            font-family: 'MinecraftBitmap', monospace;
+            font-family: 'MinecraftBitmap', 'Courier New', monospace;
             font-size: 12px;
             text-shadow: 2px 2px 0px rgba(0,0,0,0.8);
             z-index: 5;
@@ -1357,11 +1372,19 @@
             padding: 4px 12px;
             border-radius: 4px;
         }
-    </style>
+
+        /* v367: custom Minecraft-style cursor. The uploaded cursor is 32x32,
+           and the square hole at its center should be the click point, so the
+           CSS hotspot is 16 16. */
+        html, body, canvas, button, input, textarea, select, .item-slot, .mc-button {
+            cursor: url('textures/cursor.png?v=367') 16 16, auto !important;
+        }
+
+</style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
-    <script src="js/mobile/device-prompt.js?v=329"></script>
+    <script src="js/mobile/device-prompt.js?v=386"></script>
 
     <div id="main-menu" class="mc-screen">
         <canvas id="dirt-bg" width="1" height="1"></canvas>
@@ -2132,90 +2155,91 @@
 
     <div id="item-tooltip" class="hidden">Tooltip</div>
 
-    <script src="js/config/constants.js?v=329"></script>
-    <script src="js/core/fix-kit.js?v=329"></script>
-    <script src="js/config/state.js?v=329"></script>
-    <script src="js/config/blocks.js?v=329"></script>
-    <script src="js/config/tools.js?v=329"></script>
-    <script src="js/config/recipes.js?v=329"></script>
+    <script src="js/config/constants.js?v=386"></script>
+    <script src="js/core/fix-kit.js?v=386"></script>
+    <script src="js/config/state.js?v=386"></script>
+    <script src="js/config/blocks.js?v=386"></script>
+    <script src="js/config/tools.js?v=386"></script>
+    <script src="js/config/recipes.js?v=386"></script>
 
-    <script src="js/ui/menu.js?v=329"></script>
-    <script src="js/render/lighting-shader.js?v=329"></script>
-    <script src="js/render/fabulous-shader.js?v=329"></script>
-    <script src="js/ui/pause-menu.js?v=329"></script>
+    <script src="js/ui/menu.js?v=386"></script>
+    <script src="js/render/lighting-shader.js?v=386"></script>
+    <script src="js/render/fabulous-shader.js?v=386"></script>
+    <script src="js/ui/pause-menu.js?v=386"></script>
 
-    <script src="js/world/voxel.js?v=329"></script>
-    <script src="js/world/block-helpers.js?v=329"></script>
-    <script src="js/world/block-updates.js?v=329"></script>
-    <script src="js/world/fluid-interaction.js?v=329"></script>
-    <script src="js/world/lighting.js?v=329"></script>
-    <script src="js/world/trees.js?v=329"></script>
-    <script src="js/world/random-ticks.js?v=329"></script>
-    <script src="js/world/fire.js?v=329"></script>
+    <script src="js/world/voxel.js?v=386"></script>
+    <script src="js/world/block-helpers.js?v=386"></script>
+    <script src="js/world/block-updates.js?v=386"></script>
+    <script src="js/world/fluid-interaction.js?v=386"></script>
+    <script src="js/world/lighting.js?v=386"></script>
+    <script src="js/world/trees.js?v=386"></script>
+    <script src="js/world/random-ticks.js?v=386"></script>
+    <script src="js/world/fire.js?v=386"></script>
 
-    <script src="js/render/textures.js?v=329"></script>
-    <script src="js/render/mc-font.js?v=329"></script>
-    <script src="js/render/faces.js?v=329"></script>
-    <script src="js/render/particles.js?v=329"></script>
-    <script src="js/render/chunk-mesh.js?v=329"></script>
-    <script src="js/render/item-mesh.js?v=329"></script>
+    <script src="js/render/textures.js?v=386"></script>
+    <script src="js/render/mc-font.js?v=386"></script>
+    <script src="js/render/faces.js?v=386"></script>
+    <script src="js/render/particles.js?v=386"></script>
+    <script src="js/render/chunk-mesh.js?v=386"></script>
+    <script src="js/render/item-mesh.js?v=386"></script>
 
-    <script src="js/world/fluids.js?v=329"></script>
-    <script src="js/world/noise.js?v=329"></script>
+    <script src="js/world/fluids.js?v=386"></script>
+    <script src="js/world/noise.js?v=386"></script>
 
-    <script src="js/worldgen/noise-init.js?v=329"></script>
-    <script src="js/worldgen/biomes.js?v=329"></script>
-    <script src="js/worldgen/overworld.js?v=329"></script>
-    <script src="js/worldgen/nether.js?v=329"></script>
-    <script src="js/worldgen/aether.js?v=329"></script>
+    <script src="js/worldgen/noise-init.js?v=386"></script>
+    <script src="js/worldgen/biomes.js?v=386"></script>
+    <script src="js/worldgen/overworld.js?v=386"></script>
+    <script src="js/worldgen/nether.js?v=386"></script>
+    <script src="js/worldgen/aether.js?v=386"></script>
 
-    <script src="js/ui/hud.js?v=329"></script>
-    <script src="js/ui/crafting.js?v=329"></script>
-    <script src="js/ui/furnace.js?v=329"></script>
-    <script src="js/ui/inventory.js?v=329"></script>
-    <script src="js/ui/inventory-doll.js?v=329"></script>
-    <script src="js/ui/chest.js?v=329"></script>
-    <script src="js/ui/enchanting.js?v=329"></script>
-    <script src="js/ui/death-screen.js?v=329"></script>
+    <script src="js/ui/hud.js?v=386"></script>
+    <script src="js/ui/crafting.js?v=386"></script>
+    <script src="js/ui/furnace.js?v=386"></script>
+    <script src="js/ui/inventory.js?v=386"></script>
+    <script src="js/ui/inventory-doll.js?v=386"></script>
+    <script src="js/ui/chest.js?v=386"></script>
+    <script src="js/ui/enchanting.js?v=386"></script>
+    <script src="js/ui/death-screen.js?v=386"></script>
 
-    <script src="js/core/physics.js?v=329"></script>
+    <script src="js/core/physics.js?v=386"></script>
 
-    <script src="js/gameplay/block-breaking.js?v=329"></script>
-    <script src="js/gameplay/portals-detect.js?v=329"></script>
-    <script src="js/gameplay/dropped-items.js?v=329"></script>
-    <script src="js/gameplay/tnt.js?v=329"></script>
-    <script src="js/gameplay/dimension-switch.js?v=329"></script>
-    <script src="js/gameplay/spawners.js?v=329"></script>
-    <script src="js/gameplay/structures.js?v=329"></script>
-    <script src="js/gameplay/experience.js?v=329"></script>
-    <script src="js/gameplay/redstone.js?v=329"></script>
+    <script src="js/gameplay/block-breaking.js?v=386"></script>
+    <script src="js/gameplay/portals-detect.js?v=386"></script>
+    <script src="js/gameplay/dropped-items.js?v=386"></script>
+    <script src="js/gameplay/tnt.js?v=386"></script>
+    <script src="js/gameplay/dimension-switch.js?v=386"></script>
+    <script src="js/gameplay/spawners.js?v=386"></script>
+    <script src="js/gameplay/structures.js?v=386"></script>
+    <script src="js/gameplay/experience.js?v=386"></script>
+    <script src="js/gameplay/redstone.js?v=386"></script>
 
-    <script src="js/core/init.js?v=329"></script>
-    <script src="js/core/game-loop.js?v=329"></script>
+    <script src="js/core/music.js?v=386"></script>
+    <script src="js/core/init.js?v=386"></script>
+    <script src="js/core/game-loop.js?v=386"></script>
 
-    <script src="js/mobs/mob-core.js?v=329"></script>
-    <script src="js/mobs/pathfinding.js?v=329"></script>
-    <script src="js/mobs/pig.js?v=329"></script>
-    <script src="js/mobs/zombie.js?v=329"></script>
-    <script src="js/mobs/zombie-pigman.js?v=329"></script>
-    <script src="js/mobs/cow.js?v=329"></script>
-    <script src="js/mobs/creeper.js?v=329"></script>
-    <script src="js/mobs/sheep.js?v=329"></script>
-    <script src="js/mobs/skeleton.js?v=329"></script>
-    <script src="js/mobs/mob-spawning.js?v=329"></script>
-    <script src="js/mobs/mob-particles.js?v=329"></script>
+    <script src="js/mobs/mob-core.js?v=386"></script>
+    <script src="js/mobs/pathfinding.js?v=386"></script>
+    <script src="js/mobs/pig.js?v=386"></script>
+    <script src="js/mobs/zombie.js?v=386"></script>
+    <script src="js/mobs/zombie-pigman.js?v=386"></script>
+    <script src="js/mobs/cow.js?v=386"></script>
+    <script src="js/mobs/creeper.js?v=386"></script>
+    <script src="js/mobs/sheep.js?v=386"></script>
+    <script src="js/mobs/skeleton.js?v=386"></script>
+    <script src="js/mobs/mob-spawning.js?v=386"></script>
+    <script src="js/mobs/mob-particles.js?v=386"></script>
 
-    <script src="js/core/save-load.js?v=329"></script>
+    <script src="js/core/save-load.js?v=386"></script>
 
-    <script src="js/player/model.js?v=329"></script>
-    <script src="js/player/camera.js?v=329"></script>
-    <script src="js/player/death-anim.js?v=329"></script>
-    <script src="js/player/fire-effects.js?v=329"></script>
+    <script src="js/player/model.js?v=386"></script>
+    <script src="js/player/camera.js?v=386"></script>
+    <script src="js/player/death-anim.js?v=386"></script>
+    <script src="js/player/fire-effects.js?v=386"></script>
 
-    <script src="js/entities/herobrine.js?v=329"></script>
-    <script src="js/entities/arrow.js?v=329"></script>
+    <script src="js/entities/herobrine.js?v=386"></script>
+    <script src="js/entities/arrow.js?v=386"></script>
 
-    <script src="js/core/sounds.js?v=329"></script>
-    <script src="js/mobile/touch-controls.js?v=329"></script>
+    <script src="js/core/sounds.js?v=386"></script>
+    <script src="js/mobile/touch-controls.js?v=386"></script>
 </body>
 </html>

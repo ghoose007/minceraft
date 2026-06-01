@@ -163,7 +163,7 @@ class ZombiePigman extends Mob {
             if (swordMesh) {
                 swordMesh.scale.set(0.4, 0.4, 0.4);
                 swordMesh.rotation.set(1.75, 2.538, 0);
-                swordMesh.position.set(-1/16, 4/16, 0);
+                swordMesh.position.set(-0.20, 0, 0);
                 const heldAnchor = new THREE.Group();
                 heldAnchor.position.set(0, -12.5/16, 0);
                 heldAnchor.add(swordMesh);
@@ -379,10 +379,9 @@ class ZombiePigman extends Mob {
                 this._swingAnim = 1.0;
                 if (gameMode === 'survival') {
                     window.applyPlayerDamage(4); // Gold sword = 4 damage
-                    const kbDist = distXZ || 1;
-                    player.vx += (dx / kbDist) * 6.0;
-                    player.vz += (dz / kbDist) * 6.0;
-                    player.vy = Math.max(player.vy, 4.0);
+                    if (typeof window.applyPlayerKnockback === 'function') {
+                        window.applyPlayerKnockback(this.x, this.z, 5.0, 2.4);
+                    }
                 }
             }
         } else {
@@ -521,7 +520,7 @@ class ZombiePigman extends Mob {
 }
 
 // --- TAKE DAMAGE: aggro self + all nearby pigmen ---
-ZombiePigman.prototype.takeDamage = function(amount, sourceX, sourceZ, isFireDamage) {
+ZombiePigman.prototype.takeDamage = function(amount, sourceX, sourceZ, isFireDamage, kbDirX, kbDirZ) {
     if (this.hurtTime > 0 || this.dying || this.dead) return;
     this.health -= amount;
     this.hurtTime = 0.5;
@@ -540,12 +539,7 @@ ZombiePigman.prototype.takeDamage = function(amount, sourceX, sourceZ, isFireDam
 
     if (!isFireDamage) {
         this.material.color.setHex(0xff7777);
-        const dx = this.x - sourceX, dz = this.z - sourceZ;
-        const dist = Math.sqrt(dx*dx + dz*dz) || 1;
-        this.vx = (dx / dist) * 6.0;
-        this.vz = (dz / dist) * 6.0;
-        this.vy = 6.0;
-        this.onGround = false;
+        this.applyKnockback(sourceX, sourceZ, 7.0, 2.2, kbDirX, kbDirZ);
 
         // Play angry sound on initial aggro
         if (!this.isAggro && typeof window.playMobSound === 'function') {

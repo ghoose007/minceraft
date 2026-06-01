@@ -75,8 +75,26 @@ Mob.prototype._applyPhysics = function(dt) {
     // --- Horizontal with step-up ---
     let needsJump = false;
     const STEP_HEIGHT = this.onGround ? 0.6 : 0;
-    const moveX = this.vx * dt;
-    const moveZ = this.vz * dt;
+
+    // v385: This shared prototype method is the real mob physics method used by
+    // zombies/skeletons/creepers/pigmen because pig.js overwrites Mob.prototype
+    // after mob-core.js loads. Previous knockback patches changed mob-core only,
+    // so hostile mobs still moved with this.vx/this.vz and ignored knockback.
+    const kbActive = (this._knockbackTimer || 0) > 0;
+    if (kbActive) {
+        this._knockbackTimer = Math.max(0, this._knockbackTimer - dt);
+    }
+
+    // AI movement writes this.vx/this.vz each frame. Combat knockback is a
+    // separate physical velocity that is added here, or used by itself during
+    // the first hit frames so chase/pathfinding cannot cancel the push.
+    const aiVx = kbActive ? 0 : this.vx;
+    const aiVz = kbActive ? 0 : this.vz;
+    const totalVx = aiVx + (this.knockbackX || 0);
+    const totalVz = aiVz + (this.knockbackZ || 0);
+
+    const moveX = totalVx * dt;
+    const moveZ = totalVz * dt;
 
     // Try combined XZ first
     const xzResult = this._sweepAxis(this.x, this.y, this.z, 'x', moveX);
@@ -94,10 +112,12 @@ Mob.prototype._applyPhysics = function(dt) {
             needsJump = true;
         } else {
             this.x = xzResult.pos.x;
+            this.knockbackX = 0;
             needsJump = this.onGround; // signal jump if blocked on ground
         }
     } else {
         this.x = xzResult.pos.x;
+        this.knockbackX = 0;
     }
 
     const zResult = this._sweepAxis(this.x, this.y, this.z, 'z', moveZ);
@@ -114,11 +134,20 @@ Mob.prototype._applyPhysics = function(dt) {
             needsJump = true;
         } else {
             this.z = zResult.pos.z;
+            this.knockbackZ = 0;
             if (!needsJump) needsJump = this.onGround;
         }
     } else {
         this.z = zResult.pos.z;
+        this.knockbackZ = 0;
     }
+
+    // Knockback friction: fast ground friction, slower air drift.
+    const kbDecay = Math.exp(-(this.onGround ? 7.0 : 3.0) * dt);
+    this.knockbackX = (this.knockbackX || 0) * kbDecay;
+    this.knockbackZ = (this.knockbackZ || 0) * kbDecay;
+    if (Math.abs(this.knockbackX) < 0.015) this.knockbackX = 0;
+    if (Math.abs(this.knockbackZ) < 0.015) this.knockbackZ = 0;
 
     // --- Water sound hooks ---
     if (!this._splashCooldown) this._splashCooldown = 0;

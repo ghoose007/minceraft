@@ -472,9 +472,15 @@ function movePlayer(dt) {
         }
     }
 
-    let dx = player.vx * dt;
+    // v382: combine player movement with separate combat knockback.
+    // Input acceleration keeps controlling vx/vz, while knockback decays independently.
+    const playerKbFriction = player.onGround ? 10.0 : 4.0;
+    const totalPlayerVx = player.vx + (player.knockbackX || 0);
+    const totalPlayerVz = player.vz + (player.knockbackZ || 0);
+
+    let dx = totalPlayerVx * dt;
     let dy = player.vy * dt;
-    let dz = player.vz * dt;
+    let dz = totalPlayerVz * dt;
 
     const oldX = player.x;
     const oldZ = player.z;
@@ -496,7 +502,8 @@ function movePlayer(dt) {
                 player.onGround = dropResult.collided;
             } else {
                 player.x = xResult.val;
-                player.vx = 0; 
+                player.vx = 0;
+                player.knockbackX = 0;
                 _blockedX = true;
             }
         } else {
@@ -521,7 +528,8 @@ function movePlayer(dt) {
                 player.onGround = dropResult.collided;
             } else {
                 player.z = zResult.val;
-                player.vz = 0; 
+                player.vz = 0;
+                player.knockbackZ = 0;
                 _blockedZ = true;
             }
         } else {
@@ -532,6 +540,12 @@ function movePlayer(dt) {
     } else {
         player.z += dz;
     }
+
+    const playerKbDecay = Math.exp(-playerKbFriction * dt);
+    player.knockbackX = (player.knockbackX || 0) * playerKbDecay;
+    player.knockbackZ = (player.knockbackZ || 0) * playerKbDecay;
+    if (Math.abs(player.knockbackX) < 0.02) player.knockbackX = 0;
+    if (Math.abs(player.knockbackZ) < 0.02) player.knockbackZ = 0;
 
     // --- AUTOJUMP (mobile only) ---
     if (typeof window.isMobileMode === 'function' && window.isMobileMode() &&

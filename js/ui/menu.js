@@ -104,9 +104,9 @@ var worldSizeChunksMobile = [16, 32];
 function _getWorldSizeLabels() { return (window._deviceChoice === 'mobile') ? worldSizeLabelsMobile : worldSizeLabelsDesktop; }
 function _getWorldSizeChunks() { return (window._deviceChoice === 'mobile') ? worldSizeChunksMobile : worldSizeChunksDesktop; }
 
-const worldTypeLabels = ['Default', 'Superflat', 'Amplified', 'Single Biome', 'Alpha', 'Skyblock'];
-const singleBiomeList = ['plains', 'forest', 'desert', 'badlands', 'tundra', 'ice_spikes', 'taiga', 'rainforest', 'swamp', 'jungle', 'extreme_hills'];
-const singleBiomeLabels = ['Plains', 'Forest', 'Desert', 'Badlands', 'Tundra', 'Ice Spikes', 'Taiga', 'Rainforest', 'Swamp', 'Jungle', 'Extreme Hills'];
+const worldTypeLabels = ['Default', 'Superflat', 'Amplified', 'Single Biome', 'Alpha', 'Skyblock', 'Beta 1.7.3'];
+const singleBiomeList = ['plains', 'forest', 'seasonal_forest', 'savanna', 'desert', 'badlands', 'tundra', 'ice_spikes', 'taiga', 'rainforest', 'swamp', 'jungle', 'extreme_hills'];
+const singleBiomeLabels = ['Plains', 'Forest', 'Seasonal Forest', 'Savanna', 'Desert', 'Badlands', 'Tundra', 'Ice Spikes', 'Taiga', 'Rainforest', 'Swamp', 'Jungle', 'Extreme Hills'];
 
 function _forceSkyblockWorldSizeIfNeeded() {
     if (worldOptions.worldtype !== 5) return;
@@ -119,6 +119,51 @@ function _forceSkyblockWorldSizeIfNeeded() {
     if (el) el.textContent = labels[worldOptions.worldsize];
 }
 
+function _isLockedPresetWorldType() {
+    return worldOptions.worldtype === 4 || worldOptions.worldtype === 5 || worldOptions.worldtype === 6;
+}
+
+function _isBeta173WorldType() {
+    return worldOptions.worldtype === 6;
+}
+
+function _applyLockedPresetGameplayOptions() {
+    if (_isBeta173WorldType()) {
+        worldOptions.hungerEnabled = false;
+        worldOptions.xpenabled = false;
+        worldOptions.aetherEnabled = false;
+        var h = document.getElementById('opt-hungerEnabled');
+        var xp = document.getElementById('opt-xpenabled');
+        var ae = document.getElementById('opt-aetherEnabled');
+        if (h) _setMcText(h, 'OFF');
+        if (xp) _setMcText(xp, 'OFF');
+        if (ae) _setMcText(ae, 'OFF');
+    }
+}
+
+
+
+
+function _setMcText(el, text) {
+    if (!el) return;
+    if (window.mcFont && typeof window.mcFont.updateEl === 'function' && window.mcFont.isReady && window.mcFont.isReady()) {
+        window.mcFont.updateEl(el, String(text));
+    } else {
+        el.textContent = String(text);
+    }
+}
+
+function enforcePixelFont(root) {
+    // The game uses textures/minecraft_font.png via window.mcFont for UI text.
+    // Do not force browser fonts here; re-render relevant dynamic elements as
+    // bitmap canvases whenever menu/settings text changes.
+    try {
+        if (window.mcFont && typeof window.mcFont.applyToAll === 'function') {
+            window.mcFont.applyToAll();
+        }
+    } catch (_) {}
+}
+
 function toggleOption(key) {
     if (key === 'worldsize') {
         if (worldOptions.worldtype === 5) {
@@ -127,21 +172,22 @@ function toggleOption(key) {
         }
         var labels = _getWorldSizeLabels();
         worldOptions.worldsize = (worldOptions.worldsize + 1) % labels.length;
-        document.getElementById('opt-worldsize').textContent = labels[worldOptions.worldsize];
+        _setMcText(document.getElementById('opt-worldsize'), labels[worldOptions.worldsize]);
     } else if (key === 'gamemode') {
         worldOptions.gamemode = worldOptions.gamemode === 'survival' ? 'creative' : 'survival';
-        document.getElementById('opt-gamemode').textContent = worldOptions.gamemode === 'survival' ? 'Survival' : 'Creative';
+        _setMcText(document.getElementById('opt-gamemode'), worldOptions.gamemode === 'survival' ? 'Survival' : 'Creative');
     } else if (key === 'worldtype') {
         worldOptions.worldtype = (worldOptions.worldtype + 1) % worldTypeLabels.length;
-        document.getElementById('opt-worldtype').textContent = worldTypeLabels[worldOptions.worldtype];
+        _setMcText(document.getElementById('opt-worldtype'), worldTypeLabels[worldOptions.worldtype]);
         const biomeGroup = document.getElementById('single-biome-group');
         if (biomeGroup) biomeGroup.style.display = worldOptions.worldtype === 3 ? 'block' : 'none';
         if (worldOptions.worldtype === 5) _forceSkyblockWorldSizeIfNeeded();
+        _applyLockedPresetGameplayOptions();
         if (typeof _applySuperflatGreyout === 'function') _applySuperflatGreyout();
-        // Alpha and Skyblock disable Advanced Settings; Skyblock is a locked prototype preset.
+        // Alpha, Skyblock, and Beta 1.7.3 are locked presets.
         const advBtn = document.getElementById('btn-advanced-settings');
         if (advBtn) {
-            if (worldOptions.worldtype === 4 || worldOptions.worldtype === 5) advBtn.classList.add('disabled');
+            if (_isLockedPresetWorldType()) advBtn.classList.add('disabled');
             else advBtn.classList.remove('disabled');
         }
         const worldSizeBtn = document.getElementById('opt-worldsize');
@@ -151,26 +197,32 @@ function toggleOption(key) {
         }
     } else if (key === 'singlebiome') {
         worldOptions.singleBiome = (worldOptions.singleBiome + 1) % singleBiomeList.length;
-        document.getElementById('opt-singlebiome').textContent = singleBiomeLabels[worldOptions.singleBiome];
+        _setMcText(document.getElementById('opt-singlebiome'), singleBiomeLabels[worldOptions.singleBiome]);
     } else if (key === 'hostilespawns' || key === 'xpenabled' || key === 'hungerEnabled' || key === 'monolithsEnabled' || key === 'structures' || key === 'caves' || key === 'lava' || key === 'aetherEnabled') {
+        if (_isBeta173WorldType() && (key === 'xpenabled' || key === 'hungerEnabled' || key === 'aetherEnabled')) {
+            _applyLockedPresetGameplayOptions();
+            return;
+        }
         worldOptions[key] = !worldOptions[key];
         var el = document.getElementById('opt-' + key);
-        if (el) el.textContent = worldOptions[key] ? 'ON' : 'OFF';
+        if (el) _setMcText(el, worldOptions[key] ? 'ON' : 'OFF');
     } else {
         worldOptions[key] = !worldOptions[key];
         var el = document.getElementById('opt-' + key);
-        if (el) el.textContent = worldOptions[key] ? 'ON' : 'OFF';
+        if (el) _setMcText(el, worldOptions[key] ? 'ON' : 'OFF');
     }
+    if (typeof enforcePixelFont === 'function') enforcePixelFont(document);
 }
 
 function updateSliderVal(slider, valId) {
     var el = document.getElementById(valId);
     if (!el) return;
     if (valId.includes('density') || valId.includes('abundance') || valId.includes('volatility') || valId.includes('foliage') || valId.includes('rate') || valId.includes('openness') || valId.includes('glow') || valId.includes('fire') || valId.includes('soulsand') || valId.includes('lavafalls') || valId.includes('gravel') || valId.includes('quartz') || valId.includes('cavesize') || valId.includes('hostilerate') || valId.includes('biome-height') || valId.includes('biome-var') || valId.includes('biome-tree') || valId.includes('biome-foliage') || valId.includes('ravinefreq') || valId.includes('ravinedepth') || valId.includes('ravinewidth') || valId.includes('tunnelfreq') || valId.includes('tunnellen') || valId.includes('tunnelradius') || valId.includes('tunnelbranch')) {
-        el.textContent = slider.value + '%';
+        _setMcText(el, slider.value + '%');
     } else {
-        el.textContent = slider.value;
+        _setMcText(el, slider.value);
     }
+    if (typeof enforcePixelFont === 'function') enforcePixelFont(document);
 }
 
 // ==========================================
@@ -178,6 +230,9 @@ function updateSliderVal(slider, valId) {
 // ==========================================
 
 function showMainMenu() {
+    if (window.MusicManager && typeof window.MusicManager.stopForMenu === 'function') {
+        window.MusicManager.stopForMenu();
+    }
     document.getElementById('main-menu').classList.remove('hidden');
     document.getElementById('create-world').classList.add('hidden');
     document.getElementById('loading-screen').classList.add('hidden');
@@ -235,6 +290,8 @@ function showAdvCategory(name) {
 const BIOME_TUNE_LIST = [
     { key: 'plains', label: 'Plains' },
     { key: 'forest', label: 'Forest' },
+    { key: 'seasonal_forest', label: 'Seasonal Forest' },
+    { key: 'savanna', label: 'Savanna' },
     { key: 'desert', label: 'Desert' },
     { key: 'badlands', label: 'Badlands' },
     { key: 'tundra', label: 'Tundra' },
@@ -440,6 +497,7 @@ function _readBiomeOverrides() {
 
 async function startWorldCreation() {
     if (worldOptions.worldtype === 5) _forceSkyblockWorldSizeIfNeeded();
+    if (worldOptions.worldtype === 6) _applyLockedPresetGameplayOptions();
     var seedStr = document.getElementById('world-seed').value.trim();
     var worldName = document.getElementById('world-name').value.trim() || 'New World';
 
@@ -543,6 +601,26 @@ async function startWorldCreation() {
         GEN_XP_ENABLED = false;
     }
 
+    // Beta 1.7.3 preset: old biome set only, no hunger, no XP, no Aether.
+    // World customization is locked by the menu for this preset.
+    if (GEN_WORLD_TYPE === 6) {
+        GEN_HUNGER_ENABLED = false;
+        GEN_XP_ENABLED = false;
+        GEN_AETHER_ENABLED = false;
+        worldOptions.hungerEnabled = false;
+        worldOptions.xpenabled = false;
+        worldOptions.aetherEnabled = false;
+        GEN_SINGLE_BIOME = '';
+
+        // Beta 1.7.3 preset worldgen: no ravines, older rolling terrain,
+        // and no modern customization override from the locked advanced menu.
+        GEN_RAVINE_FREQUENCY = 0;
+        GEN_SMOOTHNESS = Math.max(GEN_SMOOTHNESS, 165);
+        GEN_VOLATILITY_MULT = Math.min(GEN_VOLATILITY_MULT, 85);
+        GEN_TERRAIN_HEIGHT = Math.min(GEN_TERRAIN_HEIGHT, 80);
+        GEN_BIOME_SCALE = Math.max(GEN_BIOME_SCALE, 260);
+    }
+
     // Apply mob settings to runtime globals
     if (typeof MOB_CAP_HOSTILE !== 'undefined') MOB_CAP_HOSTILE = GEN_HOSTILE_CAP;
 
@@ -572,6 +650,7 @@ async function startWorldCreation() {
 window.addEventListener('load', function() {
     drawDirtBg('dirt-bg');
     pickSplash();
+    if (typeof enforcePixelFont === 'function') enforcePixelFont(document);
 });
 window.addEventListener('resize', function() {
     if (!document.getElementById('main-menu').classList.contains('hidden')) drawDirtBg('dirt-bg');
@@ -590,18 +669,20 @@ const SUPERFLAT_DISABLED_CATEGORIES = ['terrain', 'biomes', 'caves', 'nature', '
 function _applySuperflatGreyout() {
     const isSuperflat = (worldOptions.worldtype === 1);
     const isSkyblock = (worldOptions.worldtype === 5);
+    const isBeta173 = (worldOptions.worldtype === 6);
+    const isLocked = isSkyblock || isBeta173;
 
-    // Toggle disabled class on greyed-out categories. Skyblock is a locked
-    // preset, so all custom worldgen categories are greyed out.
+    // Toggle disabled class on greyed-out categories. Locked presets grey out
+    // all world customization because their terrain/gameplay rules are fixed.
     for (const cat of SUPERFLAT_DISABLED_CATEGORIES) {
         const btn = document.getElementById('adv-cat-btn-' + cat);
         if (btn) {
-            if (isSuperflat || isSkyblock) btn.classList.add('disabled');
+            if (isSuperflat || isLocked) btn.classList.add('disabled');
             else btn.classList.remove('disabled');
         }
     }
 
-    if (isSkyblock) {
+    if (isLocked) {
         const allAdvBtns = document.querySelectorAll('[id^="adv-cat-btn-"]');
         for (let i = 0; i < allAdvBtns.length; i++) allAdvBtns[i].classList.add('disabled');
     }
@@ -610,7 +691,7 @@ function _applySuperflatGreyout() {
     const superflatBtn = document.getElementById('adv-cat-btn-superflat');
     if (superflatBtn) {
         superflatBtn.style.display = isSuperflat ? 'block' : 'none';
-        if (isSkyblock) superflatBtn.classList.add('disabled');
+        if (isLocked) superflatBtn.classList.add('disabled');
     }
 
     const worldSizeBtn = document.getElementById('opt-worldsize');
@@ -619,12 +700,13 @@ function _applySuperflatGreyout() {
         else worldSizeBtn.classList.remove('disabled');
     }
     if (isSkyblock) _forceSkyblockWorldSizeIfNeeded();
+    if (isBeta173) _applyLockedPresetGameplayOptions();
 
     // If currently viewing a disabled category, switch to a visible one
     const visibleCat = document.querySelector('.adv-category[style*="block"]');
-    if (visibleCat && (isSuperflat || isSkyblock)) {
+    if (visibleCat && (isSuperflat || isLocked)) {
         const catName = visibleCat.id.replace('adv-', '');
-        if (isSkyblock) {
+        if (isLocked) {
             showAdvCategory('superflat');
         } else if (SUPERFLAT_DISABLED_CATEGORIES.includes(catName)) {
             showAdvCategory('superflat');

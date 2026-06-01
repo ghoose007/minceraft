@@ -92,6 +92,7 @@ window.spawnDroppedItem = function(x, y, z, id, count = 1, customVx = null, cust
         vx: customVx !== null ? customVx : (Math.random() - 0.5) * 3.0,
         vy: customVy !== null ? customVy : 2.0 + Math.random() * 2.0,
         vz: customVz !== null ? customVz : (Math.random() - 0.5) * 3.0,
-        age: 0, pickupDelay: customVx !== null ? 1.5 : 0.8 
+        age: 0, pickupDelay: customVx !== null ? 1.5 : 0.8,
+        onGroundForMerge: false
     });
 };

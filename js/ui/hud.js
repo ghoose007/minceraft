@@ -756,28 +756,85 @@ function buildHandMesh() {
         handTexture = new THREE.TextureLoader().load('textures/handtexture.png?v=' + ASSET_VERSION);
         handTexture.magFilter = THREE.NearestFilter;
         handTexture.minFilter = THREE.NearestFilter;
+        handTexture.generateMipmaps = false;
+        handTexture.wrapS = THREE.ClampToEdgeWrapping;
+        handTexture.wrapT = THREE.ClampToEdgeWrapping;
+        handTexture.needsUpdate = true;
         handMaterial = new THREE.MeshBasicMaterial({ map: handTexture, vertexColors: true });
         if (typeof injectLightingShader === 'function') injectLightingShader(handMaterial);
     }
     
-    const geo = new THREE.BoxGeometry(0.6, 0.6, 1.8).toNonIndexed();
-    geo.translate(0, 0, -0.9); 
-    const uvs = geo.attributes.uv.array;
-    
-    const setUV = (faceIdx, u1, v1, u2, v2) => {
-        const uMin = u1 / 16, uMax = u2 / 16;
-        const vMax = 1.0 - (v1 / 12), vMin = 1.0 - (v2 / 12);
-        const uvArr = [ uMin, vMax, uMin, vMin, uMax, vMax, uMin, vMin, uMax, vMin, uMax, vMax ];
-        for(let i=0; i<6; i++) { uvs[(faceIdx * 6 + i) * 2] = uvArr[i*2]; uvs[(faceIdx * 6 + i) * 2 + 1] = uvArr[i*2+1]; }
+    // v365: keep the original first-person arm mesh size, build
+    // custom segmented geometry, and use outward-facing winding on every face. The old RepeatWrapping fix repeated the
+    // whole handtexture.png atlas, causing black bars when UVs crossed out
+    // of the brown arm strip. This repeats only the correct sub-rect by
+    // creating multiple quads, each mapped inside the valid arm pixels.
+    const positions = [];
+    const normals = [];
+    const uvsArr = [];
+    const indices = [];
+    let vIndex = 0;
+
+    const HAND_TEX_W = 16;
+    const HAND_TEX_H = 12;
+    const W = 0.6;
+    const H = 0.6;
+    const L = 1.8;
+    const x0 = -W / 2, x1 = W / 2;
+    const y0 = -H / 2, y1 = H / 2;
+    const z0 = -L, z1 = 0;
+
+    const uvRect = (u1, v1, u2, v2) => {
+        return {
+            uMin: u1 / HAND_TEX_W,
+            uMax: u2 / HAND_TEX_W,
+            vMax: 1.0 - (v1 / HAND_TEX_H),
+            vMin: 1.0 - (v2 / HAND_TEX_H)
+        };
     };
 
-    setUV(0, 0, 0, 4, 8);    // +X 
-    setUV(1, 8, 0, 12, 8);   // -X 
-    setUV(2, 4, 0, 8, 8);    // +Y 
-    setUV(3, 12, 0, 16, 8);  // -Y 
-    setUV(4, 4, 8, 8, 12);   // +Z 
-    setUV(5, 0, 8, 4, 12);   // -Z 
-    
+    const addQuad = (verts, normal, rect) => {
+        positions.push(
+            verts[0][0], verts[0][1], verts[0][2],
+            verts[1][0], verts[1][1], verts[1][2],
+            verts[2][0], verts[2][1], verts[2][2],
+            verts[3][0], verts[3][1], verts[3][2]
+        );
+        for (let i = 0; i < 4; i++) normals.push(normal[0], normal[1], normal[2]);
+        uvsArr.push(
+            rect.uMin, rect.vMax,
+            rect.uMin, rect.vMin,
+            rect.uMax, rect.vMin,
+            rect.uMax, rect.vMax
+        );
+        indices.push(vIndex, vIndex + 1, vIndex + 2, vIndex, vIndex + 2, vIndex + 3);
+        vIndex += 4;
+    };
+
+    // Long side faces: the mesh is 3 blocks/pixel-units long relative to its
+    // width. We split each long face into three 0.6-long sections. Each section
+    // maps to a safe 4x4-pixel slice inside the correct brown side texture.
+    // This creates texture wrapping without ever sampling the black/empty atlas area.
+    for (let s = 0; s < 3; s++) {
+        const za = z1 - s * W;
+        const zb = z1 - (s + 1) * W;
+
+        addQuad([[x1,y0,za],[x1,y0,zb],[x1,y1,zb],[x1,y1,za]], [1,0,0],  uvRect(0, 0, 4, 4));   // +X
+        addQuad([[x0,y0,zb],[x0,y0,za],[x0,y1,za],[x0,y1,zb]], [-1,0,0], uvRect(8, 0, 12, 4));  // -X
+        addQuad([[x0,y1,zb],[x0,y1,za],[x1,y1,za],[x1,y1,zb]], [0,1,0],  uvRect(4, 0, 8, 4));   // +Y
+        addQuad([[x0,y0,za],[x0,y0,zb],[x1,y0,zb],[x1,y0,za]], [0,-1,0], uvRect(12, 0, 16, 4)); // -Y
+    }
+
+    // End caps use the existing 4x4 regions once.
+    addQuad([[x0,y1,z1],[x0,y0,z1],[x1,y0,z1],[x1,y1,z1]], [0,0,1],  uvRect(4, 8, 8, 12)); // +Z/front
+    addQuad([[x1,y1,z0],[x1,y0,z0],[x0,y0,z0],[x0,y1,z0]], [0,0,-1], uvRect(0, 8, 4, 12)); // -Z/back
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvsArr, 2));
+    geo.setIndex(indices);
+
     const biomeTints = new Float32Array(geo.attributes.position.count * 3);
     for(let i=0; i<biomeTints.length; i++) biomeTints[i] = 1;
     geo.setAttribute('aBiomeTint', new THREE.BufferAttribute(biomeTints, 3));

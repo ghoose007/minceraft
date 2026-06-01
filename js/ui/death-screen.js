@@ -19,7 +19,7 @@
                 align-items: center;
                 justify-content: center;
                 flex-direction: column;
-                font-family: 'Minecraft', monospace, sans-serif;
+                font-family: 'MinecraftBitmap', 'Courier New', monospace, sans-serif;
                 pointer-events: none;
             }
             #death-screen.visible {

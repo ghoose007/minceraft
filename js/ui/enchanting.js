@@ -62,7 +62,7 @@ function renderEnchanting() {
                 if (item.count > 1) { const c = document.createElement('div'); c.className = 'item-count'; c.textContent = item.count; slot.appendChild(c); }
                 if (typeof updateDurabilityBar === 'function') updateDurabilityBar(slot, item);
             }
-            slot.addEventListener('mousedown', ((idx) => (e) => { e.stopPropagation(); interactWithSlot(inventory[idx], e); renderEnchanting(); window.updateCursorItemUI(e); })(i));
+            slot.addEventListener('mousedown', ((idx) => (e) => { e.stopPropagation(); if (e.shiftKey && !window.cursorItem && typeof _shiftMoveInventorySlot === 'function') { _shiftMoveInventorySlot(idx); } else { interactWithSlot(inventory[idx], e); } renderEnchanting(); if (typeof buildUI === 'function') buildUI(); window.updateCursorItemUI(e); })(i));
             if (typeof bindHoverEvents === 'function' && item && item.id) bindHoverEvents(slot, item.id);
             mainInv.appendChild(slot);
         }
@@ -79,7 +79,7 @@ function renderEnchanting() {
                 if (item.count > 1) { const c = document.createElement('div'); c.className = 'item-count'; c.textContent = item.count; slot.appendChild(c); }
                 if (typeof updateDurabilityBar === 'function') updateDurabilityBar(slot, item);
             }
-            slot.addEventListener('mousedown', ((idx) => (e) => { e.stopPropagation(); interactWithSlot(inventory[idx], e); renderEnchanting(); window.updateCursorItemUI(e); })(i));
+            slot.addEventListener('mousedown', ((idx) => (e) => { e.stopPropagation(); if (e.shiftKey && !window.cursorItem && typeof _shiftMoveInventorySlot === 'function') { _shiftMoveInventorySlot(idx); } else { interactWithSlot(inventory[idx], e); } renderEnchanting(); if (typeof buildUI === 'function') buildUI(); window.updateCursorItemUI(e); })(i));
             if (typeof bindHoverEvents === 'function' && item && item.id) bindHoverEvents(slot, item.id);
             hbar.appendChild(slot);
         }

@@ -148,7 +148,7 @@ function _buildMobileUI() {
             justify-content: center;
             font-size: 22px;
             color: rgba(255,255,255,0.8);
-            font-family: monospace;
+            font-family: 'MinecraftBitmap', 'Courier New', monospace;
             -webkit-tap-highlight-color: transparent;
         }
         .mobile-btn:active, .mobile-btn.active {
@@ -226,7 +226,7 @@ function _buildMobileUI() {
             transform: translate(-50%, -50%);
             color: white;
             font-size: 12px;
-            font-family: monospace;
+            font-family: 'MinecraftBitmap', 'Courier New', monospace;
             opacity: 0;
             transition: opacity 0.3s;
             pointer-events: none !important;
@@ -241,7 +241,7 @@ function _buildMobileUI() {
             background: rgba(0,0,0,0.6);
             border: 2px solid rgba(255,255,255,0.3);
             color: white;
-            font-family: monospace;
+            font-family: 'MinecraftBitmap', 'Courier New', monospace;
             font-size: 14px;
             border-radius: 8px;
             z-index: 999;
@@ -1183,7 +1183,11 @@ function _handleTap(screenX, screenY) {
         if (currentBuildBlock !== 0 && typeof TOOL_DATA !== 'undefined' && TOOL_DATA[currentBuildBlock]) {
             damage = TOOL_DATA[currentBuildBlock].damage || 1;
         }
-        hitMob.takeDamage(damage, player.x, player.z);
+        {
+                    const kbDirX = -Math.sin(player.yaw || 0);
+                    const kbDirZ = -Math.cos(player.yaw || 0);
+                    hitMob.takeDamage(damage, player.x, player.z, false, kbDirX, kbDirZ);
+                }
         if (typeof window.damageHeldTool === 'function') window.damageHeldTool(2);
         return;
     }

@@ -428,6 +428,25 @@ function _expandDimensionStorageIfNeeded(d, dimName, minChunks) {
 
 function _expandAllDimensionsForRenderDistance() {
     if (typeof dimensionData === 'undefined') return;
+
+    // v351: respect the saved world size. Mobile 256x256/512x512 worlds and
+    // intentionally small worlds must not be expanded to 96x96 on load. The
+    // older v331 expansion was too broad: it treated small saved storage as a
+    // corruption/render-distance issue and silently enlarged the world, causing
+    // empty far chunks to be generated after reload.
+    //
+    // Keep this hook as a no-op except for a future explicitly-marked legacy
+    // migration. The active render-distance/chunk-repair paths already clamp to
+    // CHUNKS_X/CHUNKS_Z bounds, so missing chunks outside a small world are not
+    // corruption and should not be generated.
+    const allowLegacyExpansion = (typeof window !== 'undefined' && window._allowLegacyStorageExpansion === true);
+    if (!allowLegacyExpansion) {
+        for (const dimName of ['overworld', 'nether', 'aether']) {
+            _sanitizeDimensionGeneratedFlags(dimensionData[dimName], dimName);
+        }
+        return;
+    }
+
     const minChunks = _minChunksForMaxRenderDistance();
     for (const dimName of ['overworld', 'nether', 'aether']) {
         _expandDimensionStorageIfNeeded(dimensionData[dimName], dimName, minChunks);
@@ -649,7 +668,7 @@ async function saveWorld(slot) {
             aetherEnabled: (typeof GEN_AETHER_ENABLED !== 'undefined' ? GEN_AETHER_ENABLED : true),
             superflatLayers: (typeof GEN_SUPERFLAT_LAYERS !== 'undefined' ? GEN_SUPERFLAT_LAYERS : null),
             superflatPreset: (typeof GEN_SUPERFLAT_PRESET !== 'undefined' ? GEN_SUPERFLAT_PRESET : 'classic'),
-            worldType: (typeof worldOptions !== 'undefined' ? worldOptions.worldtype : 0),
+            worldType: (typeof GEN_WORLD_TYPE !== 'undefined' ? GEN_WORLD_TYPE : (typeof worldOptions !== 'undefined' ? worldOptions.worldtype : 0)),
             biomeOverrides: GEN_BIOME_OVERRIDES
         },
         worldSpawnX: window.worldSpawnX || 0,
@@ -689,6 +708,9 @@ async function saveWorld(slot) {
                 id: item.id, count: item.count,
                 x: item.x, y: item.y, z: item.z,
                 vx: item.vx, vy: item.vy, vz: item.vz,
+                age: item.age || 0,
+                pickupDelay: item.pickupDelay || 0,
+                onGroundForMerge: item.onGroundForMerge === true,
                 durability: item.durability !== undefined ? item.durability : undefined
             }));
         })(),
@@ -713,6 +735,50 @@ async function saveWorld(slot) {
 // dimension, then calls init() which binds the active dimension and runs
 // lighting/meshing. v4 saves are migrated by reading old keys into the
 // dimensionData structure; on next save they get written in v5 format.
+
+
+// v376: Superflat worlds must be plains-only for tinting forever.
+// Saved biome maps can contain stale mixed biome names from old mesh/save paths,
+// so loading a superflat save overwrites the entire overworld biome map to plains
+// and clears tint/mesh biome caches before remeshing.
+function _forceSuperflatOverworldBiomesToPlains() {
+    try {
+        if (typeof GEN_WORLD_TYPE === 'undefined' || GEN_WORLD_TYPE !== 1) return;
+        const od = (typeof dimensionData !== 'undefined' && dimensionData.overworld) ? dimensionData.overworld : null;
+        if (od && od.biomeMap) {
+            const len = od.worldWidth && od.worldDepth ? (od.worldWidth * od.worldDepth) : od.biomeMap.length;
+            for (let i = 0; i < len; i++) od.biomeMap[i] = 'plains';
+        }
+        if (typeof currentDimension !== 'undefined' && currentDimension === 'overworld'
+            && typeof biomeMap !== 'undefined' && biomeMap) {
+            const len = (typeof WORLD_WIDTH !== 'undefined' && typeof WORLD_DEPTH !== 'undefined')
+                ? (WORLD_WIDTH * WORLD_DEPTH)
+                : biomeMap.length;
+            for (let i = 0; i < len; i++) biomeMap[i] = 'plains';
+        }
+        if (typeof _biomeTintCache !== 'undefined' && _biomeTintCache) _biomeTintCache.clear();
+        if (typeof _biomeFoliageTintCache !== 'undefined' && _biomeFoliageTintCache) _biomeFoliageTintCache.clear();
+        if (typeof _biomeWaterTintCache !== 'undefined' && _biomeWaterTintCache) _biomeWaterTintCache.clear();
+        if (typeof _biomeStripsSent !== 'undefined' && _biomeStripsSent) _biomeStripsSent.clear();
+        if (typeof dirtyChunks !== 'undefined' && dirtyChunks && typeof dimensionData !== 'undefined') {
+            const d = dimensionData.overworld;
+            if (d && d.generatedFlags && d.chunksX && d.chunksZ) {
+                const hx = d.chunksX >> 1, hz = d.chunksZ >> 1;
+                for (let cx = 0; cx < d.chunksX; cx++) {
+                    for (let cz = 0; cz < d.chunksZ; cz++) {
+                        if (d.generatedFlags[cx * d.chunksZ + cz] === 1) {
+                            dirtyChunks.add((cx - hx) + ',' + (cz - hz));
+                        }
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('Superflat plains biome repair failed:', e);
+    }
+}
+if (typeof window !== 'undefined') window._forceSuperflatOverworldBiomesToPlains = _forceSuperflatOverworldBiomesToPlains;
+
 
 async function loadWorldFromSlot(slot) {
     const data = await dbGet(slot);
@@ -739,9 +805,8 @@ async function loadWorldFromSlot(slot) {
         await _loadV4IntoData(slot, data);
     }
 
-    // v331: old 64x64 worlds cannot safely display/generate a 32-chunk radius
-    // because the visible ring reaches the finite storage edge. Expand the
-    // centered storage grid before init() binds dimensions or spawns workers.
+    // v351: sanitize loaded generated flags, but preserve the saved storage
+    // size. Small/mobile worlds must not be expanded on load.
     _expandAllDimensionsForRenderDistance();
     
     // CRITICAL: set CHUNKS_X_ACTIVE / CHUNKS_Z_ACTIVE from the saved overworld
@@ -823,6 +888,25 @@ async function loadWorldFromSlot(slot) {
             // because the workers only check GEN_WORLD_TYPE, not worldOptions.
             if (typeof GEN_WORLD_TYPE !== 'undefined') {
                 GEN_WORLD_TYPE = data.genParams.worldType;
+            }
+        }
+        _forceSuperflatOverworldBiomesToPlains();
+        if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 6) {
+            // Beta 1.7.3 saved worlds always keep the preset-locked gameplay
+            // and generation behavior.
+            GEN_HUNGER_ENABLED = false;
+            GEN_XP_ENABLED = false;
+            GEN_RAVINE_FREQUENCY = 0;
+            GEN_SINGLE_BIOME = '';
+            GEN_SMOOTHNESS = Math.max(GEN_SMOOTHNESS, 165);
+            GEN_VOLATILITY_MULT = Math.min(GEN_VOLATILITY_MULT, 85);
+            GEN_TERRAIN_HEIGHT = Math.min(GEN_TERRAIN_HEIGHT, 80);
+            GEN_BIOME_SCALE = Math.max(GEN_BIOME_SCALE, 260);
+            if (typeof GEN_AETHER_ENABLED !== 'undefined') GEN_AETHER_ENABLED = false;
+            if (typeof worldOptions !== 'undefined') {
+                worldOptions.hungerEnabled = false;
+                worldOptions.xpenabled = false;
+                worldOptions.aetherEnabled = false;
             }
         }
         if (data.genParams.biomeOverrides) {
@@ -1085,6 +1169,9 @@ async function _loadV4IntoData(slot, data) {
 // --- Save & Quit (called from pause menu) ---
 
 async function saveAndQuit() {
+    if (window.MusicManager && typeof window.MusicManager.stopForMenu === 'function') {
+        window.MusicManager.stopForMenu();
+    }
     if (activeWorldSlot < 0) {
         // No slot assigned yet — this was a new world, assign to a slot
         const allRecords = await dbGetAll();

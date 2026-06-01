@@ -167,7 +167,10 @@ class Arrow {
                 const dy = (mob.y + mob.height * 0.5) - this.y;
                 const dz = mob.z - this.z;
                 if (dx*dx + dy*dy + dz*dz < 0.6 * 0.6) {
-                    mob.takeDamage(this.damage, this.x, this.z);
+                    {
+                        const sp = Math.sqrt(this.vx * this.vx + this.vz * this.vz) || 1;
+                        mob.takeDamage(this.damage, this.x, this.z, false, this.vx / sp, this.vz / sp);
+                    }
                     this.hasHit = true;
                     this._remove();
                     return true;
@@ -183,6 +186,10 @@ class Arrow {
             if (dx*dx + dy*dy + dz*dz < 0.6 * 0.6) {
                 this.hasHit = true;
                 window.applyPlayerDamage(this.damage);
+                if (typeof window.applyPlayerKnockback === 'function') {
+                    // Push player away from the arrow's incoming position.
+                    window.applyPlayerKnockback(this.x, this.z, 4.5, 2.1);
+                }
                 this._remove();
                 return true;
             }

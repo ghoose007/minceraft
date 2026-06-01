@@ -15,7 +15,7 @@
 
         var title = document.createElement('div');
         title.textContent = 'How are you playing?';
-        title.style.cssText = "font-family:'MinecraftBitmap',monospace;font-size:16px;color:#3F3F3F;text-align:center;margin-bottom:8px;";
+        title.style.cssText = "font-family:'MinecraftBitmap','Courier New',monospace;font-size:16px;color:#3F3F3F;text-align:center;margin-bottom:8px;";
         box.appendChild(title);
 
         var btnM = document.createElement('button');

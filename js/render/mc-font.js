@@ -96,6 +96,36 @@
         return c;
     }
 
+
+    function _renderTextCanvasInto(el, text, scale, options) {
+        var opt = options || {};
+        var shadow = opt.shadow !== false;
+        var off = Math.max(1, Math.floor(scale * 0.8));
+        var w = Math.ceil(measure(text, scale) + (shadow ? off : 0) + 2);
+        var h = Math.ceil(8 * scale + (shadow ? off : 0) + 2);
+        var canvas = el.querySelector ? el.querySelector('canvas') : null;
+        if (!canvas) {
+            canvas = document.createElement('canvas');
+            canvas.style.margin = '0 auto';
+            canvas.style.display = 'block';
+            canvas.style.imageRendering = 'pixelated';
+            canvas.style.verticalAlign = 'middle';
+            el.innerHTML = '';
+            el.appendChild(canvas);
+        }
+        if (canvas.width !== w) canvas.width = w;
+        if (canvas.height !== h) canvas.height = h;
+        var ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = false;
+        draw(ctx, text, 0, 0, scale, opt);
+        el.style.lineHeight = '0';
+        el.style.display = 'flex';
+        el.style.alignItems = 'center';
+        el.style.justifyContent = 'center';
+        return canvas;
+    }
+
     // Convert a DOM element's text to bitmap canvas
     function convertEl(el, forceColor, forceScale) {
         if (!ready || !el) return;
@@ -124,24 +154,13 @@
             if (sm) shadowColor = '#' + ((1<<24)+(+sm[1]<<16)+(+sm[2]<<8)+(+sm[3])).toString(16).slice(1);
         }
 
-        var canvas = makeCanvas(text, scale, {color: color, shadow: true, shadowColor: shadowColor});
-        if (canvas) {
-            el.innerHTML = '';
-            canvas.style.margin = '0 auto';
-            canvas.style.display = 'block';
-            el.appendChild(canvas);
-            el.style.lineHeight = '0';
-            el.style.display = 'flex';
-            el.style.alignItems = 'center';
-            el.style.justifyContent = 'center';
-        }
+        _renderTextCanvasInto(el, text, scale, {color: color, shadow: true, shadowColor: shadowColor});
     }
 
     // Re-convert an element when its text changes
     function updateEl(el, newText, color, scale) {
         if (!ready || !el) return;
         el.setAttribute('data-mc-text', newText);
-        el.innerHTML = '';
         
         var style = window.getComputedStyle(el);
         var fs = parseFloat(style.fontSize) || 14;
@@ -149,22 +168,55 @@
         var c = color || style.color || '#ffffff';
         if (c.indexOf('rgb') === 0) { var m = c.match(/\d+/g); if (m) c = '#'+((1<<24)+(+m[0]<<16)+(+m[1]<<8)+(+m[2])).toString(16).slice(1); }
         
-        var canvas = makeCanvas(newText, sc, {color: c, shadow: true});
-        if (canvas) {
-            canvas.style.margin = '0 auto';
-            canvas.style.display = 'block';
-            el.appendChild(canvas);
-            el.style.lineHeight = '0';
-            el.style.display = 'flex';
-            el.style.alignItems = 'center';
-            el.style.justifyContent = 'center';
+        _renderTextCanvasInto(el, newText, sc, {color: c, shadow: true});
+    }
+
+
+    function shouldConvertEl(el) {
+        if (!el || !el.classList) return false;
+        if (el.hasAttribute && el.hasAttribute('data-no-mc-font')) return false;
+        if (el.classList.contains('mc-button')) return true;
+        if (el.classList.contains('mc-setting-label')) return true;
+        if (el.classList.contains('mc-slider-val')) return true;
+        if (el.classList.contains('mc-create-title')) return true;
+        if (el.classList.contains('mc-version')) return true;
+        if (el.classList.contains('mc-copyright')) return true;
+        if (el.classList.contains('item-count')) return true;
+        if (el.classList.contains('menu-title')) return true;
+        if (el.classList.contains('death-btn')) return true;
+        if (el.classList.contains('loading-subtitle')) return true;
+        var id = el.id || '';
+        if (id === 'loading-title' || id === 'loading-status' || id === 'action-text' ||
+            id === 'xp-level-text' || id === 'camera-mode-text' || id === 'splash-text') return true;
+        var tag = (el.tagName || '').toLowerCase();
+        if (tag === 'button') return true;
+        if (tag === 'h1' || tag === 'h2' || tag === 'h3') return true;
+        if (el.closest) {
+            if (el.closest('#pause-main, #options-menu, #video-settings-menu, #controls-menu, #death-screen')) {
+                if (tag === 'h1' || tag === 'h2' || el.classList.contains('mc-button')) return true;
+            }
         }
+        return false;
+    }
+
+    function convertIfNeeded(el, explicitText) {
+        if (!ready || !el || !shouldConvertEl(el)) return;
+        var text = explicitText;
+        if (text === undefined || text === null) {
+            text = el.getAttribute('data-mc-text') || el.textContent.trim();
+        }
+        text = String(text).trim();
+        if (!text) return;
+        var existing = el.querySelector ? el.querySelector('canvas') : null;
+        if (existing && el.getAttribute('data-mc-text') === text) return;
+        updateEl(el, text);
     }
 
     function applyToAll() {
         if (!ready) return;
         // All static text elements
         var selectors = [
+            'button',
             '.mc-button',
             '.mc-setting-label', 
             '.mc-slider-val',
@@ -213,20 +265,20 @@
         if (camText && camText.textContent.trim()) convertEl(camText);
     }
 
-    // Watch for DOM changes
+    // Watch for DOM/text changes. Dynamic UI updates usually set textContent,
+    // which replaces the old bitmap canvas with normal DOM text. Re-convert
+    // every relevant UI element back through minecraft_font.png immediately.
     var _debounce = null;
-    var observer = new MutationObserver(function() {
+    var observer = new MutationObserver(function(mutations) {
         if (_debounce) clearTimeout(_debounce);
         _debounce = setTimeout(function() {
             if (!ready) return;
-            // Convert any new .item-count elements
-            var counts = document.querySelectorAll('.item-count');
-            for (var i = 0; i < counts.length; i++) {
-                var el = counts[i];
-                var text = el.textContent.trim();
-                if (!text || el.querySelector('canvas')) continue;
-                convertEl(el);
+            for (var m = 0; m < mutations.length; m++) {
+                var target = mutations[m].target;
+                if (target && target.nodeType === 1) convertIfNeeded(target);
+                if (target && target.parentElement) convertIfNeeded(target.parentElement);
             }
+            applyToAll();
         }, 16);
     });
 
@@ -236,27 +288,39 @@
         applyToAll();
     }
 
-    // Intercept innerText/textContent on buttons to re-render
-    var origDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'innerText');
-    if (origDesc && origDesc.set) {
-        Object.defineProperty(HTMLElement.prototype, 'innerText', {
-            set: function(val) {
-                origDesc.set.call(this, val);
-                // If this is a mc-button, re-convert with the new text
-                if (ready && this.classList && this.classList.contains('mc-button')) {
-                    // Clear cached text so convertEl reads fresh textContent
-                    this.removeAttribute('data-mc-text');
-                    var self = this;
-                    setTimeout(function() { convertEl(self); }, 0);
-                }
-            },
-            get: function() { 
-                var stored = this.getAttribute('data-mc-text');
-                if (stored) return stored;
-                return origDesc.get.call(this); 
-            }
-        });
+    // Intercept textContent/innerText on bitmap-text UI so updates never show
+    // browser-rendered fallback text. The element is immediately rebuilt as a
+    // canvas drawn from textures/minecraft_font.png.
+    function installTextSetterHook(propName) {
+        var proto = Node.prototype;
+        var desc = Object.getOwnPropertyDescriptor(proto, propName);
+        if (!desc || !desc.set) {
+            proto = HTMLElement.prototype;
+            desc = Object.getOwnPropertyDescriptor(proto, propName);
+        }
+        if (!desc || !desc.set || !desc.get) return;
+
+        try {
+            Object.defineProperty(proto, propName, {
+                set: function(val) {
+                    desc.set.call(this, val);
+                    if (ready && this.nodeType === 1 && shouldConvertEl(this)) {
+                        convertIfNeeded(this, val);
+                    }
+                },
+                get: function() {
+                    if (this.nodeType === 1 && shouldConvertEl(this)) {
+                        var stored = this.getAttribute && this.getAttribute('data-mc-text');
+                        if (stored) return stored;
+                    }
+                    return desc.get.call(this);
+                },
+                configurable: true
+            });
+        } catch (_) {}
     }
+    installTextSetterHook('textContent');
+    installTextSetterHook('innerText');
 
     window.mcFont = {
         draw: draw,

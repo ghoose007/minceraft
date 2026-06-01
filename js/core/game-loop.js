@@ -1104,6 +1104,7 @@ function spawnMeshWorker() {
         CHUNK_VOLUME: CHUNK_VOLUME,
         BLOCK_DATA: BLOCK_DATA,
         settings: {
+            GEN_WORLD_TYPE: typeof GEN_WORLD_TYPE !== 'undefined' ? GEN_WORLD_TYPE : 0,
             settingGraphicsFancy: typeof settingGraphicsFancy !== 'undefined' ? settingGraphicsFancy : true,
             settingSmoothLighting: typeof settingSmoothLighting !== 'undefined' ? settingSmoothLighting : true,
             settingGraphicsFabulous: typeof settingGraphicsFabulous !== 'undefined' ? settingGraphicsFabulous : false
@@ -1580,7 +1581,11 @@ function animate() {
                         if (currentBuildBlock !== 0 && typeof TOOL_DATA !== 'undefined' && TOOL_DATA[currentBuildBlock]) {
                             damage = TOOL_DATA[currentBuildBlock].damage || 1;
                         }
-                        hitMob.takeDamage(damage, player.x, player.z);
+                        {
+                    const kbDirX = -Math.sin(player.yaw || 0);
+                    const kbDirZ = -Math.cos(player.yaw || 0);
+                    hitMob.takeDamage(damage, player.x, player.z, false, kbDirX, kbDirZ);
+                }
                         swingAnimation = 1.0;
                         window.blockBreakCooldown = 0.3; 
                     } else {
@@ -2424,20 +2429,29 @@ function animate() {
             }
             
             const itemsToRemove = new Set();
+            const ITEM_MERGE_DELAY = 1.25;
             for (let i = droppedItems.length - 1; i >= 0; i--) {
                 let item = droppedItems[i];
-                
-                for (let j = i - 1; j >= 0; j--) {
-                    let other = droppedItems[j];
-                    if (other.id === item.id && other.count < (window.getMaxStack ? window.getMaxStack(item.id) : 64) && item.count > 0 && window.isStackable(item.id)) {
-                        const dSq = (item.x - other.x)**2 + (item.y - other.y)**2 + (item.z - other.z)**2;
-                        if (dSq < 1.5) { 
-                            const space = 64 - other.count;
-                            const transfer = Math.min(space, item.count);
-                            other.count += transfer;
-                            item.count -= transfer;
-                            if (transfer > 0) {
-                                other.vy += 1.5; 
+
+                // v368: item stacks may only merge after a short age delay and
+                // only when both stacks are resting on solid ground. This stops
+                // freshly-thrown matching items from merging midair.
+                if (item.age >= ITEM_MERGE_DELAY && item.onGroundForMerge === true) {
+                    for (let j = i - 1; j >= 0; j--) {
+                        let other = droppedItems[j];
+                        if (other.age < ITEM_MERGE_DELAY || other.onGroundForMerge !== true) continue;
+                        if (other.id === item.id && other.count < (window.getMaxStack ? window.getMaxStack(item.id) : 64) && item.count > 0 && window.isStackable(item.id)) {
+                            const dSq = (item.x - other.x)**2 + (item.y - other.y)**2 + (item.z - other.z)**2;
+                            if (dSq < 1.5) { 
+                                const stackLimit = window.getMaxStack ? window.getMaxStack(item.id) : 64;
+                                const space = stackLimit - other.count;
+                                const transfer = Math.min(space, item.count);
+                                other.count += transfer;
+                                item.count -= transfer;
+                                if (transfer > 0) {
+                                    other.vy += 0.25;
+                                    other.onGroundForMerge = false;
+                                }
                             }
                         }
                     }
@@ -2584,6 +2598,7 @@ function animate() {
                 }
 
                 item.x = nextX; item.y = nextY; item.z = nextZ;
+                item.onGroundForMerge = onGround && !itemInWater && Math.abs(item.vy) < 0.05;
 
                 // Destroy items that touch lava
                 const itemBlockId = getVoxel(Math.floor(item.x), Math.floor(item.y), Math.floor(item.z)) & 0xFF;

@@ -75,6 +75,14 @@ const _biomeTintCache = new Map();
 const _biomeFoliageTintCache = new Map();
 const _biomeWaterTintCache = new Map();
 
+
+function _isSuperflatPlainsTintWorld() {
+    return (typeof GEN_WORLD_TYPE !== 'undefined'
+        && GEN_WORLD_TYPE === 1
+        && (typeof currentDimension === 'undefined' || currentDimension === 'overworld'));
+}
+
+
 // v303: When a block is rendered inside alpha_forest, skip the standard
 // [0.55, 0.75, 0.4] grass/leaf desaturation fudge so the raw biome tint
 // hits the base texture directly. This gives the exact MC Alpha colors.
@@ -93,7 +101,14 @@ function getSmoothedBiomeTint(bx, bz) {
     const cached = _biomeTintCache.get(cacheKey);
     if (cached) return cached;
     
-    // v306: Alpha forest bypasses smoothing. The preset forces the whole
+    
+    if (_isSuperflatPlainsTintWorld()) {
+        const result = BIOME_COLORS['plains'] || [1,1,1];
+        _biomeTintCache.set(cacheKey, result);
+        return result;
+    }
+    
+// v306: Alpha forest bypasses smoothing. The preset forces the whole
     // world to a single biome, so averaging a 5x5 kernel just drags the
     // tint toward 'plains' when the neighbor cells haven't been synced
     // yet (edge of explored area). Return the raw alpha color directly.
@@ -148,7 +163,14 @@ function getSmoothedFoliageTint(bx, bz) {
     const cached = _biomeFoliageTintCache.get(cacheKey);
     if (cached) return cached;
     
-    // v306: Alpha forest bypass — see getSmoothedBiomeTint
+    
+    if (_isSuperflatPlainsTintWorld()) {
+        const result = BIOME_FOLIAGE_COLORS['plains'] || [1,1,1];
+        _biomeFoliageTintCache.set(cacheKey, result);
+        return result;
+    }
+    
+// v306: Alpha forest bypass — see getSmoothedBiomeTint
     const halfWb = WORLD_WIDTH / 2;
     const halfDb = WORLD_DEPTH / 2;
     const selfBiomeFast = biomeMap[(bx + halfWb) + (bz + halfDb) * WORLD_WIDTH];
@@ -194,7 +216,14 @@ function getSmoothedWaterTint(bx, bz) {
     const cached = _biomeWaterTintCache.get(cacheKey);
     if (cached) return cached;
     
-    let r = 0, g = 0, b = 0, count = 0;
+    
+    if (_isSuperflatPlainsTintWorld()) {
+        const result = (typeof BIOME_WATER_COLORS !== 'undefined' && BIOME_WATER_COLORS['plains']) ? BIOME_WATER_COLORS['plains'] : [0.247, 0.463, 0.894];
+        _biomeWaterTintCache.set(cacheKey, result);
+        return result;
+    }
+    
+let r = 0, g = 0, b = 0, count = 0;
     const halfW = WORLD_WIDTH / 2;
     const halfD = WORLD_DEPTH / 2;
     for (let dx = -2; dx <= 2; dx++) {

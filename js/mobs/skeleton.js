@@ -70,7 +70,7 @@ class Skeleton extends Mob {
             if (bowMesh) {
                 bowMesh.scale.set(0.4, 0.4, 0.4);
                 bowMesh.rotation.set(1.75, 2.8 - 15 * Math.PI / 180, 0);
-                bowMesh.position.set(-0.02, 0.18, -4/16);
+                bowMesh.position.set(-0.2, 0, -4/16);
                 const heldAnchor = new THREE.Group();
                 heldAnchor.position.set(0, -12.5/16, 0);
                 heldAnchor.add(bowMesh);
@@ -460,7 +460,7 @@ class Skeleton extends Mob {
     }
 }
 
-Skeleton.prototype.takeDamage = function(amount, sourceX, sourceZ, isFireDamage) {
+Skeleton.prototype.takeDamage = function(amount, sourceX, sourceZ, isFireDamage, kbDirX, kbDirZ) {
     if (this.hurtTime > 0 || this.dying || this.dead) return;
     this.health -= amount;
     this.hurtTime = 0.5;
@@ -479,12 +479,7 @@ Skeleton.prototype.takeDamage = function(amount, sourceX, sourceZ, isFireDamage)
 
     if (!isFireDamage) {
         this.material.color.setHex(0xff7777);
-        const dx = this.x - sourceX, dz = this.z - sourceZ;
-        const dist = Math.sqrt(dx*dx + dz*dz) || 1;
-        this.vx = (dx / dist) * 6.0;
-        this.vz = (dz / dist) * 6.0;
-        this.vy = 6.0;
-        this.onGround = false;
+        this.applyKnockback(sourceX, sourceZ, 7.0, 2.2, kbDirX, kbDirZ);
         this.isAggro = true; 
     } else {
         this.material.color.setHex(0xff8844);

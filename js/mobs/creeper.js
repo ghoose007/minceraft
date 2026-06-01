@@ -333,7 +333,7 @@ class Creeper extends Mob {
     }
 }
 
-Creeper.prototype.takeDamage = function(amount, sourceX, sourceZ, isFireDamage) {
+Creeper.prototype.takeDamage = function(amount, sourceX, sourceZ, isFireDamage, kbDirX, kbDirZ) {
     if (this.hurtTime > 0 || this.dying || this.dead) return;
     this.health -= amount;
     this.hurtTime = 0.5;
@@ -349,9 +349,7 @@ Creeper.prototype.takeDamage = function(amount, sourceX, sourceZ, isFireDamage) 
     }
     if (!isFireDamage) {
         this.material.color.setHex(0xff7777);
-        const ddx = this.x - sourceX, ddz = this.z - sourceZ;
-        const dist = Math.sqrt(ddx*ddx + ddz*ddz) || 1;
-        this.vx = (ddx/dist)*6; this.vz = (ddz/dist)*6; this.vy = 6; this.onGround = false;
+        this.applyKnockback(sourceX, sourceZ, 7.0, 2.2, kbDirX, kbDirZ);
         this.isAggro = true;
     } else { this.material.color.setHex(0xff8844); }
 };

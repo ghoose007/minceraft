@@ -38,6 +38,7 @@ var _halfW = WORLD_WIDTH >> 1;
 var _halfD = WORLD_DEPTH >> 1;
 
 // Settings — overridden by init/setSettings
+var GEN_WORLD_TYPE = 0;
 var settingGraphicsFancy = true;
 var settingSmoothLighting = true;
 var settingGraphicsFabulous = false;
@@ -207,6 +208,8 @@ const BIOME_COLORS = {
     'taiga': [134/255, 183/255, 131/255],
     'plains': [145/255, 189/255, 89/255],
     'forest': [121/255, 192/255, 90/255],
+    'seasonal_forest': [110/255, 196/255, 68/255],
+    'savanna': [179/255, 173/255, 85/255],
     'ocean': [60/255, 100/255, 160/255],
     'swamp': [106/255, 112/255, 57/255],
     'jungle': [89/255, 174/255, 48/255],
@@ -225,6 +228,8 @@ const BIOME_FOLIAGE_COLORS = {
     'taiga': [104/255, 164/255, 100/255],
     'plains': [119/255, 171/255, 47/255],
     'forest': [89/255, 174/255, 48/255],
+    'seasonal_forest': [72/255, 180/255, 36/255],
+    'savanna': [163/255, 156/255, 48/255],
     'ocean': [113/255, 168/255, 48/255],
     'swamp': [106/255, 112/255, 57/255],
     'jungle': [48/255, 150/255, 22/255],
@@ -245,6 +250,8 @@ const BIOME_WATER_COLORS = {
     'swamp':         [0x4C/255, 0x67/255, 0x59/255],
     'jungle':        [0x14/255, 0xA2/255, 0xC5/255],
     'rainforest':    [0x1B/255, 0x9E/255, 0xD8/255],
+    'seasonal_forest': [0x3F/255, 0x76/255, 0xE4/255],
+    'savanna': [0x61/255, 0x7B/255, 0x64/255],
     'ocean':         [0x3F/255, 0x76/255, 0xE4/255],
     'extreme_hills': [0x00/255, 0x7B/255, 0xF7/255],
     'badlands':      [0x3F/255, 0x76/255, 0xE4/255],
@@ -293,6 +300,7 @@ self.onmessage = function(ev) {
             
             // Apply settings
             if (msg.settings) {
+                if ('GEN_WORLD_TYPE' in msg.settings) GEN_WORLD_TYPE = msg.settings.GEN_WORLD_TYPE;
                 if ('settingGraphicsFancy' in msg.settings) settingGraphicsFancy = msg.settings.settingGraphicsFancy;
                 if ('settingSmoothLighting' in msg.settings) settingSmoothLighting = msg.settings.settingSmoothLighting;
                 if ('settingGraphicsFabulous' in msg.settings) settingGraphicsFabulous = msg.settings.settingGraphicsFabulous;
@@ -411,6 +419,7 @@ self.onmessage = function(ev) {
     
     if (msg.type === 'setSettings') {
         if (msg.settings) {
+            if ('GEN_WORLD_TYPE' in msg.settings) GEN_WORLD_TYPE = msg.settings.GEN_WORLD_TYPE;
             if ('settingGraphicsFancy' in msg.settings) settingGraphicsFancy = msg.settings.settingGraphicsFancy;
             if ('settingSmoothLighting' in msg.settings) settingSmoothLighting = msg.settings.settingSmoothLighting;
             if ('settingGraphicsFabulous' in msg.settings) settingGraphicsFabulous = msg.settings.settingGraphicsFabulous;

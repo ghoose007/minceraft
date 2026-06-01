@@ -191,6 +191,12 @@ class Mob {
     constructor(x, y, z) {
         this.x = x; this.y = y; this.z = z;
         this.vx = 0; this.vy = 0; this.vz = 0;
+        // v382: separate combat knockback impulse. AI movement writes to vx/vz every frame,
+        // so knockback must be independent or it gets overwritten before physics runs.
+        this.knockbackX = 0;
+        this.knockbackZ = 0;
+        this._knockbackPriorityTimer = 0;
+        this._knockbackTimer = 0;
         this.yaw = Math.random() * Math.PI * 2;
         this.targetYaw = this.yaw;
         this.width = 0.9;  
@@ -404,8 +410,23 @@ class Mob {
         const STEP_HEIGHT = this.onGround ? 0.6 : 0;
         let needsJump = false;
 
+        // X/Z use AI velocity plus separate combat knockback.
+        // Knockback decays quickly like MC friction but is not overwritten by AI steering.
+        const kbFriction = this.onGround ? 8.0 : 3.5;
+        const kbPriority = (this._knockbackPriorityTimer || 0) > 0;
+        if (kbPriority) {
+            this._knockbackPriorityTimer = Math.max(0, this._knockbackPriorityTimer - dt);
+            // During the first few combat frames, hostile pathfinding/chase velocity
+            // must not cancel the knockback impulse. This is the piece that fixes
+            // hostile mobs doing only a vertical hop.
+            this.vx *= Math.exp(-18.0 * dt);
+            this.vz *= Math.exp(-18.0 * dt);
+        }
+        const totalVx = kbPriority ? (this.knockbackX || 0) : (this.vx + (this.knockbackX || 0));
+        const totalVz = kbPriority ? (this.knockbackZ || 0) : (this.vz + (this.knockbackZ || 0));
+
         // X axis
-        const dx = this.vx * dt;
+        const dx = totalVx * dt;
         const xResult = this._sweepAxis(this.x, this.y, this.z, 'x', dx);
         if (xResult.collided && STEP_HEIGHT > 0) {
             // Try stepping up like the player does
@@ -420,16 +441,18 @@ class Mob {
             } else {
                 this.x = xResult.pos.x;
                 this.vx = 0;
+                this.knockbackX = 0;
             }
         } else if (xResult.collided) {
             this.x = xResult.pos.x;
             this.vx = 0;
+            this.knockbackX = 0;
         } else {
             this.x = xResult.pos.x;
         }
 
         // Z axis
-        const dz = this.vz * dt;
+        const dz = totalVz * dt;
         const zResult = this._sweepAxis(this.x, this.y, this.z, 'z', dz);
         if (zResult.collided && STEP_HEIGHT > 0) {
             const steppedY = this.y + STEP_HEIGHT;
@@ -443,15 +466,54 @@ class Mob {
             } else {
                 this.z = zResult.pos.z;
                 this.vz = 0;
+                this.knockbackZ = 0;
             }
         } else if (zResult.collided) {
             this.z = zResult.pos.z;
             this.vz = 0;
+            this.knockbackZ = 0;
         } else {
             this.z = zResult.pos.z;
         }
 
+        const decay = Math.exp(-kbFriction * dt);
+        this.knockbackX = (this.knockbackX || 0) * decay;
+        this.knockbackZ = (this.knockbackZ || 0) * decay;
+        if (Math.abs(this.knockbackX) < 0.02) this.knockbackX = 0;
+        if (Math.abs(this.knockbackZ) < 0.02) this.knockbackZ = 0;
+
         return needsJump;
+    }
+
+    applyKnockback(sourceX, sourceZ, strength = 7.0, vertical = 2.2, dirX, dirZ) {
+        let nx, nz;
+
+        // v383: player melee knockback should follow the attacker's facing direction,
+        // not only the attacker/mob center positions. This matches the Minecraft feel
+        // where the victim is pushed where the attacker is looking.
+        if (typeof dirX === 'number' && typeof dirZ === 'number') {
+            const dLen = Math.sqrt(dirX * dirX + dirZ * dirZ);
+            if (dLen < 0.001) return;
+            nx = dirX / dLen;
+            nz = dirZ / dLen;
+        } else {
+            const dx = this.x - sourceX;
+            const dz = this.z - sourceZ;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+            if (dist < 0.001) return;
+            nx = dx / dist;
+            nz = dz / dist;
+        }
+
+        // MC-style: halve current horizontal motion, then apply horizontal push and a modest hop.
+        this.knockbackX = (this.knockbackX || 0) * 0.35 + nx * strength;
+        this.knockbackZ = (this.knockbackZ || 0) * 0.35 + nz * strength;
+        this._knockbackPriorityTimer = 0.28;
+        this._knockbackTimer = 0.28;
+        this.vx *= 0.15;
+        this.vz *= 0.15;
+        this.vy = Math.max(this.vy, vertical);
+        this.onGround = false;
     }
 
     updateLighting() {
@@ -481,21 +543,16 @@ class Mob {
         });
     }
 
-    takeDamage(amount, sourceX, sourceZ) {
+    takeDamage(amount, sourceX, sourceZ, isFireDamage, kbDirX, kbDirZ) {
         if (this.hurtTime > 0 || this.dying || this.dead) return;
         
         this.health -= amount;
         this.hurtTime = 0.5; 
         this.material.color.setHex(0xff7777); 
         
-        // MC-style knockback: pushed away from attacker horizontally + small upward pop
-        const dx = this.x - sourceX;
-        const dz = this.z - sourceZ;
-        const dist = Math.sqrt(dx*dx + dz*dz) || 1;
-        this.vx = (dx / dist) * 5.0;
-        this.vz = (dz / dist) * 5.0;
-        this.vy = Math.max(this.vy, 3.5);
-        this.onGround = false;
+        if (!isFireDamage && typeof sourceX === 'number' && typeof sourceZ === 'number') {
+            this.applyKnockback(sourceX, sourceZ, 7.0, 1.9, kbDirX, kbDirZ);
+        }
         
         if (this.health <= 0) {
             this.dying = true;

@@ -24,7 +24,7 @@ function _showClickToPlay() {
     const text = document.createElement('div');
     text.textContent = 'Tap to Play';
     text.style.cssText = `
-        font-family: 'Minecraft', 'MinecraftBitmap', monospace, sans-serif;
+        font-family: 'MinecraftBitmap', 'Courier New', monospace;
         font-size: 36px;
         color: white;
         text-shadow: 3px 3px 0px #3f3f3f;
@@ -36,6 +36,9 @@ function _showClickToPlay() {
         if (!overlay.parentNode) return; // Already removed
         overlay.remove();
         document.body.requestPointerLock();
+        if (window.MusicManager && typeof window.MusicManager.unlockAndStart === 'function') {
+            window.MusicManager.unlockAndStart();
+        }
     }
     
     overlay.addEventListener('click', _startPlaying);
@@ -934,9 +937,13 @@ let spawnX = 0, spawnZ = 0;
     if (window._pendingDroppedItems && typeof window.spawnDroppedItem === 'function') {
         for (const item of window._pendingDroppedItems) {
             window.spawnDroppedItem(item.x, item.y, item.z, item.id, item.count, 0, 0, 0);
-            // Restore durability on the newly spawned dropped item
-            if (item.durability !== undefined && droppedItems.length > 0) {
-                droppedItems[droppedItems.length - 1].durability = item.durability;
+            // Restore saved dropped-item metadata on the newly spawned dropped item.
+            if (droppedItems.length > 0) {
+                const restored = droppedItems[droppedItems.length - 1];
+                if (item.durability !== undefined) restored.durability = item.durability;
+                if (item.age !== undefined) restored.age = item.age;
+                if (item.pickupDelay !== undefined) restored.pickupDelay = item.pickupDelay;
+                restored.onGroundForMerge = item.onGroundForMerge === true;
             }
         }
         delete window._pendingDroppedItems;
@@ -973,6 +980,10 @@ let spawnX = 0, spawnZ = 0;
     }
     
     animate();
+
+    if (window.MusicManager && typeof window.MusicManager.enterWorld === 'function') {
+        window.MusicManager.enterWorld();
+    }
 
     // Show "Click to Play" overlay instead of auto-requesting pointer lock
     _showClickToPlay();
@@ -1258,7 +1269,11 @@ window.getTargetedMob = function() {
                     damage = TOOL_DATA[currentBuildBlock].damage || 1;
                 }
                 
-                hitMob.takeDamage(damage, player.x, player.z);
+                {
+                    const kbDirX = -Math.sin(player.yaw || 0);
+                    const kbDirZ = -Math.cos(player.yaw || 0);
+                    hitMob.takeDamage(damage, player.x, player.z, false, kbDirX, kbDirZ);
+                }
                 window.damageHeldTool(2); // Hitting a mob costs 2 durability in MC
                 return; // Stop here so we don't break the block behind the pig!
             }

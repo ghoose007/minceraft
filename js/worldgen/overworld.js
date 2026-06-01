@@ -596,6 +596,32 @@ function _generateNormalChunk(cx, cz) {
             volatility = biomeData.volMap[bIdx];
             const biomeNameForTerrain = BIOME_NAMES[biomeData.biomes[bIdx]];
 
+            // Beta 1.7.3 terrain preset modifiers. These are now read from
+            // betaElevScale/betaVolScale/betaMountainScale/betaSwampClamp,
+            // which are blurred in _computeChunkBiomeData together with the
+            // biome height/variation maps. This prevents hard terrain cutoffs
+            // at Beta biome borders.
+            const isBeta173Terrain = (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 6);
+            let betaMountainScale = 1.0;
+            let betaElevScale = 1.0;
+            let betaVolScale = 1.0;
+            let betaSwampClamp = 0.0;
+            if (isBeta173Terrain && biomeData.betaElevScale && biomeData.betaVolScale && biomeData.betaMountainScale) {
+                betaElevScale = biomeData.betaElevScale[bIdx];
+                betaVolScale = biomeData.betaVolScale[bIdx];
+                betaMountainScale = biomeData.betaMountainScale[bIdx];
+                betaSwampClamp = biomeData.betaSwampClamp ? biomeData.betaSwampClamp[bIdx] : 0.0;
+                if (betaSwampClamp > 0.001) {
+                    const swampPocketNoise = _wgPerlinElevation.fbm(x / 42, z / 42, 3);
+                    const swampWetMask = Math.max(0.0, Math.min(1.0, (0.34 - swampPocketNoise) / 0.68));
+                    const swampTarget = (GEN_SEA_LEVEL + 1) - swampWetMask * 4.0;
+                    baseHeight = baseHeight * (1.0 - betaSwampClamp) + Math.min(baseHeight, swampTarget) * betaSwampClamp;
+                    // Keep some volatility so swamp basins form uneven wet pockets
+                    // instead of one perfectly flat flooded sheet.
+                    volatility += swampWetMask * betaSwampClamp * 2.5;
+                }
+            }
+
             // v336: compute shoreDampen FIRST (was further down), then use
             // it to gate the spire bonus. The bug it fixes: v334's smooth
             // badlandsWeight extends the spire bonus ~24 blocks past the
@@ -643,7 +669,63 @@ function _generateNormalChunk(cx, cz) {
 
             // Standard rolling elevation (Dampened near shores)
             const elevationNoise = _wgPerlinElevation.fbm(x / _wgSmoothness, z / _wgSmoothness, 4);
-            baseHeight += elevationNoise * 20 * _wgTerrainMult * shoreDampen;
+            baseHeight += elevationNoise * 20 * _wgTerrainMult * shoreDampen * betaElevScale;
+
+            // v360: Beta 1.7.3 global terrain generator pass.
+            // In real Beta terrain is not driven by biome-specific terrain
+            // profiles. This global pass applies old-Beta-style hills,
+            // cliffs, shelves, and overhang potential across the whole Beta
+            // world, while biomes later control colors/surfaces/decorations.
+            if (isBeta173Terrain) {
+                const betaRolling = _wgPerlinElevation.fbm(x / 118, z / 118, 5);
+                const betaBroad = _wgPerlinMountains.fbm(x / 310, z / 310, 4);
+                const betaRidge = 1.0 - Math.abs(_wgPerlinMountains.fbm(x / 155 + 1337, z / 155 - 7331, 3));
+                const betaBroken = _wgPerlinVolatility.fbm(x / 72 - 420, z / 72 + 420, 3);
+
+                // Rolling terrain everywhere, with broad Beta-like height swings.
+                baseHeight += betaRolling * 18.0 * _wgTerrainMult * shoreDampen;
+
+                // Large hill/mountain masses that can occur under any biome.
+                if (betaBroad > 0.04) {
+                    const betaMass = Math.pow((betaBroad - 0.04) * 1.35, 2.0) * shoreDampen;
+                    baseHeight += betaMass * 72.0 * _wgTerrainMult;
+                    volatility += betaMass * 26.0;
+                }
+
+                // Ridge/cliff bands: old Beta-style abrupt faces, not biome-owned.
+                if (betaRidge > 0.72) {
+                    const ridgeAmt = Math.pow((betaRidge - 0.72) * 2.4, 2.0) * shoreDampen;
+                    baseHeight += ridgeAmt * 36.0 * _wgTerrainMult;
+                    volatility += ridgeAmt * 36.0;
+                }
+
+                // Broken secondary terrain helps create uneven cliffs and ledges.
+                if (betaBroken > 0.18) {
+                    const brokenAmt = (betaBroken - 0.18) * 1.65 * shoreDampen;
+                    baseHeight += brokenAmt * 18.0 * _wgTerrainMult;
+                    volatility += brokenAmt * 18.0;
+                }
+
+                // Keep oceans water-shaped even under the global Beta pass,
+                // but do not make the seafloor flat. Add broad rolling
+                // underwater hills/valleys around the same average depth.
+                if (biomeNameForTerrain === 'ocean') {
+                    const oceanRollA = _wgPerlinSeabed.fbm(x / 88, z / 88, 4);
+                    const oceanRollB = _wgPerlinElevation.fbm(x / 145 + 900, z / 145 - 900, 3);
+                    const oceanRidge = 1.0 - Math.abs(_wgPerlinSeabed.fbm(x / 54 - 300, z / 54 + 300, 2));
+                    const oceanHill = Math.max(0.0, oceanRidge - 0.62) * 5.0;
+
+                    const targetOceanFloor = (GEN_SEA_LEVEL - 15)
+                        + oceanRollA * 5.5
+                        + oceanRollB * 3.5
+                        + oceanHill * 2.0;
+
+                    // Stay safely underwater, but allow rolling seafloor relief.
+                    const cappedOceanFloor = Math.min(GEN_SEA_LEVEL - 4, Math.max(GEN_SEA_LEVEL - 27, targetOceanFloor));
+                    baseHeight = baseHeight * 0.20 + cappedOceanFloor * 0.80;
+                    volatility = Math.max(volatility * 0.45, 2.5 + Math.abs(oceanRollA) * 3.0);
+                }
+            }
             
             // --- MACRO MOUNTAIN FORMATIONS ---
             const mountainScale = _wgSmoothness * 3.5; 
@@ -653,18 +735,18 @@ function _generateNormalChunk(cx, cz) {
                 let steepness = Math.pow((mNoise - 0.1) * 1.5, 2.0); 
                 steepness *= shoreDampen; // Kills mountains before they hit the beach
                 
-                baseHeight += steepness * 120 * _wgTerrainMult; 
-                volatility += steepness * 25; 
+                baseHeight += steepness * 120 * _wgTerrainMult * betaMountainScale; 
+                volatility += steepness * 25 * betaMountainScale; 
             }
             // --------------------------------------
 
             // Dampen the smaller 3D carving noise near the shores too
-            volatility += _wgPerlinVolatility.fbm(x / 100, z / 100, 3) * 10 * shoreDampen;
-            volatility *= _wgTerrainMult * (GEN_VOLATILITY_MULT / 100.0);
+            volatility += _wgPerlinVolatility.fbm(x / 100, z / 100, 3) * 10 * shoreDampen * betaVolScale;
+            volatility *= _wgTerrainMult * (GEN_VOLATILITY_MULT / 100.0) * betaVolScale;
             // --------------------------------------
 
-            volatility += _wgPerlinVolatility.fbm(x / 100, z / 100, 3) * 10;
-            volatility *= _wgTerrainMult * (GEN_VOLATILITY_MULT / 100.0);
+            volatility += _wgPerlinVolatility.fbm(x / 100, z / 100, 3) * 10 * betaVolScale;
+            volatility *= _wgTerrainMult * (GEN_VOLATILITY_MULT / 100.0) * betaVolScale;
             
             // PERF: Cap Y to baseHeight + headroom. Above (baseHeight + 2*volatility + 16),
             // the density calculation will essentially always be negative (= air), so we
@@ -692,7 +774,22 @@ function _generateNormalChunk(cx, cz) {
                     activeVolatility *= (1.0 + (anomaly - 0.2) * 5.0);
                 }
                 
-                let density = -falloff + (n3D * activeVolatility);
+                let betaCliffDensityBonus = 0.0;
+                if (isBeta173Terrain && y > GEN_SEA_LEVEL + 6) {
+                    // Global old-Beta overhang/shelf potential. This is
+                    // intentionally not biome-specific: forest, plains,
+                    // savanna, etc. can all inherit odd Beta terrain.
+                    const shelfNoise = _wgPerlin3D.noise3D(x / 58, y / 35, z / 58);
+                    const pocketNoise = _wgPerlin3D.noise3D(x / 92 + 600, y / 70 - 600, z / 92 + 1200);
+                    if (shelfNoise > 0.34) {
+                        betaCliffDensityBonus += (shelfNoise - 0.34) * 11.5;
+                    }
+                    if (pocketNoise > 0.42 && y > baseHeight - 10) {
+                        betaCliffDensityBonus += (pocketNoise - 0.42) * 8.0;
+                    }
+                }
+
+                let density = -falloff + (n3D * activeVolatility) + betaCliffDensityBonus;
                 
                 if (density > 0) {
                     setVoxel(x, y, z, 3);
@@ -1091,7 +1188,7 @@ function _generateNormalChunk(cx, cz) {
     }
     
     // PHASE 3.5: Ravines
-    if (GEN_CAVES) {
+    if (GEN_CAVES && (typeof GEN_WORLD_TYPE === 'undefined' || GEN_WORLD_TYPE !== 6)) {
         const ravineFreq = (typeof GEN_RAVINE_FREQUENCY !== 'undefined' ? GEN_RAVINE_FREQUENCY : 100) / 100;
         const ravineDepthMult = (typeof GEN_RAVINE_DEPTH !== 'undefined' ? GEN_RAVINE_DEPTH : 100) / 100;
         const ravineWideMult = (typeof GEN_RAVINE_WIDTH !== 'undefined' ? GEN_RAVINE_WIDTH : 100) / 100;
@@ -1408,23 +1505,41 @@ function _generateNormalChunk(cx, cz) {
                 const surfId = getVoxel(x, y, z) & 0xFF;
                 
                 let treeChance = 0;
-                if (biome === 'rainforest') treeChance = 0.025;
-                else if (biome === 'forest') treeChance = 0.012;
-                else if (biome === 'alpha_forest') treeChance = 0.012;
-                else if (biome === 'taiga') treeChance = 0.02;
-                else if (biome === 'plains') treeChance = 0.0005;
-                else if (biome === 'tundra') treeChance = 0.001;
-                else if (biome === 'ice_spikes') treeChance = 0; // v341: no trees in MC ice spikes
-                else if (biome === 'desert') treeChance = 0.002;
-                else if (biome === 'badlands') {
-                    // v334: wooded badlands sections (grass surface) want
-                    // visible oak coverage; the regular red-sand basin keeps
-                    // its sparse dead-bush look unchanged.
-                    treeChance = (surfId === 1) ? 0.010 : 0.002;
+                const isBeta173Decor = (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 6);
+                if (isBeta173Decor) {
+                    // Approximate old Beta per-biome tree density. Rain Forest
+                    // is intentionally dense and gets a high big-tree chance
+                    // below; Savanna/Plains are open.
+                    if (biome === 'rainforest') treeChance = 0.040;
+                    else if (biome === 'forest') treeChance = 0.018;
+                    else if (biome === 'seasonal_forest') treeChance = 0.012;
+                    else if (biome === 'savanna') treeChance = 0.0015;
+                    else if (biome === 'taiga') treeChance = 0.020;
+                    else if (biome === 'plains') treeChance = 0.0005;
+                    else if (biome === 'tundra') treeChance = 0.0006;
+                    else if (biome === 'swamp') treeChance = 0.006;
+                    else if (biome === 'desert') treeChance = 0.0015;
+                } else {
+                    if (biome === 'rainforest') treeChance = 0.025;
+                    else if (biome === 'forest') treeChance = 0.012;
+                    else if (biome === 'seasonal_forest') treeChance = 0.010;
+                    else if (biome === 'savanna') treeChance = 0.002;
+                    else if (biome === 'alpha_forest') treeChance = 0.012;
+                    else if (biome === 'taiga') treeChance = 0.02;
+                    else if (biome === 'plains') treeChance = 0.0005;
+                    else if (biome === 'tundra') treeChance = 0.001;
+                    else if (biome === 'ice_spikes') treeChance = 0; // v341: no trees in MC ice spikes
+                    else if (biome === 'desert') treeChance = 0.002;
+                    else if (biome === 'badlands') {
+                        // v334: wooded badlands sections (grass surface) want
+                        // visible oak coverage; the regular red-sand basin keeps
+                        // its sparse dead-bush look unchanged.
+                        treeChance = (surfId === 1) ? 0.010 : 0.002;
+                    }
+                    else if (biome === 'swamp') treeChance = 0.008;
+                    else if (biome === 'jungle') treeChance = 0.035;
+                    else if (biome === 'extreme_hills') treeChance = 0.003;
                 }
-                else if (biome === 'swamp') treeChance = 0.008;
-                else if (biome === 'jungle') treeChance = 0.035;
-                else if (biome === 'extreme_hills') treeChance = 0.003;
                 
                 treeChance *= treeScale;
                 
@@ -1646,14 +1761,14 @@ function _generateNormalChunk(cx, cz) {
                                 }
                             }
                         }
-                    } else if ((biome === 'forest' || biome === 'alpha_forest' || biome === 'rainforest' || biome === 'plains' || biome === 'extreme_hills' || biome === 'badlands') && surfId === 1) {
+                    } else if ((biome === 'forest' || biome === 'alpha_forest' || biome === 'rainforest' || biome === 'seasonal_forest' || biome === 'savanna' || biome === 'plains' || biome === 'extreme_hills' || biome === 'badlands') && surfId === 1) {
                         let logId = 13, leafId = 14, isBirch = false;
                         
-                        if (biome === 'forest' && seededRandom() < 0.3) {
+                        if ((biome === 'forest' || biome === 'seasonal_forest') && seededRandom() < 0.3) {
                             logId = 41; leafId = 43; isBirch = true;
                         }
                         
-                        if (seededRandom() < 0.1 && !isBirch) {
+                        if (seededRandom() < ((typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 6 && biome === 'rainforest') ? 0.333 : 0.1) && !isBirch) {
                             // ----------------------------------------------------------
                             // LARGE OAK — accurate to MC's BigTreeFeature.
                             //
@@ -1940,73 +2055,75 @@ function _generateNormalChunk(cx, cz) {
                 if ((getVoxel(x, y+1, z) & 0xFF) === 0) {
                     const r = seededRandom();
                     
-                    if (biome === 'plains' && surfId === 1) {
-                        if (r < 0.3 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
-                        else if (r < 0.32 * folMult) setVoxel(x, y+1, z, 23);
-                        else if (r < 0.33 * folMult) setVoxel(x, y+1, z, 24);
-                        else if (r < 0.35 * folMult) setVoxel(x, y+1, z, 53);
+                    if ((biome === 'plains' || biome === 'savanna') && surfId === 1) {
+                        if (isBeta173Decor && biome === 'savanna') {
+                            if (r < 0.055 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
+                            else if (r < 0.060 * folMult) setVoxel(x, y+1, z, 24); // Bush = fern
+                        } else {
+                            if (r < 0.3 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
+                            else if (r < 0.32 * folMult) setVoxel(x, y+1, z, 23);
+                            else if (r < 0.33 * folMult) setVoxel(x, y+1, z, 24);
+                            else if (r < 0.35 * folMult) setVoxel(x, y+1, z, 53);
+                        }
                     } else if (biome === 'alpha_forest' && surfId === 1) {
                         // v310: Alpha forest has only flowers, no tall grass or bushes
                         if (r < 0.017 * folMult) setVoxel(x, y+1, z, 23); // Rose
                         else if (r < 0.020 * folMult) setVoxel(x, y+1, z, 53); // Dandelion
-                    } else if ((biome === 'forest' || biome === 'rainforest') && surfId === 1) {
-                        if (r < 0.15 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
-                        else if (r < 0.17 * folMult) setVoxel(x, y+1, z, 23);
-                        else if (r < 0.18 * folMult) setVoxel(x, y+1, z, 24);
-                        else if (r < 0.20 * folMult) setVoxel(x, y+1, z, 53);
+                    } else if ((biome === 'forest' || biome === 'rainforest' || biome === 'seasonal_forest') && surfId === 1) {
+                        if (isBeta173Decor && biome === 'rainforest') {
+                            // Beta Rain Forest: heavy, sometimes continuous grass/fern cover.
+                            if (r < 0.48 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
+                            else if (r < 0.58 * folMult) setVoxel(x, y+1, z, 24); // Bush = fern
+                            else if (r < 0.61 * folMult) setVoxel(x, y+1, z, 23);
+                            else if (r < 0.64 * folMult) setVoxel(x, y+1, z, 53);
+                        } else if (isBeta173Decor && biome === 'seasonal_forest') {
+                            if (r < 0.18 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
+                            else if (r < 0.22 * folMult) setVoxel(x, y+1, z, 24); // Bush = fern
+                            else if (r < 0.235 * folMult) setVoxel(x, y+1, z, 23);
+                            else if (r < 0.255 * folMult) setVoxel(x, y+1, z, 53);
+                        } else if (isBeta173Decor && biome === 'forest') {
+                            if (r < 0.16 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
+                            else if (r < 0.19 * folMult) setVoxel(x, y+1, z, 24); // Bush = fern
+                            else if (r < 0.205 * folMult) setVoxel(x, y+1, z, 23);
+                            else if (r < 0.220 * folMult) setVoxel(x, y+1, z, 53);
+                        } else {
+                            if (r < 0.15 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
+                            else if (r < 0.17 * folMult) setVoxel(x, y+1, z, 23);
+                            else if (r < 0.18 * folMult) setVoxel(x, y+1, z, 24);
+                            else if (r < 0.20 * folMult) setVoxel(x, y+1, z, 53);
+                        }
                     } else if (biome === 'taiga' && surfId === 1) {
-                        if (r < 0.15 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
+                        if (r < (isBeta173Decor ? 0.10 : 0.15) * folMult) _placeFoliageGrass(x, y, z, seededRandom);
+                        else if (isBeta173Decor && r < 0.13 * folMult) setVoxel(x, y+1, z, 24); // Bush = fern
                     } else if (biome === 'tundra' && surfId === 39) {
                         setVoxel(x, y+1, z, 40, 1);
                     } else if (biome === 'ice_spikes' && surfId === 39) {
                         // v341: ice_spikes biome has the highest snow
                         // accumulation in MC. We already place the base
-                        // snow layer here; the heavier stacking happens via
-                        // the spike-placement pass which can deposit
-                        // additional layers around the spike bases. For now
-                        // a single layer matches the visible "thick snow"
-                        // look without overcomplicating the worldgen.
+                        // snow layer here; the heavier scatter below
+                        // gives many cells a 2-layer snow stack, which
+                        // matches the visible "thick snow" look without
+                        // overcomplicating the worldgen.
                         setVoxel(x, y+1, z, 40, 1);
                     } else if (biome === 'swamp' && surfId === 1) {
-                        if (r < 0.25 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
-                        else if (r < 0.26 * folMult) setVoxel(x, y+1, z, 24); // Bush
+                        if (r < (isBeta173Decor ? 0.16 : 0.25) * folMult) _placeFoliageGrass(x, y, z, seededRandom);
+                        else if (r < (isBeta173Decor ? 0.18 : 0.26) * folMult) setVoxel(x, y+1, z, 24); // Bush
                     } else if (biome === 'jungle' && surfId === 1) {
                         // Very dense ground cover like MC jungle
                         if (r < 0.45 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
-                        else if (r < 0.52 * folMult) setVoxel(x, y+1, z, 24); // Bush
-                        else if (r < 0.54 * folMult) setVoxel(x, y+1, z, 23); // Rose
+                        else if (r < 0.50 * folMult) setVoxel(x, y+1, z, 24); // Bush
                     } else if (biome === 'badlands' && surfId === 1) {
-                        // v334 Wooded Badlands: sparse tall grass on the
-                        // grass-capped plateau columns. Non-wooded badlands
-                        // (red sand / terracotta surface) don't enter this
-                        // branch, so they keep their dead-bush look.
-                        // v335: route through the 1/2-block tall grass
-                        // helper so wooded badlands gets the same mix
-                        // MC wooded badlands does.
+                        // Wooded badlands grass plateau: sparse tall grass
                         if (r < 0.08 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
                     } else if (biome === 'desert' && surfId === 15) {
                         // Deserts: vanilla-style dead bushes on sand, with cactus handled by the
                         // existing sparse cactus pass above. Keep density lower than badlands.
-                        if (r < 0.035 * folMult) setVoxel(x, y+1, z, BADLANDS_DEAD_BUSH);
+                        if (r < 0.035 * folMult) setVoxel(x, y+1, z, 26);
                     } else if (biome === 'badlands' && surfId === BADLANDS_RED_SAND) {
-                        // Badlands: frequent dead bushes, rare cactus, no grass/flowers.
-                        if (r < 0.10 * folMult) setVoxel(x, y+1, z, BADLANDS_DEAD_BUSH);
-                        else if (r < 0.115 * folMult) {
-                            const ch = 1 + Math.floor(seededRandom() * 3);
-                            let canPlaceCactus = true;
-                            for (const [dx, dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-                                if ((getVoxel(x+dx, y+1, z+dz) & 0xFF) !== 0) canPlaceCactus = false;
-                            }
-                            if (canPlaceCactus) {
-                                for (let cy = 1; cy <= ch; cy++) {
-                                    if ((getVoxel(x, y+cy, z) & 0xFF) === 0) setVoxel(x, y+cy, z, 20);
-                                }
-                            }
-                        }
-                    } else if (biome === 'extreme_hills' && surfId === 1) {
-                        if (r < 0.08 * folMult) setVoxel(x, y+1, z, 16); // Sparse tall grass
-                    }
-                }
+                        // Badlands red sand basins: a little harsher/drier than desert,
+                        // with the beta dead-bush silhouette. Dead bush block id is 26.
+                        if (r < 0.055 * folMult) setVoxel(x, y+1, z, 26);
+                    }                }
                 
                 // Swamp lily pads: spawn on water surface (independent of air-above check)
                 if (biome === 'swamp') {

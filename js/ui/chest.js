@@ -186,12 +186,54 @@ window.closeChest = function() {
     currentChestPos = null;
 };
 
+
+function _chestRightDragChanged(e, slotItem, isHotbar) {
+    // v371: live-update only the slot under the cursor during right-drag.
+    // Full chest/inventory render still waits until mouseup, preserving
+    // drag continuity while making placed items visible immediately.
+    if (typeof window._renderSlotElementLive === 'function') {
+        window._renderSlotElementLive(e && e.currentTarget, slotItem, !!isHotbar);
+    }
+    if (typeof window.updateCursorItemUI === 'function') window.updateCursorItemUI(e);
+}
+
+function _continueRightDragChestSlot(slotIdx, e) {
+    if (!currentChestPos || typeof _continueRightDragSlot !== 'function') return false;
+    const slots = getChestSlots(currentChestPos);
+    if (!slots || slotIdx >= slots.length) return false;
+    return _continueRightDragSlot(slots[slotIdx], 'chest:' + currentChestPos + ':' + slotIdx, e, function(slotItem) { _chestRightDragChanged(e, slotItem, false); });
+}
+
+function _beginRightDragChestSlot(slotIdx, e) {
+    if (!currentChestPos || typeof _beginRightDragSlot !== 'function') return false;
+    const slots = getChestSlots(currentChestPos);
+    if (!slots || slotIdx >= slots.length) return false;
+    return _beginRightDragSlot(slots[slotIdx], 'chest:' + currentChestPos + ':' + slotIdx, e, function(slotItem) { _chestRightDragChanged(e, slotItem, false); });
+}
+
+function _beginRightDragChestInventorySlot(invIdx, e) {
+    if (typeof _beginRightDragSlot !== 'function') return false;
+    return _beginRightDragSlot(inventory[invIdx], 'chestinv:' + invIdx, e, function(slotItem) { _chestRightDragChanged(e, slotItem, invIdx === activeSlot); });
+}
+
+function _continueRightDragChestInventorySlot(invIdx, e) {
+    if (typeof _continueRightDragSlot !== 'function') return false;
+    return _continueRightDragSlot(inventory[invIdx], 'chestinv:' + invIdx, e, function(slotItem) { _chestRightDragChanged(e, slotItem, invIdx === activeSlot); });
+}
+
 function handleChestSlotClick(slotIdx, e) {
     if (!currentChestPos) return;
+    if (_beginRightDragChestSlot(slotIdx, e)) return;
     const slots = getChestSlots(currentChestPos);
     if (slotIdx >= slots.length) return;
-    interactWithSlot(slots[slotIdx], e);
+    if (e.shiftKey && !window.cursorItem && typeof _shiftMoveStackToRange === 'function') {
+        _shiftMoveStackToRange(slots[slotIdx], [{ arr: inventory, start: 0, end: 36 }]);
+    } else {
+        interactWithSlot(slots[slotIdx], e);
+    }
     renderChest();
+    if (typeof buildUI === 'function') buildUI();
+    if (typeof selectSlot === 'function') selectSlot(activeSlot);
     window.updateCursorItemUI(e);
 }
 
@@ -236,6 +278,7 @@ window.renderChest = function() {
             bindHoverEvents(slot, item.id);
         }
         slot.addEventListener('mousedown', ((idx) => (e) => { e.stopPropagation(); handleChestSlotClick(idx, e); })(i));
+        slot.addEventListener('mouseenter', ((idx) => (e) => { if (window.cursorItem) _continueRightDragChestSlot(idx, e); })(i));
         chestGrid.appendChild(slot);
     }
     
@@ -262,12 +305,19 @@ window.renderChest = function() {
         }
         slot.addEventListener('mousedown', (e) => {
             e.stopPropagation();
-            interactWithSlot(inventory[i], e);
+            if (_beginRightDragChestInventorySlot(i, e)) return;
+            const slots = currentChestPos ? getChestSlots(currentChestPos) : null;
+            if (e.shiftKey && !window.cursorItem && slots && typeof _shiftMoveStackToRange === 'function') {
+                _shiftMoveStackToRange(inventory[i], [{ arr: slots, start: 0, end: slots.length }]);
+            } else {
+                interactWithSlot(inventory[i], e);
+            }
             renderChest();
             if (typeof buildUI === 'function') buildUI();
             if (typeof selectSlot === 'function') selectSlot(activeSlot);
             window.updateCursorItemUI(e);
         });
+        slot.addEventListener('mouseenter', (e) => { if (window.cursorItem) _continueRightDragChestInventorySlot(i, e); });
         return slot;
     };
     
