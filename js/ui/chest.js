@@ -181,6 +181,7 @@ window.openChest = function(x, y, z) {
 };
 
 window.closeChest = function() {
+    if (typeof window.hideItemTooltip === 'function') window.hideItemTooltip();
     const modal = document.getElementById('chest-modal');
     if (modal) modal.classList.add('hidden');
     currentChestPos = null;

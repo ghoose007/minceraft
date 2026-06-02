@@ -424,9 +424,10 @@ function buildXPBarUI() {
 }
 
 function updateXPBarUI() {
+    if (typeof window.updateSurvivalHudLayout === 'function') window.updateSurvivalHudLayout(false);
     const container = document.getElementById('xp-bar-container');
     if (container) {
-        var hideXP = (typeof gameMode !== 'undefined' && gameMode === 'creative') ||
+        var hideXP = (typeof gameMode !== 'undefined' && gameMode !== 'survival') ||
                      (typeof GEN_XP_ENABLED !== 'undefined' && !GEN_XP_ENABLED);
         container.style.display = hideXP ? 'none' : '';
     }

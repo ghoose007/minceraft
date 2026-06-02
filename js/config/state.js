@@ -225,7 +225,7 @@ let settingGraphicsFancy = true;
 let settingGraphicsFabulous = false;  // Fabulous! shader-quality graphics
 let settingSmoothLighting = true;
 let settingViewBobbing = true;
-let currentGUIScaleIndex = 3;
+let currentGUIScaleIndex = 4;
 let currentRenderDistIndex = 6; // 8 chunks in RENDER_DISTANCES (2..32)
 
 let scene, camera, uiScene, uiCamera, renderer;

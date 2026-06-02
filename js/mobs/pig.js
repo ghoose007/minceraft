@@ -51,9 +51,25 @@ Mob.prototype._testCollisionPure = function(x, y, z) {
 // Uses sweep-based collision matching the player physics.
 Mob.prototype._applyPhysics = function(dt) {
     // --- Vertical ---
+    // v417/v418: zombies and skeletons cannot swim. Other mobs swim with a
+    // slower, visible up/down bob instead of locking to the water surface.
+    const noSwimMob = (typeof _mobCannotSwim === 'function' && _mobCannotSwim(this));
     if (this.inWater) {
-        this.vy += 4.0 * dt;
-        if (this.vy > 2.0) this.vy = 2.0;
+        if (noSwimMob) {
+            this.vy -= 18.0 * dt;
+            this.vy *= Math.exp(-1.8 * dt);
+        } else {
+            if (this._waterBobPhase === undefined) this._waterBobPhase = Math.random() * Math.PI * 2;
+            const t = (typeof globalTime !== 'undefined' ? globalTime : performance.now() / 1000);
+            const horizSpeed = Math.sqrt((this.vx || 0) * (this.vx || 0) + (this.vz || 0) * (this.vz || 0));
+            const moving = Math.min(1.0, horizSpeed / 2.0);
+            const bob = Math.sin(t * 2.05 + this._waterBobPhase);
+            const swimLift = 0.72 + bob * (0.95 + moving * 0.55);
+            this.vy += swimLift * dt;
+            this.vy *= Math.exp(-0.85 * dt);
+            if (this.vy > 0.48) this.vy = 0.48;
+            if (this.vy < -2.8) this.vy = -2.8;
+        }
     } else {
         this.vy -= 28.0 * dt;
     }
@@ -90,8 +106,18 @@ Mob.prototype._applyPhysics = function(dt) {
     // the first hit frames so chase/pathfinding cannot cancel the push.
     const aiVx = kbActive ? 0 : this.vx;
     const aiVz = kbActive ? 0 : this.vz;
-    const totalVx = aiVx + (this.knockbackX || 0);
-    const totalVz = aiVz + (this.knockbackZ || 0);
+    // v418: water must slow actual mob movement, not just visual/vertical motion.
+    // AI rewrites vx/vz every frame, so apply drag to the final physics movement.
+    const waterMoveMul = this.inWater ? (noSwimMob ? 0.28 : 0.42) : 1.0;
+    const totalVx = (aiVx + (this.knockbackX || 0)) * waterMoveMul;
+    const totalVz = (aiVz + (this.knockbackZ || 0)) * waterMoveMul;
+
+    if (this.inWater) {
+        this.vx *= Math.exp(-(noSwimMob ? 4.0 : 2.2) * dt);
+        this.vz *= Math.exp(-(noSwimMob ? 4.0 : 2.2) * dt);
+        this.knockbackX = (this.knockbackX || 0) * Math.exp(-2.8 * dt);
+        this.knockbackZ = (this.knockbackZ || 0) * Math.exp(-2.8 * dt);
+    }
 
     const moveX = totalVx * dt;
     const moveZ = totalVz * dt;
@@ -225,9 +251,46 @@ Mob.prototype._checkStuck = function(dt, threshold = 1.5) {
     return this._stuckTimer > threshold;
 };
 
+// v417: hostile undead do not swim and can drown.
+// Constructor-name based so this shared file can run before/after individual
+// mob class declarations without creating hard load-order dependencies.
+function _mobCannotSwim(mob) {
+    const n = mob && mob.constructor && mob.constructor.name;
+    return n === 'Zombie' || n === 'Skeleton';
+}
+
+function _mobHeadIsUnderWater(mob) {
+    if (!mob || typeof getVoxel !== 'function') return false;
+    const hx = Math.floor(mob.x);
+    const hz = Math.floor(mob.z);
+    // Breath starts when the head/upper body is inside water, not merely when
+    // feet touch a shallow water block.
+    const hy = Math.floor(mob.y + Math.max(0.25, mob.height - 0.15));
+    return (getVoxel(hx, hy, hz) & 0xFF) === 4;
+}
+
 // Shared per-frame damage tick for lava, fire-block contact, and fall damage.
 // Call this from each mob's update() after physics resolve.
 function _tickMobEnvironmentDamage(mob, dt) {
+    // ---- DROWNING DAMAGE ----
+    if (typeof _mobCannotSwim === 'function' && _mobCannotSwim(mob) && _mobHeadIsUnderWater(mob)) {
+        mob._airTimer = (mob._airTimer === undefined ? 20.0 : mob._airTimer) - dt;
+        if (mob._airTimer <= 0) {
+            mob._drownDmgTimer = (mob._drownDmgTimer || 0) + dt;
+            // Similar tick rate to standing in fire: steady damage until death.
+            if (mob._drownDmgTimer >= 0.5) {
+                mob._drownDmgTimer -= 0.5;
+                mob.takeDamage(1, mob.x, mob.z, true);
+                if (mob.hurtTime <= 0 && mob.material) mob.material.color.setHex(0x3355ff);
+            }
+        } else {
+            mob._drownDmgTimer = 0;
+        }
+    } else {
+        mob._airTimer = 20.0;
+        mob._drownDmgTimer = 0;
+    }
+
     // ---- LAVA DAMAGE ----
     if (mob.inLava) {
         mob._fireDmgTimer += dt;

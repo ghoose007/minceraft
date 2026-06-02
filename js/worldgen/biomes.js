@@ -17,6 +17,11 @@ function _cellHash(ix, iz, salt) {
 }
 
 function _getRawBiome(x, z) {
+    // v430: Indev Island biome is locked to Indev Forest and never appears normally.
+    if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7) {
+        // v435: Indev Forest terrain uses Swampland terrain settings.
+        return { biome: 'indev_forest', bH: GEN_SEA_LEVEL + 1, bV: 3 };
+    }
     const cellSize = _wgBiomeScale * 1.8; // How large each Voronoi cell is in blocks
     
     // Light domain warping to add organic wobble to cell boundaries
@@ -200,7 +205,7 @@ function _classifyBiome(temp, humid) {
     // pre-Adventure biome set.
     if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 6) {
         if (temp > 0.2 && humid < -0.25)        { biome = 'desert';          bH = GEN_SEA_LEVEL + 2;  bV = 8;  }
-        else if (temp > 0.22 && humid >= 0.25)  { biome = 'rainforest';      bH = GEN_SEA_LEVEL + 10; bV = 35; }
+        else if (temp > 0.22 && humid >= 0.25)  { biome = 'rainforest';      bH = GEN_SEA_LEVEL + 11; bV = 22; }
         else if (temp > 0.08 && humid >= 0.12)  { biome = 'seasonal_forest'; bH = GEN_SEA_LEVEL + 5;  bV = 14; }
         else if (temp > -0.02 && humid >= 0.02) { biome = 'swamp';           bH = GEN_SEA_LEVEL + 1;  bV = 3;  }
         else if (temp > 0.12 && humid < -0.05)  { biome = 'savanna';         bH = GEN_SEA_LEVEL + 4;  bV = 12; }
@@ -213,7 +218,7 @@ function _classifyBiome(temp, humid) {
 
     if (temp > 0.2 && humid < -0.22)        { biome = 'desert';          bH = GEN_SEA_LEVEL + 2;  bV = 8;  }
     else if (temp > 0.22 && humid >= 0.28)  { biome = 'jungle';          bH = GEN_SEA_LEVEL + 6;  bV = 18; }
-    else if (temp > 0.12 && humid >= 0.16)  { biome = 'rainforest';      bH = GEN_SEA_LEVEL + 10; bV = 35; }
+    else if (temp > 0.12 && humid >= 0.16)  { biome = 'rainforest';      bH = GEN_SEA_LEVEL + 11; bV = 22; }
     else if (temp > 0.06 && humid >= 0.08)  { biome = 'seasonal_forest'; bH = GEN_SEA_LEVEL + 5;  bV = 14; }
     else if (temp > -0.05 && temp <= 0.1 && humid >= 0.05) { biome = 'swamp'; bH = GEN_SEA_LEVEL + 1; bV = 3; }
     else if (temp > 0.10 && humid < -0.08)  { biome = 'savanna';         bH = GEN_SEA_LEVEL + 4;  bV = 12; }
@@ -245,15 +250,15 @@ function _getBeta173TerrainScales(biome) {
     // oceans/swamps/deserts from becoming inappropriate, rather than giving
     // each biome its own terrain generator.
     if (biome === 'ocean')           return { elev: 0.45, vol: 0.35, mountain: 0.00, clampSwamp: 0.00 };
-    if (biome === 'swamp')           return { elev: 0.55, vol: 0.55, mountain: 0.08, clampSwamp: 1.00 };
+    if (biome === 'swamp')           return { elev: 0.55, vol: 0.10, mountain: 0.08, clampSwamp: 1.00 };
     if (biome === 'desert')          return { elev: 0.85, vol: 0.75, mountain: 0.25, clampSwamp: 0.00 };
     if (biome === 'savanna')         return { elev: 0.90, vol: 0.85, mountain: 0.28, clampSwamp: 0.00 };
     if (biome === 'plains')          return { elev: 0.92, vol: 0.82, mountain: 0.24, clampSwamp: 0.00 };
     if (biome === 'tundra')          return { elev: 0.90, vol: 0.82, mountain: 0.25, clampSwamp: 0.00 };
-    if (biome === 'taiga')           return { elev: 1.00, vol: 0.95, mountain: 0.32, clampSwamp: 0.00 };
+    if (biome === 'taiga')           return { elev: 1.20, vol: 0.85, mountain: 0.45, clampSwamp: 0.00 };
     if (biome === 'forest')          return { elev: 0.82, vol: 0.72, mountain: 0.18, clampSwamp: 0.00 };
     if (biome === 'seasonal_forest') return { elev: 0.98, vol: 0.92, mountain: 0.30, clampSwamp: 0.00 };
-    if (biome === 'rainforest')      return { elev: 0.8925, vol: 0.8925, mountain: 0.306, clampSwamp: 0.00 };
+    if (biome === 'rainforest')      return { elev: 0.94, vol: 0.52, mountain: 0.44, clampSwamp: 0.00 };
     return { elev: 1.00, vol: 1.00, mountain: 0.30, clampSwamp: 0.00 };
 }
 
@@ -278,6 +283,10 @@ function _computeChunkBiomeData(cx, cz) {
     const rawBetaVol = new Float32Array(padW * padH);
     const rawBetaMountain = new Float32Array(padW * padH);
     const rawBetaSwampClamp = new Float32Array(padW * padH);
+    // v389: Beta 1.7.3 ocean-to-land terrain blending. The biome label still
+    // snaps at the ocean threshold, but terrain height needs a smoothed shore
+    // weight or the seafloor cuts abruptly into land height.
+    const rawBetaOceanBlend = new Float32Array(padW * padH);
     // v334: per-cell "is this raw biome badlands?" mask. We box-blur this
     // alongside the heightmap so we have a smooth 0..1 weight that the
     // spire/hoodoo height bonus can multiply through. Without this the
@@ -285,6 +294,10 @@ function _computeChunkBiomeData(cx, cz) {
     // produced visible height cliffs at the badlands/plains boundary even
     // though the underlying heightmap blended smoothly.
     const rawBadlands = new Float32Array(padW * padH);
+    // v416: smoothed Rainforest/Rain Forest mask for terrain shaping.
+    // The raw biome label still snaps per column, but terrain features that
+    // are specific to Rainforest must fade across biome borders.
+    const rawRainforest = new Float32Array(padW * padH);
     
     for (let lx = 0; lx < padW; lx++) {
         for (let lz = 0; lz < padH; lz++) {
@@ -300,7 +313,14 @@ function _computeChunkBiomeData(cx, cz) {
             rawBetaVol[idx] = betaScales.vol;
             rawBetaMountain[idx] = betaScales.mountain;
             rawBetaSwampClamp[idx] = betaScales.clampSwamp;
+            if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 6) {
+                const oceanNoise = _wgPerlinOcean.fbm(wx / (_wgBiomeScale * 2.5), wz / (_wgBiomeScale * 2.5), 3);
+                rawBetaOceanBlend[idx] = Math.max(0.0, Math.min(1.0, (0.1 - oceanNoise) / 0.25));
+            } else {
+                rawBetaOceanBlend[idx] = 0.0;
+            }
             rawBadlands[idx] = (b.biome === 'badlands') ? 1.0 : 0.0;
+            rawRainforest[idx] = (b.biome === 'rainforest') ? 1.0 : 0.0;
         }
     }
     
@@ -312,22 +332,26 @@ function _computeChunkBiomeData(cx, cz) {
     const tempH = new Float32Array(padW * padH);
     const tempV = new Float32Array(padW * padH);
     const tempB = new Float32Array(padW * padH);
+    const tempRainforest = new Float32Array(padW * padH);
     const tempBetaElev = new Float32Array(padW * padH);
     const tempBetaVol = new Float32Array(padW * padH);
     const tempBetaMountain = new Float32Array(padW * padH);
     const tempBetaSwampClamp = new Float32Array(padW * padH);
+    const tempBetaOceanBlend = new Float32Array(padW * padH);
 
     for (let z = 0; z < padH; z++) {
-        let sumH = 0, sumV = 0, sumB = 0, sumBE = 0, sumBV = 0, sumBM = 0, sumBSC = 0, count = 0;
+        let sumH = 0, sumV = 0, sumB = 0, sumRF = 0, sumBE = 0, sumBV = 0, sumBM = 0, sumBSC = 0, sumBO = 0, count = 0;
         for (let dx = 0; dx <= blurRadius && dx < padW; dx++) {
             const si = dx + z * padW;
             sumH += rawH[si];
             sumV += rawV[si];
             sumB += rawBadlands[si];
+            sumRF += rawRainforest[si];
             sumBE += rawBetaElev[si];
             sumBV += rawBetaVol[si];
             sumBM += rawBetaMountain[si];
             sumBSC += rawBetaSwampClamp[si];
+            sumBO += rawBetaOceanBlend[si];
             count++;
         }
         for (let x = 0; x < padW; x++) {
@@ -335,20 +359,24 @@ function _computeChunkBiomeData(cx, cz) {
             tempH[oi] = sumH / count;
             tempV[oi] = sumV / count;
             tempB[oi] = sumB / count;
+            tempRainforest[oi] = sumRF / count;
             tempBetaElev[oi] = sumBE / count;
             tempBetaVol[oi] = sumBV / count;
             tempBetaMountain[oi] = sumBM / count;
             tempBetaSwampClamp[oi] = sumBSC / count;
+            tempBetaOceanBlend[oi] = sumBO / count;
             const dropX = x - blurRadius;
             if (dropX >= 0) {
                 const di = dropX + z * padW;
                 sumH -= rawH[di];
                 sumV -= rawV[di];
                 sumB -= rawBadlands[di];
+                sumRF -= rawRainforest[di];
                 sumBE -= rawBetaElev[di];
                 sumBV -= rawBetaVol[di];
                 sumBM -= rawBetaMountain[di];
                 sumBSC -= rawBetaSwampClamp[di];
+                sumBO -= rawBetaOceanBlend[di];
                 count--;
             }
             const addX = x + blurRadius + 1;
@@ -357,10 +385,12 @@ function _computeChunkBiomeData(cx, cz) {
                 sumH += rawH[ai];
                 sumV += rawV[ai];
                 sumB += rawBadlands[ai];
+                sumRF += rawRainforest[ai];
                 sumBE += rawBetaElev[ai];
                 sumBV += rawBetaVol[ai];
                 sumBM += rawBetaMountain[ai];
                 sumBSC += rawBetaSwampClamp[ai];
+                sumBO += rawBetaOceanBlend[ai];
                 count++;
             }
         }
@@ -370,22 +400,26 @@ function _computeChunkBiomeData(cx, cz) {
     const blurredH = new Float32Array(CHUNK_SIZE * CHUNK_SIZE);
     const blurredV = new Float32Array(CHUNK_SIZE * CHUNK_SIZE);
     const blurredBadlands = new Float32Array(CHUNK_SIZE * CHUNK_SIZE);
+    const blurredRainforest = new Float32Array(CHUNK_SIZE * CHUNK_SIZE);
     const betaElevScale = new Float32Array(CHUNK_SIZE * CHUNK_SIZE);
     const betaVolScale = new Float32Array(CHUNK_SIZE * CHUNK_SIZE);
     const betaMountainScale = new Float32Array(CHUNK_SIZE * CHUNK_SIZE);
     const betaSwampClamp = new Float32Array(CHUNK_SIZE * CHUNK_SIZE);
+    const betaOceanBlend = new Float32Array(CHUNK_SIZE * CHUNK_SIZE);
 
     for (let x = 0; x < padW; x++) {
-        let sumH = 0, sumV = 0, sumB = 0, sumBE = 0, sumBV = 0, sumBM = 0, sumBSC = 0, count = 0;
+        let sumH = 0, sumV = 0, sumB = 0, sumRF = 0, sumBE = 0, sumBV = 0, sumBM = 0, sumBSC = 0, sumBO = 0, count = 0;
         for (let dz = 0; dz <= blurRadius && dz < padH; dz++) {
             const si = x + dz * padW;
             sumH += tempH[si];
             sumV += tempV[si];
             sumB += tempB[si];
+            sumRF += tempRainforest[si];
             sumBE += tempBetaElev[si];
             sumBV += tempBetaVol[si];
             sumBM += tempBetaMountain[si];
             sumBSC += tempBetaSwampClamp[si];
+            sumBO += tempBetaOceanBlend[si];
             count++;
         }
         for (let z = 0; z < padH; z++) {
@@ -396,10 +430,12 @@ function _computeChunkBiomeData(cx, cz) {
                 blurredH[outIdx] = sumH / count;
                 blurredV[outIdx] = sumV / count;
                 blurredBadlands[outIdx] = sumB / count;
+                blurredRainforest[outIdx] = sumRF / count;
                 betaElevScale[outIdx] = sumBE / count;
                 betaVolScale[outIdx] = sumBV / count;
                 betaMountainScale[outIdx] = sumBM / count;
                 betaSwampClamp[outIdx] = sumBSC / count;
+                betaOceanBlend[outIdx] = sumBO / count;
             }
             const dropZ = z - blurRadius;
             if (dropZ >= 0) {
@@ -407,10 +443,12 @@ function _computeChunkBiomeData(cx, cz) {
                 sumH -= tempH[di];
                 sumV -= tempV[di];
                 sumB -= tempB[di];
+                sumRF -= tempRainforest[di];
                 sumBE -= tempBetaElev[di];
                 sumBV -= tempBetaVol[di];
                 sumBM -= tempBetaMountain[di];
                 sumBSC -= tempBetaSwampClamp[di];
+                sumBO -= tempBetaOceanBlend[di];
                 count--;
             }
             const addZ = z + blurRadius + 1;
@@ -419,10 +457,12 @@ function _computeChunkBiomeData(cx, cz) {
                 sumH += tempH[ai];
                 sumV += tempV[ai];
                 sumB += tempB[ai];
+                sumRF += tempRainforest[ai];
                 sumBE += tempBetaElev[ai];
                 sumBV += tempBetaVol[ai];
                 sumBM += tempBetaMountain[ai];
                 sumBSC += tempBetaSwampClamp[ai];
+                sumBO += tempBetaOceanBlend[ai];
                 count++;
             }
         }
@@ -435,7 +475,7 @@ function _computeChunkBiomeData(cx, cz) {
         }
     }
     
-    const data = { biomes, heightMap: blurredH, volMap: blurredV, badlandsWeight: blurredBadlands, betaElevScale, betaVolScale, betaMountainScale, betaSwampClamp };
+    const data = { biomes, heightMap: blurredH, volMap: blurredV, badlandsWeight: blurredBadlands, rainforestWeight: blurredRainforest, betaElevScale, betaVolScale, betaMountainScale, betaSwampClamp, betaOceanBlend };
     chunkBiomeCache.set(key, data);
     return data;
 }
@@ -444,7 +484,7 @@ function _computeChunkBiomeData(cx, cz) {
 // Checks if a world position is in a river zone (replicates the river noise from _getRawBiome)
 function isInRiverZone(x, z) {
     // Beta 1.7.3 mode has no modern river biome/river override.
-    if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 6) return false;
+    if (typeof GEN_WORLD_TYPE !== 'undefined' && (GEN_WORLD_TYPE === 6 || GEN_WORLD_TYPE === 7)) return false;
     if (!_wgPerlinRiver || !_wgPerlinRiver2) return false;
     
     // Replicate the same domain warp from _getRawBiome
@@ -481,6 +521,7 @@ function getBiomeDisplayName(x, z) {
         ? biomeMap[biomeIdx] : 'unknown';
 
     const beta173Mode = (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 6);
+    const indevMode = (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7);
 
     const biomeDisplayNames = {
         ocean: 'Ocean',
@@ -496,6 +537,7 @@ function getBiomeDisplayName(x, z) {
         jungle: 'Jungle',
         extreme_hills: 'Extreme Hills',
         alpha_forest: 'Alpha Forest',
+        indev_forest: 'Indev Forest',
         badlands: 'Badlands',
         ice_spikes: 'Ice Spikes',
         aether_void: 'Aether Void',

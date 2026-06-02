@@ -104,7 +104,25 @@ var worldSizeChunksMobile = [16, 32];
 function _getWorldSizeLabels() { return (window._deviceChoice === 'mobile') ? worldSizeLabelsMobile : worldSizeLabelsDesktop; }
 function _getWorldSizeChunks() { return (window._deviceChoice === 'mobile') ? worldSizeChunksMobile : worldSizeChunksDesktop; }
 
-const worldTypeLabels = ['Default', 'Superflat', 'Amplified', 'Single Biome', 'Alpha', 'Skyblock', 'Beta 1.7.3'];
+function _getBiomeScaleForWorldSize(baseScale, chunks) {
+    // v399: smaller worlds need denser biome sampling so they are not only
+    // one or two large biome regions.
+    // v414: all global biome-map scale factors are cut in half for every
+    // world-size bucket, giving every world size smaller/tighter biomes.
+    const c = Number(chunks) || 64;
+    let factor = 0.5;
+    if (c >= 320) factor = 0.50;      // 5120x5120 — half of original 1.00
+    else if (c >= 192) factor = 0.41; // 3072x3072 — half of 0.82
+    else if (c >= 64) factor = 0.24;  // 1024x1024 — half of 0.48
+    else if (c >= 54) factor = 0.21;  // 864x864 — half of 0.42
+    else if (c >= 32) factor = 0.18;  // 512x512 mobile — half of 0.36
+    else factor = 0.15;               // 256x256 mobile — half of 0.30
+
+    return Math.max(36, Math.round(baseScale * factor));
+}
+
+
+const worldTypeLabels = ['Default', 'Superflat', 'Amplified', 'Single Biome', 'Alpha', 'Skyblock', 'Beta 1.7.3', 'Indev Island'];
 const singleBiomeList = ['plains', 'forest', 'seasonal_forest', 'savanna', 'desert', 'badlands', 'tundra', 'ice_spikes', 'taiga', 'rainforest', 'swamp', 'jungle', 'extreme_hills'];
 const singleBiomeLabels = ['Plains', 'Forest', 'Seasonal Forest', 'Savanna', 'Desert', 'Badlands', 'Tundra', 'Ice Spikes', 'Taiga', 'Rainforest', 'Swamp', 'Jungle', 'Extreme Hills'];
 
@@ -119,16 +137,29 @@ function _forceSkyblockWorldSizeIfNeeded() {
     if (el) el.textContent = labels[worldOptions.worldsize];
 }
 
+function _forceIndevWorldSizeIfNeeded() {
+    if (worldOptions.worldtype !== 7) return;
+    var chunks = _getWorldSizeChunks();
+    var idx = chunks.indexOf(16); // 256x256 = 16 chunks
+    if (idx < 0) idx = 0;
+    worldOptions.worldsize = idx;
+    var el = document.getElementById('opt-worldsize');
+    if (el) _setMcText(el, 'Indev (256 × 256)');
+}
+
 function _isLockedPresetWorldType() {
-    return worldOptions.worldtype === 4 || worldOptions.worldtype === 5 || worldOptions.worldtype === 6;
+    return worldOptions.worldtype === 4 || worldOptions.worldtype === 5 || worldOptions.worldtype === 6 || worldOptions.worldtype === 7;
 }
 
 function _isBeta173WorldType() {
     return worldOptions.worldtype === 6;
 }
+function _isIndevIslandWorldType() {
+    return worldOptions.worldtype === 7;
+}
 
 function _applyLockedPresetGameplayOptions() {
-    if (_isBeta173WorldType()) {
+    if (_isBeta173WorldType() || _isIndevIslandWorldType()) {
         worldOptions.hungerEnabled = false;
         worldOptions.xpenabled = false;
         worldOptions.aetherEnabled = false;
@@ -138,6 +169,7 @@ function _applyLockedPresetGameplayOptions() {
         if (h) _setMcText(h, 'OFF');
         if (xp) _setMcText(xp, 'OFF');
         if (ae) _setMcText(ae, 'OFF');
+        if (_isIndevIslandWorldType()) _forceIndevWorldSizeIfNeeded();
     }
 }
 
@@ -170,6 +202,10 @@ function toggleOption(key) {
             _forceSkyblockWorldSizeIfNeeded();
             return;
         }
+        if (worldOptions.worldtype === 7) {
+            _forceIndevWorldSizeIfNeeded();
+            return;
+        }
         var labels = _getWorldSizeLabels();
         worldOptions.worldsize = (worldOptions.worldsize + 1) % labels.length;
         _setMcText(document.getElementById('opt-worldsize'), labels[worldOptions.worldsize]);
@@ -182,6 +218,7 @@ function toggleOption(key) {
         const biomeGroup = document.getElementById('single-biome-group');
         if (biomeGroup) biomeGroup.style.display = worldOptions.worldtype === 3 ? 'block' : 'none';
         if (worldOptions.worldtype === 5) _forceSkyblockWorldSizeIfNeeded();
+        if (worldOptions.worldtype === 7) _forceIndevWorldSizeIfNeeded();
         _applyLockedPresetGameplayOptions();
         if (typeof _applySuperflatGreyout === 'function') _applySuperflatGreyout();
         // Alpha, Skyblock, and Beta 1.7.3 are locked presets.
@@ -192,14 +229,14 @@ function toggleOption(key) {
         }
         const worldSizeBtn = document.getElementById('opt-worldsize');
         if (worldSizeBtn) {
-            if (worldOptions.worldtype === 5) worldSizeBtn.classList.add('disabled');
+            if (worldOptions.worldtype === 5 || worldOptions.worldtype === 7) worldSizeBtn.classList.add('disabled');
             else worldSizeBtn.classList.remove('disabled');
         }
     } else if (key === 'singlebiome') {
         worldOptions.singleBiome = (worldOptions.singleBiome + 1) % singleBiomeList.length;
         _setMcText(document.getElementById('opt-singlebiome'), singleBiomeLabels[worldOptions.singleBiome]);
     } else if (key === 'hostilespawns' || key === 'xpenabled' || key === 'hungerEnabled' || key === 'monolithsEnabled' || key === 'structures' || key === 'caves' || key === 'lava' || key === 'aetherEnabled') {
-        if (_isBeta173WorldType() && (key === 'xpenabled' || key === 'hungerEnabled' || key === 'aetherEnabled')) {
+        if ((_isBeta173WorldType() || _isIndevIslandWorldType()) && (key === 'xpenabled' || key === 'hungerEnabled' || key === 'aetherEnabled')) {
             _applyLockedPresetGameplayOptions();
             return;
         }
@@ -385,6 +422,7 @@ let GEN_STRUCTURES = true;
 let GEN_CAVES = true;
 let GEN_LAVA = true;
 let GEN_BIOME_SCALE = 300;
+let GEN_EFFECTIVE_BIOME_SCALE = 300;
 let GEN_SMOOTHNESS = 150;
 let GEN_VOLATILITY_MULT = 100;
 let GEN_TEMP_OFFSET = 0;
@@ -497,7 +535,8 @@ function _readBiomeOverrides() {
 
 async function startWorldCreation() {
     if (worldOptions.worldtype === 5) _forceSkyblockWorldSizeIfNeeded();
-    if (worldOptions.worldtype === 6) _applyLockedPresetGameplayOptions();
+    if (worldOptions.worldtype === 7) _forceIndevWorldSizeIfNeeded();
+    if (worldOptions.worldtype === 6 || worldOptions.worldtype === 7) _applyLockedPresetGameplayOptions();
     var seedStr = document.getElementById('world-seed').value.trim();
     var worldName = document.getElementById('world-name').value.trim() || 'New World';
 
@@ -601,6 +640,32 @@ async function startWorldCreation() {
         GEN_XP_ENABLED = false;
     }
 
+    // Indev Island preset: fixed 256x256 island, no hunger/XP/Aether, no ravines.
+    if (GEN_WORLD_TYPE === 7) {
+        GEN_HUNGER_ENABLED = false;
+        GEN_XP_ENABLED = false;
+        GEN_AETHER_ENABLED = false;
+        worldOptions.hungerEnabled = false;
+        worldOptions.xpenabled = false;
+        worldOptions.aetherEnabled = false;
+        GEN_SINGLE_BIOME = '';
+        GEN_STRUCTURES = true;
+        GEN_CAVES = true;
+        GEN_LAVA = false;
+        GEN_RAVINE_FREQUENCY = 0;
+        GEN_SEA_LEVEL = 62;
+        GEN_TREE_DENSITY = 100;
+        GEN_FOLIAGE_DENSITY = 100;
+        GEN_BIOME_SCALE = 256;
+        GEN_EFFECTIVE_BIOME_SCALE = 256;
+
+        // v437: Indev graphics restrictions.
+        // Smooth Lighting is locked OFF, and Fabulous is unavailable.
+        if (typeof settingSmoothLighting !== 'undefined') settingSmoothLighting = false;
+        if (typeof settingGraphicsFabulous !== 'undefined') settingGraphicsFabulous = false;
+        if (typeof settingGraphicsFancy !== 'undefined') settingGraphicsFancy = true;
+    }
+
     // Beta 1.7.3 preset: old biome set only, no hunger, no XP, no Aether.
     // World customization is locked by the menu for this preset.
     if (GEN_WORLD_TYPE === 6) {
@@ -630,6 +695,15 @@ async function startWorldCreation() {
     var chunks = _getWorldSizeChunks();
     CHUNKS_X_ACTIVE = chunks[sizeIdx];
     CHUNKS_Z_ACTIVE = chunks[sizeIdx];
+    if (GEN_WORLD_TYPE === 7) {
+        CHUNKS_X_ACTIVE = 16;
+        CHUNKS_Z_ACTIVE = 16;
+    }
+
+    // v399: scale biome map density by selected world size. The largest
+    // world keeps GEN_BIOME_SCALE untouched; smaller worlds use smaller
+    // effective biome scales so they contain more biome regions.
+    GEN_EFFECTIVE_BIOME_SCALE = _getBiomeScaleForWorldSize(GEN_BIOME_SCALE, CHUNKS_X_ACTIVE);
 
     // Hide screens
     document.getElementById('create-world').classList.add('hidden');
@@ -670,7 +744,8 @@ function _applySuperflatGreyout() {
     const isSuperflat = (worldOptions.worldtype === 1);
     const isSkyblock = (worldOptions.worldtype === 5);
     const isBeta173 = (worldOptions.worldtype === 6);
-    const isLocked = isSkyblock || isBeta173;
+    const isIndev = (worldOptions.worldtype === 7);
+    const isLocked = isSkyblock || isBeta173 || isIndev;
 
     // Toggle disabled class on greyed-out categories. Locked presets grey out
     // all world customization because their terrain/gameplay rules are fixed.
@@ -696,11 +771,12 @@ function _applySuperflatGreyout() {
 
     const worldSizeBtn = document.getElementById('opt-worldsize');
     if (worldSizeBtn) {
-        if (isSkyblock) worldSizeBtn.classList.add('disabled');
+        if (isSkyblock || isIndev) worldSizeBtn.classList.add('disabled');
         else worldSizeBtn.classList.remove('disabled');
     }
     if (isSkyblock) _forceSkyblockWorldSizeIfNeeded();
-    if (isBeta173) _applyLockedPresetGameplayOptions();
+    if (isIndev) _forceIndevWorldSizeIfNeeded();
+    if (isBeta173 || isIndev) _applyLockedPresetGameplayOptions();
 
     // If currently viewing a disabled category, switch to a visible one
     const visibleCat = document.querySelector('.adv-category[style*="block"]');

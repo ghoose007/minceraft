@@ -5,15 +5,92 @@
 // --- MENU API FUNCTIONS ---
 let _initNeedsRemesh = false;
 
+function _isIndevGraphicsLockedWorld() {
+    return (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7);
+}
+
+function _applyIndevGraphicsLocks() {
+    if (!_isIndevGraphicsLockedWorld()) {
+        const g = document.getElementById('btn-graphics');
+        const s = document.getElementById('btn-smooth-light');
+        if (g) g.classList.remove('disabled');
+        if (s) s.classList.remove('disabled');
+        return false;
+    }
+
+    let needsRemesh = false;
+
+    // Indev mode locks Smooth Lighting OFF.
+    if (settingSmoothLighting !== false) {
+        settingSmoothLighting = false;
+        needsRemesh = true;
+    }
+
+    // Indev mode greys out/removes Fabulous by cycling only Fast/Fancy.
+    if (settingGraphicsFabulous) {
+        settingGraphicsFabulous = false;
+        settingGraphicsFancy = true;
+        needsRemesh = true;
+        try {
+            if (typeof disposeFabulousGraphics === 'function') disposeFabulousGraphics();
+            if (typeof _restoreStandardShaders === 'function') _restoreStandardShaders();
+        } catch (e) {
+            console.error('[Indev graphics lock] Failed to disable Fabulous:', e);
+        }
+    }
+
+    const label = settingGraphicsFancy ? 'Fancy' : 'Fast';
+    const g = document.getElementById('btn-graphics');
+    if (g) {
+        g.innerText = 'Graphics: ' + label + ' (Fabulous unavailable)';
+        g.classList.remove('disabled'); // still clickable between Fast/Fancy
+    }
+
+    const s = document.getElementById('btn-smooth-light');
+    if (s) {
+        s.innerText = 'Smooth Lighting: OFF (Indev)';
+        s.classList.add('disabled');
+    }
+
+    const warn = document.getElementById('fabulous-warning');
+    if (warn) warn.style.display = 'none';
+
+    if (needsRemesh) _initNeedsRemesh = true;
+    return true;
+}
+window._applyIndevGraphicsLocks = _applyIndevGraphicsLocks;
+
+
+
 window.showPauseScreen = function(screenId) {
     document.getElementById('pause-main').classList.add('hidden');
     document.getElementById('options-menu').classList.add('hidden');
     document.getElementById('video-settings-menu').classList.add('hidden');
     document.getElementById('controls-menu').classList.add('hidden');
     document.getElementById(screenId).classList.remove('hidden');
+    if (screenId === 'video-settings-menu' && typeof _applyIndevGraphicsLocks === 'function') {
+        _applyIndevGraphicsLocks();
+    }
 }
 
 window.toggleGraphics = function() {
+    if (_isIndevGraphicsLockedWorld()) {
+        // Indev: Fabulous is not an option. Toggle only Fast <-> Fancy.
+        settingGraphicsFabulous = false;
+        settingGraphicsFancy = !settingGraphicsFancy;
+        const label = settingGraphicsFancy ? 'Fancy' : 'Fast';
+        const btn = document.getElementById('btn-graphics');
+        if (btn) btn.innerText = 'Graphics: ' + label + ' (Fabulous unavailable)';
+        const warn = document.getElementById('fabulous-warning');
+        if (warn) warn.style.display = 'none';
+        try {
+            if (typeof disposeFabulousGraphics === 'function') disposeFabulousGraphics();
+            if (typeof _restoreStandardShaders === 'function') _restoreStandardShaders();
+        } catch (e) {}
+        _initNeedsRemesh = true;
+        return;
+    }
+
     if (!settingGraphicsFancy && !settingGraphicsFabulous) {
         settingGraphicsFancy = true;
         settingGraphicsFabulous = false;
@@ -54,6 +131,15 @@ window.toggleGraphics = function() {
 }
 
 window.toggleSmoothLighting = function() {
+    if (_isIndevGraphicsLockedWorld()) {
+        settingSmoothLighting = false;
+        var lockedEl = document.getElementById('btn-smooth-light');
+        if (lockedEl) {
+            lockedEl.innerText = 'Smooth Lighting: OFF (Indev)';
+            lockedEl.classList.add('disabled');
+        }
+        return;
+    }
     settingSmoothLighting = !settingSmoothLighting;
     var el = document.getElementById('btn-smooth-light');
     if (el) {
@@ -114,7 +200,7 @@ window.applyGUIScale = function() {
     }
     const zoomLevel = scale / 2; 
     
-    const uiElements = ['main-menu', 'create-world', 'loading-screen', 'pause-menu', 'ui-layer', 'crosshair', 'debug-info', 'coordinates-display', 'flight-indicator', 'clock-container', 'hud-layer', 'inventory-modal', 'survival-inventory-modal', 'crafting-table-modal', 'furnace-modal', 'chest-modal', 'enchanting-modal', 'dragged-item'];
+    const uiElements = ['main-menu', 'create-world', 'loading-screen', 'pause-menu', 'ui-layer', 'crosshair', 'debug-info', 'coordinates-display', 'flight-indicator', 'hud-layer', 'inventory-modal', 'survival-inventory-modal', 'crafting-table-modal', 'furnace-modal', 'chest-modal', 'enchanting-modal', 'dragged-item'];
     // item-tooltip is intentionally excluded from zoom scaling — it must stay
     // position:fixed at real screen coords so mousemove tracking works correctly.
     

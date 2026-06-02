@@ -1221,6 +1221,12 @@ function _handleTap(screenX, screenY) {
         }
     }
 
+    // --- Bonemeal item use ---
+    if (currentBuildBlock === 261 && typeof window._useBonemealOnTarget === 'function') {
+        window._useBonemealOnTarget(target);
+        return;
+    }
+
     // --- UI block interactions (crafting table, furnace, chest, etc.) ---
     if (interactId === 58) { uiState = 'CRAFTING'; if (typeof openCraftingTable === 'function') openCraftingTable(); return; }
     if (interactId === 59) { uiState = 'FURNACE'; if (typeof openFurnace === 'function') openFurnace(target.hit[0], target.hit[1], target.hit[2]); return; }
@@ -1407,6 +1413,9 @@ function _handleTap(screenX, screenY) {
             if (typeof detectPortalFrame === 'function') {
                 const portalResult = detectPortalFrame(px, py, pz);
                 if (portalResult) {
+                    if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7) {
+                        return;
+                    }
                     // Nether portals can't be lit in the aether
                     if (typeof currentDimension !== 'undefined' && currentDimension === 'aether') {
                         return;
@@ -1426,6 +1435,9 @@ function _handleTap(screenX, screenY) {
             if (typeof detectAetherPortalFrame === 'function') {
                 const aetherResult = detectAetherPortalFrame(px, py, pz);
                 if (aetherResult) {
+                    if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7) {
+                        return;
+                    }
                     // Aether portals can't be lit in the nether
                     if (typeof currentDimension !== 'undefined' && currentDimension === 'nether') {
                         return;

@@ -312,7 +312,7 @@ function checkFluidLevel(px, py, pz, height) {
 
 function movePlayer(dt) {
     if (dt > 0.1) dt = 0.1;
-    const isPlaying = (uiState === 'PLAYING');
+    const isPlaying = (uiState === 'PLAYING') && !(window.MinecraftChat && window.MinecraftChat.isOpen && window.MinecraftChat.isOpen());
 
     const fluid = checkFluidLevel(player.x, player.y, player.z, player.height);
     const isSneaking = keys.ShiftLeft && !player.flying && isPlaying;
@@ -541,6 +541,21 @@ function movePlayer(dt) {
         player.z += dz;
     }
 
+
+    // v430: Indev Island hard world border. The ocean continues visually at
+    // the edge, but movement is blocked at the 256x256 playable boundary.
+    if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7) {
+        const margin = 0.31;
+        const minX = -WORLD_WIDTH / 2 + margin;
+        const maxX =  WORLD_WIDTH / 2 - margin;
+        const minZ = -WORLD_DEPTH / 2 + margin;
+        const maxZ =  WORLD_DEPTH / 2 - margin;
+        if (player.x < minX) { player.x = minX; player.vx = 0; player.knockbackX = 0; }
+        if (player.x > maxX) { player.x = maxX; player.vx = 0; player.knockbackX = 0; }
+        if (player.z < minZ) { player.z = minZ; player.vz = 0; player.knockbackZ = 0; }
+        if (player.z > maxZ) { player.z = maxZ; player.vz = 0; player.knockbackZ = 0; }
+    }
+
     const playerKbDecay = Math.exp(-playerKbFriction * dt);
     player.knockbackX = (player.knockbackX || 0) * playerKbDecay;
     player.knockbackZ = (player.knockbackZ || 0) * playerKbDecay;
@@ -651,7 +666,7 @@ function movePlayer(dt) {
     const now = performance.now();
     if (typeof window._lastPortalUse === 'undefined') window._lastPortalUse = 0;
     const isSwitching = (typeof _dimensionSwitching !== 'undefined' && _dimensionSwitching);
-    if (!isSwitching && now - window._lastPortalUse > 4000) { // 4 second cooldown
+    if (!isSwitching && !(typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7) && now - window._lastPortalUse > 4000) { // 4 second cooldown
         const checkXs = [Math.floor(player.x), Math.floor(player.x + 0.3), Math.floor(player.x - 0.3)];
         const checkZs = [Math.floor(player.z), Math.floor(player.z + 0.3), Math.floor(player.z - 0.3)];
         let inPortal = false;

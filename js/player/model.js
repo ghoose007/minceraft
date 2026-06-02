@@ -413,7 +413,10 @@ function _getArmorTierPrefix(itemId) {
     if (itemId >= 174 && itemId <= 177) return 'leather';
     if (itemId >= 178 && itemId <= 181) return 'diamond';
     if (itemId >= 182 && itemId <= 185) return 'gold';
-    if (itemId >= 219 && itemId <= 222) return 'emerald';
+    // v411: Emerald armor item IDs were moved to 256-259 when 219/220 became Tall Grass.
+    // Third-person armor was still checking the old 219-222 range, so emerald armor fell
+    // through to the iron fallback and rendered visually as iron armor.
+    if (itemId >= 256 && itemId <= 259) return 'emerald';
     return 'iron'; // fallback
 }
 

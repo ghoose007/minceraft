@@ -13,8 +13,8 @@ const _transparentFancyLUT = new Uint8Array(256);
     // Added 62, 63, 64 for Farming, 66 for Vine, 67 for Lily Pad, 70-76 Slabs, 80-86 Stairs
     // v258: also added 238-249 for new slab/stair variants and sandstone/quartz slabs
     // v262: 250-251 sandstone/quartz stairs
-    const transparentIds = [0, 4, 14, 16, 17, 20, 22, 23, 24, 26, 27, 38, 40, 42, 43, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 89, 90, 93, 94, 95, 97, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206, 209, 212, 213, 219, 220, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251];
-    const transparentFastIds = [0, 4, 16, 17, 20, 23, 24, 26, 27, 38, 40, 42, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 90, 93, 94, 95, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206, 209, 212, 213, 219, 220, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251]; // leaves opaque in Fast mode
+    const transparentIds = [0, 4, 14, 16, 17, 20, 22, 23, 24, 26, 27, 38, 40, 42, 43, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 89, 90, 93, 94, 95, 97, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206, 209, 212, 213, 219, 220, 221, 222, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251];
+    const transparentFastIds = [0, 4, 16, 17, 20, 23, 24, 26, 27, 38, 40, 42, 52, 53, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83, 84, 85, 86, 90, 93, 94, 95, 116, 117, 118, 137, 144, 145, 146, 147, 148, 149, 150, 152, 157, 158, 201, 202, 203, 205, 206, 209, 212, 213, 219, 220, 221, 222, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251]; // leaves opaque in Fast mode
     for (const id of transparentIds) _transparentFancyLUT[id] = 1;
     for (const id of transparentFastIds) _transparentLUT[id] = 1;
 })();
@@ -30,6 +30,8 @@ function isFluidBlock(id) { return _fluidLUT[id]; }
 const _crossLUT = new Uint8Array(256);
 _crossLUT[16] = 1; _crossLUT[23] = 1; _crossLUT[24] = 1; _crossLUT[26] = 1; _crossLUT[42] = 1; _crossLUT[52] = 1; _crossLUT[53] = 1; _crossLUT[89] = 1; _crossLUT[212] = 1; _crossLUT[213] = 1;
 _crossLUT[116] = 1; _crossLUT[117] = 1; _crossLUT[118] = 1; _crossLUT[137] = 1;
+// v406: mushrooms render as centered X-pattern plant blocks.
+_crossLUT[221] = 1; _crossLUT[222] = 1;
 // v335: 2-block-tall grass (bottom + top halves) — both render as cross-block X-pattern.
 _crossLUT[219] = 1; _crossLUT[220] = 1;
 function isCrossBlock(id) { return _crossLUT[id]; }

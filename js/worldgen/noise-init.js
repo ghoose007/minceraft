@@ -52,8 +52,8 @@ function _pastePrefabWorldGen(prefab, blockX, blockY, blockZ) {
 }
 // ------------------------------------
 
-const BIOME_IDS = { 'desert': 0, 'rainforest': 1, 'tundra': 2, 'taiga': 3, 'plains': 4, 'forest': 5, 'ocean': 6, 'swamp': 7, 'jungle': 8, 'extreme_hills': 9, 'aether_skyforest': 10, 'aether_void': 11, 'aether_lake': 12, 'alpha_forest': 13, 'badlands': 14, 'ice_spikes': 15, 'seasonal_forest': 16, 'savanna': 17, 'shrubland': 5 };
-const BIOME_NAMES = ['desert', 'rainforest', 'tundra', 'taiga', 'plains', 'forest', 'ocean', 'swamp', 'jungle', 'extreme_hills', 'aether_skyforest', 'aether_void', 'aether_lake', 'alpha_forest', 'badlands', 'ice_spikes', 'seasonal_forest', 'savanna'];
+const BIOME_IDS = { 'desert': 0, 'rainforest': 1, 'tundra': 2, 'taiga': 3, 'plains': 4, 'forest': 5, 'ocean': 6, 'swamp': 7, 'jungle': 8, 'extreme_hills': 9, 'aether_skyforest': 10, 'aether_void': 11, 'aether_lake': 12, 'alpha_forest': 13, 'badlands': 14, 'ice_spikes': 15, 'seasonal_forest': 16, 'savanna': 17, 'indev_forest': 18, 'shrubland': 5 };
+const BIOME_NAMES = ['desert', 'rainforest', 'tundra', 'taiga', 'plains', 'forest', 'ocean', 'swamp', 'jungle', 'extreme_hills', 'aether_skyforest', 'aether_void', 'aether_lake', 'alpha_forest', 'badlands', 'ice_spikes', 'seasonal_forest', 'savanna', 'indev_forest'];
 
 function _initWorldGenNoise() {
     const s1 = (_worldSeed * 0.00000001) % 1;
@@ -80,7 +80,12 @@ function _initWorldGenNoise() {
     _wgPerlinRiver     = new PerlinNoise(Math.abs(s10) + 0.01); // River path noise
     _wgPerlinRiver2    = new PerlinNoise(Math.abs(s11) + 0.01); // River warp noise
     _wgTerrainMult = GEN_TERRAIN_HEIGHT / 80;
-    _wgBiomeScale = GEN_BIOME_SCALE;
+    // v399: use the world-size-scaled biome map scale when present.
+    // GEN_BIOME_SCALE remains the UI/base value saved with the world; the
+    // effective scale only controls biome map density for the selected size.
+    _wgBiomeScale = (typeof GEN_EFFECTIVE_BIOME_SCALE !== 'undefined' && GEN_EFFECTIVE_BIOME_SCALE > 0)
+        ? GEN_EFFECTIVE_BIOME_SCALE
+        : GEN_BIOME_SCALE;
     _wgSmoothness = GEN_SMOOTHNESS;
     
     _wgCavePrimary = new PerlinNoise(Math.abs((_worldSeed * 97 + 311) * 0.00000001) % 1 + 0.01);

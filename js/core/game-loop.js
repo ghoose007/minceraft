@@ -263,6 +263,7 @@ function _gatherWorldgenSettings() {
     if (typeof GEN_SEA_LEVEL !== 'undefined') s.GEN_SEA_LEVEL = GEN_SEA_LEVEL;
     if (typeof GEN_TERRAIN_HEIGHT !== 'undefined') s.GEN_TERRAIN_HEIGHT = GEN_TERRAIN_HEIGHT;
     if (typeof GEN_BIOME_SCALE !== 'undefined') s.GEN_BIOME_SCALE = GEN_BIOME_SCALE;
+    if (typeof GEN_EFFECTIVE_BIOME_SCALE !== 'undefined') s.GEN_EFFECTIVE_BIOME_SCALE = GEN_EFFECTIVE_BIOME_SCALE;
     if (typeof GEN_SMOOTHNESS !== 'undefined') s.GEN_SMOOTHNESS = GEN_SMOOTHNESS;
     if (typeof GEN_VOLATILITY_MULT !== 'undefined') s.GEN_VOLATILITY_MULT = GEN_VOLATILITY_MULT;
     if (typeof GEN_TEMP_OFFSET !== 'undefined') s.GEN_TEMP_OFFSET = GEN_TEMP_OFFSET;
@@ -410,6 +411,10 @@ function _onWorkerChunkDone(msg) {
     // system resolves to the alpha green color regardless of what the
     // worker ended up sending.
     const isAlphaPreset = (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 4);
+    // v431: Indev Island chunks must stay locked to Indev Forest after worker
+    // adoption. Without this, async biome buffers can briefly repaint the
+    // grass/foliage tint as another biome during chunk updates.
+    const isIndevPreset = (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7);
     for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         for (let lz = 0; lz < CHUNK_SIZE; lz++) {
             const wx = startX + lx;
@@ -420,6 +425,8 @@ function _onWorkerChunkDone(msg) {
                     biomeMap[gIdx] = 'plains';
                 } else if (isAlphaPreset) {
                     biomeMap[gIdx] = 'alpha_forest';
+                } else if (isIndevPreset) {
+                    biomeMap[gIdx] = 'indev_forest';
                 } else {
                     biomeMap[gIdx] = BIOME_NAMES[biomes[lx + lz * CHUNK_SIZE]];
                 }
@@ -1106,8 +1113,8 @@ function spawnMeshWorker() {
         settings: {
             GEN_WORLD_TYPE: typeof GEN_WORLD_TYPE !== 'undefined' ? GEN_WORLD_TYPE : 0,
             settingGraphicsFancy: typeof settingGraphicsFancy !== 'undefined' ? settingGraphicsFancy : true,
-            settingSmoothLighting: typeof settingSmoothLighting !== 'undefined' ? settingSmoothLighting : true,
-            settingGraphicsFabulous: typeof settingGraphicsFabulous !== 'undefined' ? settingGraphicsFabulous : false
+            settingSmoothLighting: (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7) ? false : (typeof settingSmoothLighting !== 'undefined' ? settingSmoothLighting : true),
+            settingGraphicsFabulous: (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7) ? false : (typeof settingGraphicsFabulous !== 'undefined' ? settingGraphicsFabulous : false)
         }
     });
 }
@@ -1290,7 +1297,7 @@ function _onMeshWorkerDone(msg) {
 // --- Cached function-existence checks (avoids 50+ typeof checks per frame) ---
 // Populated once on first animate() call when all scripts are loaded.
 let _fnCacheReady = false;
-let _fn_updateClock, _fn_doRandomTicks, _fn_updateMobs, _fn_tickMobSpawning;
+let _fn_doRandomTicks, _fn_updateMobs, _fn_tickMobSpawning;
 let _fn_updateArrows, _fn_tickSpawnerBlocks, _fn_updateTNTEntities;
 let _fn_updateHerobrineEntities, _fn_tickEnchantBooks, _fn_updateXPOrbs, _fn_tickRedstone;
 let _fn_soundUpdateListener, _fn_soundCheckDigTick, _fn_soundCheckFootsteps;
@@ -1302,7 +1309,6 @@ let _fn_playWaterSplashAt, _fn_igniteTNT, _fn_animatePlayerModel;
 let _fn_updateThirdPersonCamera, _fn_updateFireEffects, _fn_getWaterFlowDirection;
 
 function _cacheFunctionRefs() {
-    _fn_updateClock = typeof updateClock === 'function' ? updateClock : null;
     _fn_doRandomTicks = typeof doRandomTicks === 'function' ? doRandomTicks : null;
     _fn_updateMobs = typeof updateMobs === 'function' ? updateMobs : null;
     _fn_tickMobSpawning = typeof tickMobSpawning === 'function' ? tickMobSpawning : null;
@@ -1489,8 +1495,6 @@ function animate() {
     if (globalTime < DAY_TIME / 2) t = (globalTime / (DAY_TIME / 2)) * 0.25;
     else if (globalTime < DAY_TIME / 2 + NIGHT_TIME) t = 0.25 + ((globalTime - DAY_TIME / 2) / NIGHT_TIME) * 0.5;
     else t = 0.75 + ((globalTime - DAY_TIME / 2 - NIGHT_TIME) / (DAY_TIME / 2)) * 0.25;
-
-    if (!isPaused && _fn_updateClock) _fn_updateClock(t);
 
     const angle = t * Math.PI * 2;
     const sunHeight = Math.cos(angle); 
@@ -3012,93 +3016,85 @@ function animate() {
     const debugEl = _cachedDebugEl;
     if (debugEl) {
         if (window.showDebugScreen) {
-            // Throttle textContent updates to 10 Hz — DOM reflows from this
-            // were 9.2% of total CPU time in the profiler. Player can't read
-            // 60Hz text anyway. We use a label flag to skip the update block
-            // without skipping the render call below.
             const _nowDbg = performance.now();
             if (!window._lastDebugUpdate) window._lastDebugUpdate = 0;
-            const _doDebugUpdate = (_nowDbg - window._lastDebugUpdate >= 100);
-            if (_doDebugUpdate) {
+            if (_nowDbg - window._lastDebugUpdate >= 100) {
                 window._lastDebugUpdate = _nowDbg;
-            
-            const px = player.x.toFixed(3);
-            const py = player.y.toFixed(5);
-            const pz = player.z.toFixed(3);
-            
-            const mobCount = typeof globalMobs !== 'undefined' ? globalMobs.length : 0;
-            const itemCount = typeof droppedItems !== 'undefined' ? droppedItems.length : 0;
-            const partCount = typeof particles !== 'undefined' ? particles.length : 0;
-            const tntCount = typeof activeTNT !== 'undefined' ? activeTNT.length : 0;
-            const entityCount = mobCount + itemCount + partCount + tntCount;
-            
-            const bX = Math.floor(player.x);
-            const bY = Math.floor(player.y);
-            const bZ = Math.floor(player.z);
-            
-            // Get biome at player position
-            const biomeDisplay = (typeof getBiomeDisplayName === 'function')
-                ? getBiomeDisplayName(bX, bZ)
-                : 'Unknown';
-            
-            // Get facing direction from yaw
-            let yawDeg = ((player.yaw * 180 / Math.PI) % 360 + 360) % 360;
-            let facingDir, facingAxis;
-            if (yawDeg >= 315 || yawDeg < 45) { facingDir = 'South'; facingAxis = '+Z'; }
-            else if (yawDeg >= 45 && yawDeg < 135) { facingDir = 'West'; facingAxis = '-X'; }
-            else if (yawDeg >= 135 && yawDeg < 225) { facingDir = 'North'; facingAxis = '-Z'; }
-            else { facingDir = 'East'; facingAxis = '+X'; }
-            
-            // Build per-type mob breakdown
-            let mobBreakdown = '';
-            if (typeof globalMobs !== 'undefined' && globalMobs.length > 0) {
-                const counts = {};
-                for (const mob of globalMobs) {
-                    const name = mob.constructor.name || 'Unknown';
-                    counts[name] = (counts[name] || 0) + 1;
+
+                const px = player.x.toFixed(3);
+                const py = player.y.toFixed(3);
+                const pz = player.z.toFixed(3);
+
+                const bX = Math.floor(player.x);
+                const bY = Math.floor(player.y);
+                const bZ = Math.floor(player.z);
+                const cX = bX >> 4;
+                const cZ = bZ >> 4;
+                const inChunkX = ((bX % 16) + 16) % 16;
+                const inChunkY = ((bY % 16) + 16) % 16;
+                const inChunkZ = ((bZ % 16) + 16) % 16;
+
+                const biomeDisplay = (typeof getBiomeDisplayName === 'function')
+                    ? getBiomeDisplayName(bX, bZ)
+                    : 'Unknown';
+
+                let yawDeg = ((player.yaw * 180 / Math.PI) % 360 + 360) % 360;
+                let facingDir, facingAxis;
+                if (yawDeg >= 315 || yawDeg < 45) { facingDir = 'South'; facingAxis = '+Z'; }
+                else if (yawDeg >= 45 && yawDeg < 135) { facingDir = 'West'; facingAxis = '-X'; }
+                else if (yawDeg >= 135 && yawDeg < 225) { facingDir = 'North'; facingAxis = '-Z'; }
+                else { facingDir = 'East'; facingAxis = '+X'; }
+
+                const dimName = currentDimension === 'nether'
+                    ? 'The Nether'
+                    : currentDimension === 'aether'
+                        ? 'The Aether'
+                        : 'Overworld';
+
+                const lines = [
+                    'Mincecraft Debug',
+                    'FPS: ' + debugFps,
+                    'XYZ: ' + px + ' / ' + py + ' / ' + pz,
+                    'Block: ' + bX + ' ' + bY + ' ' + bZ,
+                    'Chunk: ' + cX + ' ' + cZ,
+                    'In-Chunk: ' + inChunkX + ' ' + inChunkY + ' ' + inChunkZ,
+                    'Facing: ' + facingDir + ' (' + facingAxis + ')',
+                    'Biome: ' + biomeDisplay,
+                    'Dimension: ' + dimName,
+                    'Seed: ' + (typeof _worldSeed !== 'undefined' ? _worldSeed : 'Unknown')
+                ];
+
+                if (window.mcFont && window.mcFont.isReady && window.mcFont.isReady()) {
+                    const scale = 2;
+                    const lineH = 18;
+                    let w = 1;
+                    for (const line of lines) w = Math.max(w, Math.ceil(window.mcFont.measure(line, scale) + 8));
+                    const h = lines.length * lineH + 4;
+
+                    let canvas = debugEl.querySelector('canvas');
+                    if (!canvas) {
+                        canvas = document.createElement('canvas');
+                        canvas.style.imageRendering = 'pixelated';
+                        debugEl.innerHTML = '';
+                        debugEl.appendChild(canvas);
+                    }
+                    if (canvas.width !== w) canvas.width = w;
+                    if (canvas.height !== h) canvas.height = h;
+
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.imageSmoothingEnabled = false;
+                    for (let i = 0; i < lines.length; i++) {
+                        window.mcFont.draw(ctx, lines[i], 0, 2 + i * lineH, scale, {
+                            color: '#ffffff',
+                            shadow: true,
+                            shadowColor: '#3f3f3f'
+                        });
+                    }
+                } else {
+                    debugEl.textContent = lines.join('\n');
                 }
-                mobBreakdown = '\n' + Object.entries(counts).map(([k,v]) => `  ${k}: ${v}`).join('\n');
             }
-
-            // Three.js renderer stats — exposes draw calls, triangles, etc.
-            // Read from previous frame's saved values (set after render() call)
-            const drawCalls = window._lastDrawCalls || 0;
-            const triangles = window._lastTriangles || 0;
-            const meshChunks = (typeof chunkMeshes !== 'undefined') ? chunkMeshes.size : 0;
-            
-            // Performance timing breakdown
-            const genT = (window._lastGenTime || 0).toFixed(1);
-            const genN = window._lastGenChunks || 0;
-            const lightT = (window._lastLightTime || 0).toFixed(1);
-            const meshT = (window._lastMeshTime || 0).toFixed(1);
-            const meshN = window._lastMeshChunks || 0;
-            
-            // Worker status: shows whether the worldgen worker is active and how many chunks are in-flight
-            const workerStatus = (typeof _workerReady !== 'undefined' && _workerReady) 
-                ? `Worker: ON (${_pendingWorkerChunks.size} pending)` 
-                : (typeof _worldgenWorker !== 'undefined' && _worldgenWorker ? 'Worker: INIT' : 'Worker: OFF');
-            const meshWorkerStatus = (typeof _meshWorkerReady !== 'undefined' && _meshWorkerReady) 
-                ? `MeshW: ON (${_pendingMeshRequests.size} pending)` 
-                : (typeof _meshWorker !== 'undefined' && _meshWorker ? 'MeshW: INIT' : 'MeshW: OFF');
-
-            debugEl.textContent = `Mincecraft Beta 1.7.3 (Browser)
-FPS: ${debugFps} | Frame: ${debugFrameTime.toFixed(1)}ms | Ticks/s: ${debugTickRate}
-Draw calls: ${drawCalls} | Triangles: ${(triangles/1000).toFixed(0)}k | Chunks: ${meshChunks}
-Gen: ${genN}ch ${genT}ms | Light: ${lightT}ms | Mesh: ${meshN}ch ${meshT}ms
-Load: ${window._lastChunkLoadSpeed || 'balanced'}${window._chunkLoadingModeActive ? ' (throttled)' : ''} | LightQ: ${window._lastWorkerLightPending || 0}
-${workerStatus}
-${meshWorkerStatus}
-Dimension: ${currentDimension === 'nether' ? 'The Nether' : currentDimension === 'aether' ? 'The Aether' : 'Overworld'}
-XYZ: ${px}, ${py}, ${pz}
-Block: ${bX} ${bY} ${bZ}
-Chunk: ${(bX >> 4)} ${(bZ >> 4)}
-Facing: ${facingDir} (${facingAxis}) (${yawDeg.toFixed(1)})
-Biome: ${biomeDisplay}
-
-E: ${entityCount} (Mobs: ${mobCount}, Items: ${itemCount}, Particles: ${partCount})${mobBreakdown}
-Water Q: ${debugWaterQueue} | Lava Q: ${debugLavaQueue} | Dirty Chunks: ${dirtyChunks.size}`;
-
-            } // end _doDebugUpdate
             debugEl.style.display = 'block';
         } else {
             debugEl.style.display = 'none';

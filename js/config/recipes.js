@@ -76,6 +76,9 @@ const RECIPES = [
     { pattern: [[143, 143], [0, 112], [0, 112]], output: { id: 163, count: 1 } },            // Gold Hoe
     { pattern: [[143, 143], [112, 0], [112, 0]], output: { id: 163, count: 1 } },            // Gold Hoe (mirrored)
 
+    // --- Bone / Bonemeal ---
+    { pattern: [[260]], output: { id: 261, count: 3 } }, // Bone -> 3 Bonemeal
+
     // --- Food ---
     { pattern: [[129, 129, 129]], output: { id: 134, count: 1 } },                         // Bread (3 wheat)
 

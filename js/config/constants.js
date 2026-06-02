@@ -2,7 +2,7 @@
 // CONFIGURATION CONSTANTS
 // ==========================================
 
-const ASSET_VERSION = "386";
+const ASSET_VERSION = "439";
 
 const CHUNK_SIZE = 16;
 const CHUNK_HEIGHT = 256; 
@@ -30,7 +30,7 @@ const SNEAK_SPEED = 1.3;
 const FLIGHT_SPEED = 10.92;
 const FLIGHT_SPRINT_SPEED = 21.84;
 
-const GUI_SCALES = [1, 2, 3, "Auto"];
+const GUI_SCALES = [1, 2, 3, 4, 'Auto'];
 
 const RENDER_DISTANCES = Array.from({ length: 31 }, (_, i) => i + 2); // 2..32 chunks
 const RENDER_NAMES = RENDER_DISTANCES.map(d => `${d} Chunks`);
@@ -75,6 +75,7 @@ const BIOME_COLORS = {
     'extreme_hills': [0x8A/255, 0xB6/255, 0x89/255],
     'badlands': [0x90/255, 0x81/255, 0x4D/255],
     'alpha_forest': [199/255, 255/255, 140/255],
+    'indev_forest': [199/255, 255/255, 140/255], // v430: Indev Island uses Alpha grass tint
     // v341: ice_spikes — pale frosty grass/foliage tint. Slightly cooler
     // (more blue) than tundra so any rare exposed grass / spruce tree blends
     // into the snow-and-packed-ice landscape without standing out.
@@ -97,6 +98,7 @@ const BIOME_FOLIAGE_COLORS = {
     'extreme_hills': [0x6D/255, 0xA3/255, 0x6B/255],
     'badlands': [0x9E/255, 0x81/255, 0x4D/255],
     'alpha_forest': [199/255, 255/255, 140/255],
+    'indev_forest': [199/255, 255/255, 140/255],
     'ice_spikes': [120/255, 165/255, 145/255] // v341
 };
 
@@ -116,6 +118,7 @@ const BIOME_WATER_COLORS = {
     'extreme_hills': [0x00/255, 0x7B/255, 0xF7/255],
     'badlands':      [0x3F/255, 0x76/255, 0xE4/255],
     'ice_spikes':    [0x32/255, 0x47/255, 0xA5/255], // v341: deep frozen-water blue
+    'indev_forest':   [0x3F/255, 0x76/255, 0xE4/255],
     'aether_skyforest': [0.1, 1.8, 1.35],
     'aether_void':      [0.1, 1.8, 1.35],
     'aether_lake':      [0.1, 1.8, 1.35]

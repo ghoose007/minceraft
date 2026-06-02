@@ -9,7 +9,14 @@ function initSkeletonMaterial() {
     const tex = new THREE.TextureLoader().load('textures/skeleton.png?v=' + ASSET_VERSION);
     tex.magFilter = THREE.NearestFilter;
     tex.minFilter = THREE.NearestFilter;
-    skeletonMaterial = new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, transparent: true, alphaTest: 0.1 });
+    skeletonMaterial = new THREE.MeshBasicMaterial({
+        map: tex,
+        vertexColors: true,
+        transparent: true,
+        alphaTest: 0.1,
+        // v419: skeleton-only double-sided mesh rendering. Other mobs keep their existing material side.
+        side: THREE.DoubleSide
+    });
     if (typeof injectLightingShader === 'function') injectLightingShader(skeletonMaterial);
     skeletonMaterial.customProgramCacheKey = function() { return 'skeletonMat'; };
 }
@@ -29,8 +36,9 @@ class Skeleton extends Mob {
         initSkeletonMaterial();
         if (this.material) this.material.dispose();
         this.material = skeletonMaterial.clone();
+        this.material.side = THREE.DoubleSide; // v419: skeleton mesh only
         if (typeof injectLightingShader === 'function') injectLightingShader(this.material);
-        this.material.customProgramCacheKey = function() { return 'skeletonMatInst'; };
+        this.material.customProgramCacheKey = function() { return 'skeletonMatInstDoubleSide'; };
 
         const M = this.material;
         const TEX_W = 64, TEX_H = 32;
@@ -159,7 +167,12 @@ class Skeleton extends Mob {
                     window.spawnSmoke(this.x + (Math.random() - 0.5) * 0.8, this.y + 0.9 + Math.random() * 0.6, this.z + (Math.random() - 0.5) * 0.8);
                 }
             }
-            if (typeof window.spawnMobDeathXP === 'function') window.spawnMobDeathXP(this.x, this.y, this.z, 'skeleton');
+            // v424: Minecraft-style skeleton bone drop: 0-2 bones.
+            if (typeof window.spawnDroppedItem === 'function') {
+                const boneCount = Math.floor(Math.random() * 3);
+                if (boneCount > 0) window.spawnDroppedItem(this.x, this.y + 0.5, this.z, 260, boneCount);
+            }
+                        if (typeof window.spawnMobDeathXP === 'function') window.spawnMobDeathXP(this.x, this.y, this.z, 'skeleton');
         }
     }
 

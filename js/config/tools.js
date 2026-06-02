@@ -110,6 +110,9 @@ const TOOL_DATA = {
     223: { name: 'Iron Bucket', atlasIdx: 52, type: 'bucket', tier: 0, speed: 1.0, maxStack: 16 },
     224: { name: 'Water Bucket', atlasIdx: 53, type: 'bucket_water', tier: 0, speed: 1.0, maxStack: 1 },
     225: { name: 'Lava Bucket', atlasIdx: 54, type: 'bucket_lava', tier: 0, speed: 1.0, maxStack: 1 },
+    // v424: Bone/Bonemeal are items, not placeable blocks.
+    260: { name: 'Bone', atlasIdx: 221, type: 'material', tier: 0, speed: 1.0, isTerrainAtlas: true, itemModel: 'material' },
+    261: { name: 'Bonemeal', atlasIdx: 222, type: 'bonemeal', tier: 0, speed: 1.0, isTerrainAtlas: true, itemModel: 'material' },
 
     // Emerald Tools (tier 4, double diamond durability, faster than diamond)
     214: { name: 'Emerald Sword', atlasIdx: 47, type: 'sword', tier: 4, speed: 5.0, damage: 8, maxDurability: 3122 },

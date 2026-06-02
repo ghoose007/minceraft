@@ -179,12 +179,17 @@ window.tickMobSpawning = function(dt) {
 
                 // Pick the species with the fewest members to balance populations
                 // If tied, pick randomly among the tied types
-                const counts = [
-                    { type: 'pig', count: pigCount },
-                    { type: 'sheep', count: sheepCount },
-                    { type: 'cow', count: cowCount }
-                ];
-                const minCount = Math.min(pigCount, sheepCount, cowCount);
+                const counts = (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7)
+                    ? [
+                        { type: 'pig', count: pigCount },
+                        { type: 'cow', count: cowCount }
+                    ]
+                    : [
+                        { type: 'pig', count: pigCount },
+                        { type: 'sheep', count: sheepCount },
+                        { type: 'cow', count: cowCount }
+                    ];
+                const minCount = (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7) ? Math.min(pigCount, cowCount) : Math.min(pigCount, sheepCount, cowCount);
                 const candidates = counts.filter(c => c.count === minCount);
                 const type = candidates[Math.floor(Math.random() * candidates.length)].type;
 
@@ -235,7 +240,7 @@ window.tickMobSpawning = function(dt) {
                     if (sy < 0) continue;
                     const packSize = 1 + Math.floor(Math.random() * 4);
                     const roll = Math.random();
-                    const type = roll < 0.40 ? 'zombie' : (roll < 0.70 ? 'skeleton' : 'creeper');
+                    const type = (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7) ? (roll < 0.55 ? 'zombie' : 'creeper') : (roll < 0.40 ? 'zombie' : (roll < 0.70 ? 'skeleton' : 'creeper'));
                     for (let i = 0; i < packSize && (count+i) < MOB_CAP_HOSTILE; i++) {
                         const sx = pos.x + Math.floor(Math.random()*7)-3;
                         const sz = pos.z + Math.floor(Math.random()*7)-3;

@@ -14,6 +14,7 @@ window.openCraftingTable = function() {
 };
 
 window.closeCraftingTable = function() {
+    if (typeof window.hideItemTooltip === 'function') window.hideItemTooltip();
     const modal = document.getElementById('crafting-table-modal');
     if (modal) modal.classList.add('hidden');
     

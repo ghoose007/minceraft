@@ -842,9 +842,10 @@ float getShadow() {
     // REALTIME SHADOW — hard, pixel-accurate
     float shadowFactor = getShadow();
 
-    // Directional shading from world normal vs sun direction (subtle)
-    float NdotL = max(dot(vWorldNormal, uSunDirection), 0.0);
-    float sunDirect = NdotL * 0.25 + 0.75; // Very subtle wrap lighting
+    // v392: Directional block face brightness is already baked into vertex color
+    // by faces.js/chunk-mesh.js. Do not add another normal-vs-sun multiplier here,
+    // or blocks become directionally inconsistent depending on world/sun direction.
+    float sunDirect = 1.0;
 
     // Original MC lighting as base (ambient + full sun + torch)
     vec3 baseLightCalc = shade * uAmbientColor + mcSun * shade * uSunColor * uSunLevel + mcTorch * shade * uTorchColor;

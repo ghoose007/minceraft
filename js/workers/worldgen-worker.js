@@ -34,6 +34,7 @@ let GEN_SUPERFLAT_LAYERS = [];
 let GEN_SEA_LEVEL = 63;
 let GEN_TERRAIN_HEIGHT = 80;
 let GEN_BIOME_SCALE = 300;
+let GEN_EFFECTIVE_BIOME_SCALE = 300;
 let GEN_SMOOTHNESS = 50;
 let GEN_VOLATILITY_MULT = 100;
 let GEN_TEMP_OFFSET = 0;
@@ -199,6 +200,7 @@ const _crossLUT = new Uint8Array(256);
 _crossLUT[16] = 1; _crossLUT[23] = 1; _crossLUT[24] = 1; _crossLUT[26] = 1;
 _crossLUT[42] = 1; _crossLUT[52] = 1; _crossLUT[53] = 1; _crossLUT[89] = 1;
 _crossLUT[212] = 1; _crossLUT[213] = 1;
+_crossLUT[221] = 1; _crossLUT[222] = 1;
 _crossLUT[116] = 1; _crossLUT[117] = 1; _crossLUT[118] = 1; _crossLUT[137] = 1;
 function isCrossBlock(id) { return _crossLUT[id]; }
 
@@ -357,6 +359,7 @@ function applySettings(s) {
     if ('GEN_SEA_LEVEL' in s) GEN_SEA_LEVEL = s.GEN_SEA_LEVEL;
     if ('GEN_TERRAIN_HEIGHT' in s) GEN_TERRAIN_HEIGHT = s.GEN_TERRAIN_HEIGHT;
     if ('GEN_BIOME_SCALE' in s) GEN_BIOME_SCALE = s.GEN_BIOME_SCALE;
+    if ('GEN_EFFECTIVE_BIOME_SCALE' in s) GEN_EFFECTIVE_BIOME_SCALE = s.GEN_EFFECTIVE_BIOME_SCALE;
     if ('GEN_SMOOTHNESS' in s) GEN_SMOOTHNESS = s.GEN_SMOOTHNESS;
     if ('GEN_VOLATILITY_MULT' in s) GEN_VOLATILITY_MULT = s.GEN_VOLATILITY_MULT;
     if ('GEN_TEMP_OFFSET' in s) GEN_TEMP_OFFSET = s.GEN_TEMP_OFFSET;

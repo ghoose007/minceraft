@@ -139,6 +139,10 @@ const BLOCK_DATA = {
     219: { name: 'Tall Grass',         atlasIdx: 217, itemAtlasIdx: 218, hardness: 0.0, dropId: 0 },
     220: { name: 'Tall Grass (Top)',   atlasIdx: 218, hardness: 0.0, dropId: 0 },
 
+    // v406: Mushrooms — centered X-pattern plant blocks using the new atlas slots.
+    221: { name: 'Brown Mushroom', atlasIdx: 219, hardness: 0.0, dropId: 221, itemModel: 'material' },
+    222: { name: 'Red Mushroom',   atlasIdx: 220, hardness: 0.0, dropId: 222, itemModel: 'material' },
+
     // ----- NEW BUILDING BLOCKS (v258) -----
     // Stone brick variants
     226: { name: 'Chiseled Stone Bricks', atlasIdx: 178, hardness: 1.5, dropId: 226 },

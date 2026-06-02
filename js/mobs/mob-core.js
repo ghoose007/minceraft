@@ -218,6 +218,9 @@ class Mob {
         this.highestY = y;
         // Fire/lava damage timer
         this._fireDmgTimer = 0;
+        // v417: hostile undead breath/drowning timers.
+        this._airTimer = 20.0;
+        this._drownDmgTimer = 0;
         
         // Footstep sound tracking (distance-based, same as player)
         this._stepDistAccum = 0;
@@ -383,7 +386,28 @@ class Mob {
 
     // Physics using sweep collision — same approach as the player
     _applyPhysics(dt) {
-        this.vy -= 28.0 * dt;
+        // v417/v418 defensive copy: pig.js overrides this shared method at
+        // runtime, but keep mob-core in sync for any future mob using the base.
+        const noSwimMob = (typeof _mobCannotSwim === 'function' && _mobCannotSwim(this));
+        if (this.inWater) {
+            if (noSwimMob) {
+                this.vy -= 18.0 * dt;
+                this.vy *= Math.exp(-1.8 * dt);
+            } else {
+                if (this._waterBobPhase === undefined) this._waterBobPhase = Math.random() * Math.PI * 2;
+                const t = (typeof globalTime !== 'undefined' ? globalTime : performance.now() / 1000);
+                const horizSpeed = Math.sqrt((this.vx || 0) * (this.vx || 0) + (this.vz || 0) * (this.vz || 0));
+                const moving = Math.min(1.0, horizSpeed / 2.0);
+                const bob = Math.sin(t * 2.05 + this._waterBobPhase);
+                const swimLift = 0.72 + bob * (0.95 + moving * 0.55);
+                this.vy += swimLift * dt;
+                this.vy *= Math.exp(-0.85 * dt);
+                if (this.vy > 0.48) this.vy = 0.48;
+                if (this.vy < -2.8) this.vy = -2.8;
+            }
+        } else {
+            this.vy -= 28.0 * dt;
+        }
 
         // Y axis (gravity/jumping)
         const yResult = this._sweepAxis(this.x, this.y, this.z, 'y', this.vy * dt);
@@ -422,8 +446,15 @@ class Mob {
             this.vx *= Math.exp(-18.0 * dt);
             this.vz *= Math.exp(-18.0 * dt);
         }
-        const totalVx = kbPriority ? (this.knockbackX || 0) : (this.vx + (this.knockbackX || 0));
-        const totalVz = kbPriority ? (this.knockbackZ || 0) : (this.vz + (this.knockbackZ || 0));
+        const waterMoveMul = this.inWater ? (noSwimMob ? 0.28 : 0.42) : 1.0;
+        const totalVx = (kbPriority ? (this.knockbackX || 0) : (this.vx + (this.knockbackX || 0))) * waterMoveMul;
+        const totalVz = (kbPriority ? (this.knockbackZ || 0) : (this.vz + (this.knockbackZ || 0))) * waterMoveMul;
+        if (this.inWater) {
+            this.vx *= Math.exp(-(noSwimMob ? 4.0 : 2.2) * dt);
+            this.vz *= Math.exp(-(noSwimMob ? 4.0 : 2.2) * dt);
+            this.knockbackX = (this.knockbackX || 0) * Math.exp(-2.8 * dt);
+            this.knockbackZ = (this.knockbackZ || 0) * Math.exp(-2.8 * dt);
+        }
 
         // X axis
         const dx = totalVx * dt;

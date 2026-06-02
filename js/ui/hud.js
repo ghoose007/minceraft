@@ -318,33 +318,6 @@ window.getMaxStack = function(id) {
 };
 
 // --- UI MANAGEMENT ---
-function updateClock(t) {
-    const canvas = document.getElementById('clock-canvas');
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, 64, 64);
-    
-    ctx.save();
-    ctx.translate(32, 32);
-    ctx.rotate(t * Math.PI * 2);
-    
-    ctx.fillStyle = '#87CEEB';
-    ctx.beginPath(); ctx.arc(0, 0, 28, 0, Math.PI, true); ctx.fill();
-    
-    ctx.fillStyle = '#020412';
-    ctx.beginPath(); ctx.arc(0, 0, 28, 0, Math.PI, false); ctx.fill();
-
-    ctx.fillStyle = '#FFDD00';
-    ctx.fillRect(-6, -22, 12, 12);
-
-    ctx.fillStyle = '#DDDDDD';
-    ctx.fillRect(-5, 10, 10, 10);
-    ctx.restore();
-
-    ctx.strokeStyle = '#D4AF37'; 
-    ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(32, 32, 30, 0, Math.PI * 2); ctx.stroke();
-}
-
 function getIconStyle(blockId) {
     const id = parseInt(blockId);
     
@@ -385,6 +358,7 @@ function getIconStyle(blockId) {
     // is atlas 217 (wispy), but the icon should show atlas 218 (leafier top).
     if (block.itemAtlasIdx !== undefined) texIndex = block.itemAtlasIdx;
     const col = texIndex % 16, row = Math.floor(texIndex / 16);
+    // v408: mushrooms (221/222) intentionally use the raw atlas tile with no plant tint filter.
     let filterStr = [1, 14, 16, 22, 24, 66, 67, 219].includes(id) ? 'filter: sepia(1) hue-rotate(55deg) saturate(3.5) brightness(0.9);' : '';
     return `background-image: url('textures/terrain.png?v=${ASSET_VERSION}'); background-position: -${col * 100}% -${row * 100}%; background-size: 1600% 1600%; image-rendering: pixelated; ${filterStr}`;
 }
@@ -396,7 +370,7 @@ function createIconElement(id) {
     
     // Terrain Items (Sticks, Saplings, Food, Seeds 128, Wheat 129, Nether Brick 142, Gold Ingot 143, Quartz 153)
     if ((parsedId >= 112 && parsedId <= 123) || parsedId === 128 || parsedId === 129 || parsedId === 134 || parsedId === 135 || parsedId === 137 || parsedId === 142 || parsedId === 143 || parsedId === 151 || parsedId === 153 || parsedId === 165 || parsedId === 186 || parsedId === 187 || parsedId === 188
-        || parsedId === 197 || parsedId === 198 || parsedId === 199 || parsedId === 202 || parsedId === 205 || parsedId === 206 || parsedId === 211 || parsedId === 26) {
+        || parsedId === 197 || parsedId === 198 || parsedId === 199 || parsedId === 202 || parsedId === 205 || parsedId === 206 || parsedId === 211 || parsedId === 260 || parsedId === 261 || parsedId === 26 || parsedId === 221 || parsedId === 222) {
         const data = BLOCK_DATA[parsedId] || TOOL_DATA[parsedId];
         if (data) {
             const atlasIdx = data.atlasIdx;
@@ -438,7 +412,7 @@ function createIconElement(id) {
         // v339: 219 (Tall Grass) joins the flat-icon list so its inventory
         // tile renders as a 2D atlas swatch (using its itemAtlasIdx = 218,
         // see getIconStyle below) rather than the 3D-block icon path.
-        const flatRenderIds = [4, 27, 16, 23, 24, 26, 17, 40, 52, 53, 66, 67, 68, 116, 117, 118, 137, 150, 158, 212, 213, 219];
+        const flatRenderIds = [4, 27, 16, 23, 24, 26, 17, 40, 52, 53, 66, 67, 68, 116, 117, 118, 137, 150, 158, 212, 213, 219, 221, 222];
         if (flatRenderIds.includes(parsedId)) {
             icon.style = getIconStyle(parsedId); 
         } else if (typeof isFenceBlock === 'function' && isFenceBlock(parsedId)) {
@@ -510,9 +484,12 @@ function createIconElement(id) {
                 tintFilter = 'filter: sepia(1) hue-rotate(55deg) saturate(3.5) brightness(0.9);';
             }
             let topTint = tintFilter;
+            const grassTintFilter = 'filter: sepia(1) hue-rotate(55deg) saturate(3.5) brightness(0.9);';
             if (parsedId === 1) {
-                topTint = 'filter: sepia(1) hue-rotate(55deg) saturate(3.5) brightness(0.9);';
-                tintFilter = topTint; // Grass side overlay also needs green tint
+                // v429: Grass Block icon keeps dirt sides untinted. The green
+                // grass overhang is drawn as separate overlay faces below.
+                topTint = grassTintFilter;
+                tintFilter = '';
             }
 
             const getBgPos = (idx) => `background-position: -${(idx % 16) * 100}% -${Math.floor(idx / 16) * 100}%;`;
@@ -543,11 +520,22 @@ function createIconElement(id) {
                 `;
             } else {
                 // Standard Blocks
-                icon.innerHTML = `
-                    <div class="face top" style="${getBgPos(texTop)} ${topTint}"></div>
-                    <div class="face right" style="${getBgPos(texSide)} ${tintFilter}"></div>
-                    <div class="face front" style="${getBgPos(texFront)} ${tintFilter}"></div>
-                `;
+                if (parsedId === 1) {
+                    const overlayTex = (typeof block.atlasIdx === 'object' && block.atlasIdx.overlay !== undefined) ? block.atlasIdx.overlay : 1;
+                    icon.innerHTML = `
+                        <div class="face top" style="${getBgPos(texTop)} ${topTint}"></div>
+                        <div class="face right" style="${getBgPos(texSide)}"></div>
+                        <div class="face front" style="${getBgPos(texFront)}"></div>
+                        <div class="face right" style="${getBgPos(overlayTex)} ${grassTintFilter} clip-path: inset(0 0 50% 0);"></div>
+                        <div class="face front" style="${getBgPos(overlayTex)} ${grassTintFilter} clip-path: inset(0 0 50% 0);"></div>
+                    `;
+                } else {
+                    icon.innerHTML = `
+                        <div class="face top" style="${getBgPos(texTop)} ${topTint}"></div>
+                        <div class="face right" style="${getBgPos(texSide)} ${tintFilter}"></div>
+                        <div class="face front" style="${getBgPos(texFront)} ${tintFilter}"></div>
+                    `;
+                }
             }
         }
     }
@@ -608,11 +596,79 @@ let _prevHungerForShake = -1;
 // v288: track last rendered values to avoid rebuilding the DOM every frame.
 // The rebuild was wiping animated shake classes before they could play.
 let _lastRenderedHealth = -1;
+let _lastRenderedMaxHealth = -1;
 let _lastRenderedHunger = -1;
 let _lastRenderedGamemode = '';
 let _lastRenderedHungerEnabled = null;
+let _hudLayoutSignature = '';
+
+
+function updateSurvivalHudLayout(force) {
+    const survival = (typeof gameMode !== 'undefined' && gameMode === 'survival');
+    const hungerOn = (typeof GEN_HUNGER_ENABLED === 'undefined' || GEN_HUNGER_ENABLED);
+    const xpOn = (typeof GEN_XP_ENABLED === 'undefined' || GEN_XP_ENABLED);
+    const healthBar = document.getElementById('health-bar');
+    const hungerBar = document.getElementById('hunger-bar');
+    const armorBar = document.getElementById('armor-bar');
+    const xpBar = document.getElementById('xp-bar-container');
+
+    const totalHearts = (typeof player !== 'undefined' && player && player.maxHealth)
+        ? Math.ceil(player.maxHealth / 2)
+        : 10;
+    const bonusHeartRows = Math.max(0, Math.ceil(Math.max(0, totalHearts - 10) / 10));
+
+    const sig = [survival ? 1 : 0, hungerOn ? 1 : 0, xpOn ? 1 : 0, bonusHeartRows, gameMode || ''].join('|');
+    if (!force && sig === _hudLayoutSignature) return;
+    _hudLayoutSignature = sig;
+
+    const baseBottom = xpOn ? 56 : 50;      // XP bar present -> leave the classic XP slot
+    const rowGap = 20;                      // one icon row
+    // v404: health always occupies the left row at baseBottom.
+    // Hunger occupies the right row at baseBottom when enabled.
+    // Armor must sit above health when hunger is enabled, but when hunger is
+    // disabled it should use the empty right-side hunger row, not overlap hearts.
+    // v412: if emerald armor adds bonus heart rows, only move armor up when
+    // hunger exists. If hunger is disabled, armor keeps using the hunger slot.
+    const armorBonusOffset = hungerOn ? (bonusHeartRows * rowGap) : 0;
+    const armorBottom = hungerOn ? (baseBottom + rowGap + armorBonusOffset) : baseBottom;
+
+    if (healthBar) {
+        healthBar.style.bottom = baseBottom + 'px';
+        healthBar.style.display = survival ? 'flex' : 'none';
+    }
+    if (hungerBar) {
+        hungerBar.style.bottom = baseBottom + 'px';
+        hungerBar.style.display = (survival && hungerOn) ? 'flex' : 'none';
+    }
+    if (armorBar) {
+        armorBar.style.bottom = armorBottom + 'px';
+        armorBar.style.left = hungerOn ? 'calc(50% - 182px)' : 'calc(50% + 14px)';
+        armorBar.style.right = hungerOn ? '' : 'calc(50% - 182px)';
+        armorBar.style.justifyContent = hungerOn ? 'flex-start' : 'flex-end';
+        if (!survival) armorBar.style.display = 'none';
+    }
+    if (xpBar) {
+        xpBar.style.display = (survival && xpOn) ? '' : 'none';
+    }
+}
+window.updateSurvivalHudLayout = updateSurvivalHudLayout;
+
+window.forceRefreshSurvivalHUD = function() {
+    _lastRenderedHealth = -1;
+    _lastRenderedMaxHealth = -1;
+    _lastRenderedHunger = -1;
+    _lastRenderedGamemode = '';
+    _lastRenderedHungerEnabled = null;
+    _hudLayoutSignature = '';
+    if (typeof updateSurvivalHudLayout === 'function') updateSurvivalHudLayout(true);
+    if (typeof updateHealthUI === 'function') updateHealthUI();
+    if (typeof updateHungerUI === 'function') updateHungerUI();
+    if (typeof updateArmorBar === 'function') updateArmorBar();
+    if (typeof updateXPBarUI === 'function') updateXPBarUI();
+};
 
 function updateHealthUI() {
+    if (typeof updateSurvivalHudLayout === 'function') updateSurvivalHudLayout(false);
     const bar = document.getElementById('health-bar');
     if (!bar) return;
     if (typeof gameMode !== 'undefined' && gameMode !== 'survival') {
@@ -621,8 +677,9 @@ function updateHealthUI() {
         _lastRenderedHealth = -1;
         return;
     }
-    // v288: early-exit if nothing changed to avoid wiping in-flight shake animations
-    if (player.health === _lastRenderedHealth && bar.children.length > 0) {
+    // v288/v412: early-exit only if both current health and max-health layout are unchanged.
+    // Emerald armor can add bonus max-health rows without changing current health.
+    if (player.health === _lastRenderedHealth && player.maxHealth === _lastRenderedMaxHealth && bar.children.length > 0) {
         return;
     }
     
@@ -671,20 +728,16 @@ function updateHealthUI() {
         bar.appendChild(buildRow(baseHearts, bonusHearts, player.health, player.maxHealth));
     }
     
-    // Move armor bar up based on number of heart rows
-    const armorBar = document.getElementById('armor-bar');
-    if (armorBar) {
-        const rowHeight = 14; // approximate heart row height in px
-        const baseBottom = 76; // default armor bar bottom
-        armorBar.style.bottom = (baseBottom + (hasBonus ? rowHeight : 0)) + 'px';
-    }
+    // HUD row positions are handled by updateSurvivalHudLayout().
     _prevHealthForShake = player.health;
     _lastRenderedHealth = player.health;
+    _lastRenderedMaxHealth = player.maxHealth;
 }
 
 // v284: Hunger bar — 10 icons mirroring the health bar on the right side.
 // Slot 0 (leftmost) = highest hunger values (19-20). Drains left to right.
 function updateHungerUI() {
+    if (typeof updateSurvivalHudLayout === 'function') updateSurvivalHudLayout(false);
     const bar = document.getElementById('hunger-bar');
     if (!bar) return;
     // Hide the bar when not in survival OR hunger disabled
@@ -913,6 +966,15 @@ function selectSlot(index) {
     updateHeldItem();
 }
 
+
+window.hideItemTooltip = function() {
+    const tooltip = document.getElementById('item-tooltip');
+    if (!tooltip) return;
+    tooltip.classList.add('hidden');
+    tooltip.textContent = '';
+    tooltip.innerHTML = '';
+};
+
 function bindHoverEvents(element, blockId) {
     const tooltip = document.getElementById('item-tooltip');
     element.addEventListener('mouseenter', () => {
@@ -924,7 +986,7 @@ function bindHoverEvents(element, blockId) {
         }
         tooltip.classList.remove('hidden');
     });
-    element.addEventListener('mouseleave', () => { tooltip.classList.add('hidden'); });
+    element.addEventListener('mouseleave', () => { if (typeof window.hideItemTooltip === 'function') window.hideItemTooltip(); else tooltip.classList.add('hidden'); });
 }
 
 if (typeof window.cursorItem === 'undefined') window.cursorItem = null;
@@ -961,8 +1023,11 @@ window.updateCursorItemUI = function(e) {
             el.style.left = (e.clientX / zoomLevel) + 'px';
             el.style.top = (e.clientY / zoomLevel) + 'px';
             
-            const tooltip = document.getElementById('item-tooltip');
-            if (tooltip) tooltip.classList.add('hidden');
+            if (typeof window.hideItemTooltip === 'function') window.hideItemTooltip();
+            else {
+                const tooltip = document.getElementById('item-tooltip');
+                if (tooltip) tooltip.classList.add('hidden');
+            }
         }
     } else {
         el.classList.add('hidden');

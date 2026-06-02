@@ -17,6 +17,7 @@ window.openEnchantingTable = function(x, y, z) {
 };
 
 window.closeEnchantingTable = function() {
+    if (typeof window.hideItemTooltip === 'function') window.hideItemTooltip();
     const modal = document.getElementById('enchanting-modal');
     if (modal) modal.classList.add('hidden');
     [enchantItemSlot, enchantLapisSlot].forEach(slot => {

@@ -55,7 +55,7 @@ var generatedChunksArr = null;
 var biomeMap = null;
 
 // Biome ID → name lookup (sent in init)
-var BIOME_NAMES_LIST = ['desert', 'rainforest', 'tundra', 'taiga', 'plains', 'forest', 'ocean', 'swamp', 'jungle', 'extreme_hills', 'aether_skyforest', 'aether_void', 'aether_lake', 'alpha_forest', 'badlands'];
+var BIOME_NAMES_LIST = ['desert', 'rainforest', 'tundra', 'taiga', 'plains', 'forest', 'ocean', 'swamp', 'jungle', 'extreme_hills', 'aether_skyforest', 'aether_void', 'aether_lake', 'alpha_forest', 'badlands', 'ice_spikes', 'seasonal_forest', 'savanna', 'indev_forest'];
 
 // Stubs for the THREE.js assembly path — chunk-mesh.js declares them but we never call assembly
 const chunkMeshes = new Map();
@@ -216,6 +216,7 @@ const BIOME_COLORS = {
     'extreme_hills': [0x8A/255, 0xB6/255, 0x89/255],
     'badlands': [0x90/255, 0x81/255, 0x4D/255],
     'alpha_forest': [199/255, 255/255, 140/255],
+    'indev_forest': [199/255, 255/255, 140/255],
     // Aether — values must match aether.js BIOME_COLORS assignments
     'aether_skyforest': [0.65, 0.82, 0.55],
     'aether_void':      [0.7, 0.85, 0.95],
@@ -236,6 +237,7 @@ const BIOME_FOLIAGE_COLORS = {
     'extreme_hills': [0x6D/255, 0xA3/255, 0x6B/255],
     'badlands': [0x9E/255, 0x81/255, 0x4D/255],
     'alpha_forest': [199/255, 255/255, 140/255],
+    'indev_forest': [199/255, 255/255, 140/255],
     // Aether — golden-amber leaves
     'aether_skyforest': [0.80, 0.72, 0.38],
     'aether_void':      [0.80, 0.72, 0.38],
@@ -255,6 +257,7 @@ const BIOME_WATER_COLORS = {
     'ocean':         [0x3F/255, 0x76/255, 0xE4/255],
     'extreme_hills': [0x00/255, 0x7B/255, 0xF7/255],
     'badlands':      [0x3F/255, 0x76/255, 0xE4/255],
+    'indev_forest':  [0x3F/255, 0x76/255, 0xE4/255],
     'aether_skyforest': [0.1, 1.8, 1.35],
     'aether_void':      [0.1, 1.8, 1.35],
     'aether_lake':      [0.1, 1.8, 1.35]
@@ -299,6 +302,9 @@ self.onmessage = function(ev) {
             _halfD = WORLD_DEPTH >> 1;
             
             // Apply settings
+            if (msg.biomeNames && Array.isArray(msg.biomeNames)) {
+                BIOME_NAMES_LIST = msg.biomeNames.slice();
+            }
             if (msg.settings) {
                 if ('GEN_WORLD_TYPE' in msg.settings) GEN_WORLD_TYPE = msg.settings.GEN_WORLD_TYPE;
                 if ('settingGraphicsFancy' in msg.settings) settingGraphicsFancy = msg.settings.settingGraphicsFancy;
@@ -323,7 +329,8 @@ self.onmessage = function(ev) {
             // This prevents the bright-green stripe bug at the edge of loaded area
             // where smoothing kernels read into unsynced neighbor chunks.
             biomeMap = new Array(WORLD_WIDTH * WORLD_DEPTH);
-            for (let i = 0; i < biomeMap.length; i++) biomeMap[i] = 'plains';
+            const defaultBiome = (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7) ? 'indev_forest' : 'plains';
+            for (let i = 0; i < biomeMap.length; i++) biomeMap[i] = defaultBiome;
             
             self.postMessage({ type: 'initDone' });
             return;
@@ -361,7 +368,9 @@ self.onmessage = function(ev) {
                     const gIdx = wx + wz * WORLD_WIDTH;
                     if (gIdx >= 0 && gIdx < WORLD_WIDTH * WORLD_DEPTH) {
                         const id = biomes[lx + lz * CHUNK_SIZE];
-                        biomeMap[gIdx] = BIOME_NAMES_LIST[id] || 'plains';
+                        biomeMap[gIdx] = (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7)
+                            ? 'indev_forest'
+                            : (BIOME_NAMES_LIST[id] || 'plains');
                     }
                 }
             }

@@ -90,7 +90,7 @@ const currentDimension = 'aether';
 const _crossLUT = new Uint8Array(256);
 _crossLUT[16] = 1; _crossLUT[23] = 1; _crossLUT[24] = 1; _crossLUT[26] = 1;
 _crossLUT[42] = 1; _crossLUT[52] = 1; _crossLUT[53] = 1; _crossLUT[89] = 1;
-_crossLUT[212] = 1; _crossLUT[213] = 1;
+_crossLUT[212] = 1; _crossLUT[213] = 1; _crossLUT[221] = 1; _crossLUT[222] = 1;
 _crossLUT[116] = 1; _crossLUT[117] = 1; _crossLUT[118] = 1; _crossLUT[137] = 1;
 function isCrossBlock(id) { return _crossLUT[id]; }
 

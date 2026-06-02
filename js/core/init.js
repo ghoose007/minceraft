@@ -50,8 +50,122 @@ function _showClickToPlay() {
     document.body.appendChild(overlay);
 }
 
+
+// v424: Bonemeal item use.
+// Bone/Bonemeal are TOOL_DATA items, not BLOCK_DATA blocks, so they cannot
+// be placed. Bonemeal uses this path before normal block placement.
+function _consumeActiveBonemealIfNeeded(success) {
+    if (!success) return false;
+    if (typeof gameMode !== 'undefined' && gameMode === 'survival') {
+        const slot = inventory[activeSlot];
+        if (slot && slot.id === 261) {
+            slot.count--;
+            if (slot.count <= 0) { slot.id = 0; slot.count = 0; delete slot.durability; }
+            if (typeof buildUI === 'function') buildUI();
+            if (typeof selectSlot === 'function') selectSlot(activeSlot);
+        }
+    }
+    return true;
+}
+
+function _growCropWithBonemeal(x, y, z) {
+    const val = getVoxel(x, y, z);
+    if ((val & 0xFF) !== 64) return false;
+    const stage = (val >> 8) & 0x7;
+    if (stage >= 7) return false;
+    setVoxel(x, y, z, 64, 7);
+    pendingBlockUpdates.push({x, y, z});
+    if (typeof updateChunks === 'function') updateChunks(x, y, z);
+    if (typeof queueNeighbors === 'function') queueNeighbors(x, y, z);
+    if (typeof triggerNeighborUpdates === 'function') triggerNeighborUpdates(x, y, z);
+    // v426: Bonemeal use no longer spawns particle effects.
+    return true;
+}
+
+function _spreadBonemealOnGrass(x, y, z) {
+    if ((getVoxel(x, y, z) & 0xFF) !== 1) return false;
+    let placed = 0;
+    const radius = 5;
+    const r2Max = radius * radius;
+
+    // v426: Use a circular radius-5 spread instead of the old 4x4 square.
+    // Keep placement randomized/dispersed, with density falling slightly toward
+    // the edge so it looks natural instead of filling every valid grass block.
+    for (let dx = -radius; dx <= radius; dx++) {
+        for (let dz = -radius; dz <= radius; dz++) {
+            const dist2 = dx * dx + dz * dz;
+            if (dist2 > r2Max) continue;
+
+            const gx = x + dx, gz = z + dz;
+            if ((getVoxel(gx, y, gz) & 0xFF) !== 1) continue;
+            if ((getVoxel(gx, y + 1, gz) & 0xFF) !== 0) continue;
+
+            const edge = Math.sqrt(dist2) / radius;
+            const placeChance = 0.58 - edge * 0.22;
+            if (Math.random() > placeChance) continue;
+
+            let plantId = 16; // one-block grass plant
+            const r = Math.random();
+            if (r < 0.07) plantId = 23;       // Rose
+            else if (r < 0.17) plantId = 53;  // Dandelion
+
+            setVoxel(gx, y + 1, gz, plantId);
+            pendingBlockUpdates.push({x: gx, y: y + 1, z: gz});
+            if (typeof updateChunks === 'function') updateChunks(gx, y + 1, gz);
+            if (typeof queueNeighbors === 'function') queueNeighbors(gx, y + 1, gz);
+            placed++;
+        }
+    }
+
+    // v426: no bonemeal particle burst.
+    return placed > 0;
+}
+
+
+function _growSaplingWithBonemeal(x, y, z, saplingId) {
+    if (saplingId !== 116 && saplingId !== 117 && saplingId !== 118 && saplingId !== 137) return false;
+    if (typeof growTree !== 'function') return false;
+
+    const before = getVoxel(x, y, z) & 0xFF;
+    growTree(x, y, z, saplingId);
+    const after = getVoxel(x, y, z) & 0xFF;
+
+    // growTree returns silently if blocked. Treat bonemeal as successful only
+    // if the sapling was consumed/replaced.
+    if (before === after && after === saplingId) return false;
+
+    if (typeof updateChunksInBounds === 'function') {
+        updateChunksInBounds(x - 5, x + 5, z - 5, z + 5);
+    } else if (typeof updateChunks === 'function') {
+        updateChunks(x, y, z);
+    }
+    if (typeof queueNeighbors === 'function') queueNeighbors(x, y, z);
+    return true;
+}
+
+function _useBonemealOnTarget(target) {
+    if (!target || currentBuildBlock !== 261) return false;
+    const x = target.hit[0], y = target.hit[1], z = target.hit[2];
+    const targetId = getVoxel(x, y, z) & 0xFF;
+    let success = false;
+    if (targetId === 64) success = _growCropWithBonemeal(x, y, z);
+    else if (targetId === 116 || targetId === 117 || targetId === 118 || targetId === 137) success = _growSaplingWithBonemeal(x, y, z, targetId);
+    else if (targetId === 1) success = _spreadBonemealOnGrass(x, y, z);
+    if (_consumeActiveBonemealIfNeeded(success)) {
+        if (typeof window.playBlockSoundAt === 'function') window.playBlockSoundAt(targetId || 1, 'dig', 0.45, x, y, z);
+        swingAnimation = 1.0;
+        return true;
+    }
+    return false;
+}
+window._useBonemealOnTarget = _useBonemealOnTarget;
+
+
 // --- 2. INITIALIZATION ---
 async function init(seed, loadedData) {
+    if (window.MinecraftChat && typeof window.MinecraftChat.reset === 'function') {
+        window.MinecraftChat.reset();
+    }
     CHUNKS_X = CHUNKS_X_ACTIVE;
     CHUNKS_Z = CHUNKS_Z_ACTIVE;
     WORLD_WIDTH = CHUNKS_X * CHUNK_SIZE;
@@ -933,6 +1047,15 @@ let spawnX = 0, spawnZ = 0;
     if (typeof updateHealthUI === 'function') updateHealthUI();
     if (typeof updateHungerUI === 'function') updateHungerUI();
 
+    // v413: loaded saves can restore armorSlots before the HUD is built.
+    // Force armor/health layout after buildUI so worlds loaded while wearing
+    // armor show the armor bar immediately, without opening inventory or
+    // waiting for damage/other HUD events.
+    if (typeof window._recalcArmorHealthBonus === 'function') window._recalcArmorHealthBonus(true);
+    if (typeof window.updateSurvivalHudLayout === 'function') window.updateSurvivalHudLayout(true);
+    if (typeof window.updateArmorBar === 'function') window.updateArmorBar();
+    if (typeof updateHealthUI === 'function') updateHealthUI();
+
     // Restore dropped items from save data (deferred until scene + textures are ready)
     if (window._pendingDroppedItems && typeof window.spawnDroppedItem === 'function') {
         for (const item of window._pendingDroppedItems) {
@@ -954,7 +1077,6 @@ let spawnX = 0, spawnZ = 0;
     
     document.getElementById('loading-screen').classList.add('hidden');
     document.getElementById('ui-layer').classList.remove('hidden');
-    document.getElementById('clock-container').style.display = '';
     document.getElementById('hud-layer').style.display = '';
     if (typeof window.buildXPBarUI === 'function') window.buildXPBarUI();
     if (typeof window.updateXPBarUI === 'function') window.updateXPBarUI();
@@ -1008,34 +1130,6 @@ let spawnX = 0, spawnZ = 0;
             return;
         }
 
-        // F3 + P: toggle gamemode between creative and survival (dev shortcut)
-        if ((e.code === 'KeyP' || e.code === 'Equal') && window.showDebugScreen) {
-            e.preventDefault();
-            gameMode = (gameMode === 'creative') ? 'survival' : 'creative';
-
-            // If switching to survival while flying, disable flight
-            if (gameMode === 'survival' && player.flying) {
-                player.flying = false;
-                player.vy = 0;
-                const flightEl = document.getElementById('flight-indicator');
-                if (flightEl) { flightEl.textContent = '✦ Not Flying'; flightEl.style.opacity = '1'; setTimeout(() => flightEl.style.opacity = '0', 1500); }
-            }
-
-            // Refresh health bar visibility
-            if (typeof updateHealthUI === 'function') updateHealthUI();
-            if (typeof updateHungerUI === 'function') updateHungerUI();
-            if (typeof window.updateMobileEatBtnVisibility === 'function') window.updateMobileEatBtnVisibility();
-            if (typeof buildUI === 'function') buildUI();
-
-            const el = document.getElementById('action-text');
-            if (el) {
-                el.textContent = 'Game Mode: ' + (gameMode === 'creative' ? 'Creative' : 'Survival');
-                el.style.opacity = '1';
-                clearTimeout(window._actionTextTO);
-                window._actionTextTO = setTimeout(() => el.style.opacity = '0', 2000);
-            }
-            return;
-        } 
         if (e.repeat) return; 
 
         if(uiState === 'PLAYING') {
@@ -1104,6 +1198,14 @@ let spawnX = 0, spawnZ = 0;
                 
                 if (typeof renderInventory === 'function') renderInventory();
             } else if (uiState === 'INVENTORY' || uiState === 'CRAFTING' || uiState === 'FURNACE' || uiState === 'CHEST' || uiState === 'ENCHANTING') {
+                // v405: always clean hover tooltip when any inventory-style UI closes.
+                if (typeof window.hideItemTooltip === 'function') window.hideItemTooltip();
+
+                const creativeInv = document.getElementById('inventory-modal');
+                const survivalInv = document.getElementById('survival-inventory-modal');
+                if (creativeInv) creativeInv.classList.add('hidden');
+                if (survivalInv) survivalInv.classList.add('hidden');
+
                 // Play chest close sound if we're closing a chest
                 if (uiState === 'CHEST' && typeof window.playChestCloseSound === 'function') window.playChestCloseSound(window._lastChestX, window._lastChestY, window._lastChestZ);
                 if (typeof closeCraftingTable === 'function') closeCraftingTable();
@@ -1204,7 +1306,7 @@ window.getTargetedMob = function() {
             }
         }
 
-        if (!isPointerLocked || uiState !== 'PLAYING') return;
+        if ((window.MinecraftChat && window.MinecraftChat.isOpen && window.MinecraftChat.isOpen()) || !isPointerLocked || uiState !== 'PLAYING') return;
         
         // --- BOW SHOOTING (before swing animation) ---
         // Right-click (button 2) with bow equipped fires an arrow
@@ -1316,6 +1418,13 @@ window.getTargetedMob = function() {
             
             // FIX: Prevent crashes if you right-click the sky
             if (!target) return; 
+
+            // ---> BONEMEAL ITEM USE <---
+            if (currentBuildBlock === 261) {
+                if (_useBonemealOnTarget(target)) return;
+                // Bonemeal is an item, not a placeable block.
+                return;
+            }
 
             // ---> NEW: Tilling Dirt/Grass with a Hoe <---
             if (typeof TOOL_DATA !== 'undefined' && TOOL_DATA[currentBuildBlock] && TOOL_DATA[currentBuildBlock].type === 'hoe') {
@@ -1506,6 +1615,8 @@ window.getTargetedMob = function() {
             }
 
             if (currentBuildBlock === 0) return;
+            // v424: Bone and Bonemeal are items, not placeable blocks.
+            if (currentBuildBlock === 260 || currentBuildBlock === 261) return;
 
             // ---> BUCKET SYSTEM (before placement guards) <---
             if (currentBuildBlock === 223 || currentBuildBlock === 224 || currentBuildBlock === 225) {
@@ -1583,6 +1694,9 @@ window.getTargetedMob = function() {
                         if (typeof detectAetherPortalFrame === 'function') {
                             const aetherResult = detectAetherPortalFrame(px, py, pz);
                             if (aetherResult) {
+                                if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7) {
+                                    swingAnimation = 1.0; return;
+                                }
                                 for (const pos of aetherResult.interior) {
                                     setVoxel(pos.x, pos.y, pos.z, 209, aetherResult.axis);
                                     pendingBlockUpdates.push({x: pos.x, y: pos.y, z: pos.z});
@@ -1785,6 +1899,10 @@ window.getTargetedMob = function() {
                     // Check if clicking inside a valid obsidian portal frame
                     const portalResult = detectPortalFrame(px, py, pz);
                     if (portalResult) {
+                        if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7) {
+                            swingAnimation = 1.0;
+                            return;
+                        }
                         // Nether portals can't be lit in the aether — you'd be
                         // bypassing the overworld which is not allowed.
                         if (typeof currentDimension !== 'undefined' && currentDimension === 'aether') {
@@ -2389,6 +2507,12 @@ window.getTargetedMob = function() {
             isPointerLocked = false;
             crosshair.style.display = 'none';
             for(let k in keys) keys[k] = false;
+
+            if (window._chatSuppressNextPause || (window.MinecraftChat && window.MinecraftChat.isOpen && window.MinecraftChat.isOpen())) {
+                window._chatSuppressNextPause = false;
+                if (uiState !== 'DEAD') uiState = 'PLAYING';
+                return;
+            }
             
             window.isLeftMouseHeld = false;
             if (typeof miningState !== 'undefined') miningState.isMining = false;

@@ -37,9 +37,11 @@ window.buildItemMesh = function(id) {
     // 3D extruded held/dropped treatment saplings have. Without this, it was
     // falling through to buildBlockItemMesh (the cube path), which made the
     // held model look like a tiny green box instead of a leaf sprite.
-    if ((id >= 112 && id <= 123) || id === 128 || id === 129 || id === 134 || id === 135 || id === 137 || id === 142 || id === 143 || id === 151 || id === 153 || id === 165 || id === 186 || id === 187 || id === 188
+    if ((id >= 112 && id <= 123) || id === 128 || id === 129 || id === 134 || id === 135 || id === 137 || id === 142 || id === 143 || id === 151 || id === 153 || id === 165 || id === 186 || id === 187 || id === 188 || id === 260 || id === 261
         || id === 197 || id === 198 || id === 199 || id === 202 || id === 205 || id === 206 || id === 211 || id === 212 || id === 213
         || id === 16 || id === 23 || id === 53 || id === 24 || id === 26 || id === 52 || id === 116 || id === 117 || id === 118 || id === 219
+        // v409: mushrooms use the same extruded material mesh path as the other plant items when held/dropped.
+        || id === 221 || id === 222
         || id === 17) return buildMaterialMesh(id);
     // Spawn eggs — use composited canvas texture as flat sprite
     if (id >= 190 && id <= 196) return buildSpawnEggMesh(id);
@@ -52,6 +54,7 @@ window.buildItemMesh = function(id) {
 function buildMaterialMesh(id) {
     const itemData = TOOL_DATA[id] || BLOCK_DATA[id]; // CHECK BOTH PLACES
     if (!itemData) return new THREE.Group();
+    const isMushroomItem = (id === 221 || id === 222);
     
     let pixData = null;
     try {
@@ -89,8 +92,12 @@ function buildMaterialMesh(id) {
                     const x = (px * pSize) - 0.5;
                     const y = ((15 - py) * pSize) - 0.5;
                     
-                    const uMin = imgX / 256, uMax = (imgX + 1) / 256;
-                    const vMin = 1.0 - ((imgY + 1) / 256), vMax = 1.0 - (imgY / 256);
+                    // v410: mushroom item tiles sit near other colored atlas entries.
+                    // Add a tiny inset only for mushrooms so held/dropped extrusions
+                    // cannot bleed neighboring pink/red pixels at the tile edge.
+                    const uvPad = isMushroomItem ? 0.035 : 0.0;
+                    const uMin = (imgX + uvPad) / 256, uMax = (imgX + 1 - uvPad) / 256;
+                    const vMin = 1.0 - ((imgY + 1 - uvPad) / 256), vMax = 1.0 - ((imgY + uvPad) / 256);
 
                     addQuad([x, y+pSize, thick/2], [x+pSize, y+pSize, thick/2], [x, y, thick/2], [x+pSize, y, thick/2], uMin, vMax, uMax, vMin);
                     addQuad([x+pSize, y+pSize, -thick/2], [x, y+pSize, -thick/2], [x+pSize, y, -thick/2], [x, y, -thick/2], uMax, vMax, uMin, vMin);
@@ -103,8 +110,9 @@ function buildMaterialMesh(id) {
             }
         }
     } else {
-        addQuad([-0.5, 0.5, 0], [0.5, 0.5, 0], [-0.5, -0.5, 0], [0.5, -0.5, 0], atlasX/256, 1.0 - (atlasY/256), (atlasX+16)/256, 1.0 - ((atlasY+16)/256));
-        addQuad([0.5, 0.5, -0.01], [-0.5, 0.5, -0.01], [0.5, -0.5, -0.01], [-0.5, -0.5, -0.01], (atlasX+16)/256, 1.0 - (atlasY/256), atlasX/256, 1.0 - ((atlasY+16)/256));
+        const pad = isMushroomItem ? 0.5 : 0.0;
+        addQuad([-0.5, 0.5, 0], [0.5, 0.5, 0], [-0.5, -0.5, 0], [0.5, -0.5, 0], (atlasX+pad)/256, 1.0 - ((atlasY+pad)/256), (atlasX+16-pad)/256, 1.0 - ((atlasY+16-pad)/256));
+        addQuad([0.5, 0.5, -0.01], [-0.5, 0.5, -0.01], [0.5, -0.5, -0.01], [-0.5, -0.5, -0.01], (atlasX+16-pad)/256, 1.0 - ((atlasY+pad)/256), (atlasX+pad)/256, 1.0 - ((atlasY+16-pad)/256));
     }
     
     const geo = new THREE.BufferGeometry();
@@ -113,15 +121,28 @@ function buildMaterialMesh(id) {
     geo.setIndex(indices);
     geo.computeVertexNormals();
 
+    // v407: mushrooms are tiny plant items. Keep every extruded side evenly
+    // bright so one side does not render dark from directional item shading.
+    if (isMushroomItem && geo.attributes.normal) {
+        const n = geo.attributes.normal.array;
+        for (let i = 0; i < n.length; i += 3) {
+            n[i] = 0;
+            n[i + 1] = 0;
+            n[i + 2] = 1;
+        }
+        geo.attributes.normal.needsUpdate = true;
+    }
+
     const colors = new Float32Array(positions.length).fill(1);
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     const biomeTints = new Float32Array(positions.length).fill(1);
-    if (id === 16 || id === 219) {
-        // v339: id 16 (Grass) and id 219 (Tall Grass) both ship greyscale
-        // atlas textures and are biome-tinted in the world via the grass-tint
-        // path. Their item forms have no world position to sample biome from,
-        // so we bake a fixed plains-green tint into the inventory / held /
-        // dropped mesh, matching MC's default outside-world appearance.
+    if (id === 16 || id === 219 || id === 24) {
+        // v404: id 24 is Bush, the in-game equivalent of Minecraft's fern.
+        // Its atlas texture is greyscale like the other plant sprites, so the
+        // held/dropped item mesh needs the same default foliage/grass green
+        // baked into aBiomeTint instead of rendering grey.
+        // v339: id 16 (Grass) and id 219 (Tall Grass) also use this default
+        // plains-green tint in inventory / held / dropped form.
         const PLAINS_GRASS_TINT = [0.55, 0.75, 0.4];
         for (let i = 0; i < biomeTints.length; i += 3) {
             biomeTints[i]     = PLAINS_GRASS_TINT[0];
@@ -132,21 +153,38 @@ function buildMaterialMesh(id) {
     geo.setAttribute('aBiomeTint', new THREE.BufferAttribute(biomeTints, 3));
 
     if (!toolMaterials[id]) {
-        toolMaterials[id] = new THREE.MeshBasicMaterial({ 
-            map: textureAtlas, 
-            transparent: true, 
-            alphaTest: 0.1, 
-            vertexColors: true,
-            side: THREE.DoubleSide
-        });
-        if (typeof injectLightingShader === 'function') injectLightingShader(toolMaterials[id]);
+        if (isMushroomItem) {
+            // v410: mushrooms must render from the raw atlas colors in hand/on ground.
+            // Do not use vertex colors, biome tint, or lighting shader here; those
+            // paths can tint the raw mushroom pixels pink/incorrectly.
+            toolMaterials[id] = new THREE.MeshBasicMaterial({
+                map: textureAtlas,
+                color: 0xffffff,
+                transparent: true,
+                alphaTest: 0.1,
+                vertexColors: false,
+                side: THREE.DoubleSide
+            });
+            toolMaterials[id].customProgramCacheKey = function() { return 'rawMushroomItemMat' + id; };
+        } else {
+            toolMaterials[id] = new THREE.MeshBasicMaterial({ 
+                map: textureAtlas, 
+                transparent: true, 
+                alphaTest: 0.1, 
+                vertexColors: true,
+                side: THREE.DoubleSide
+            });
+            if (typeof injectLightingShader === 'function') injectLightingShader(toolMaterials[id]);
+            toolMaterials[id].customProgramCacheKey = function() { return 'materialItemMat' + id; };
+        }
     }
 
     const mesh = new THREE.Mesh(geo, toolMaterials[id]);
-    // Material geometry is centered [-0.5..0.5] on XY, flat on Z
-    // MC generated.json firstperson: same visual treatment as handheld
+    // Material geometry is centered [-0.5..0.5] on XY, flat on Z.
+    // This is the shared held-item transform for plant/material items.
+    // v409: mushrooms intentionally use this exact same position/rotation/scale path.
     mesh.scale.set(0.68 / 0.35, 0.68 / 0.35, 0.68 / 0.35);
-    mesh.position.set(1.13 / 16, 3.5 / 16, 0.35);
+    mesh.position.set(1.13 / 16, 0.90, 0.35);
     mesh.rotation.set(0, -45 * Math.PI / 180, 25 * Math.PI / 180); 
     
     const group = new THREE.Group();
@@ -264,6 +302,79 @@ function buildBlockItemMesh(blockId) {
     
     let texIdx = typeof block.atlasIdx === 'object' ? block.atlasIdx.side : block.atlasIdx;
     
+    // v429: Dedicated Grass Block held/dropped mesh.
+    // Single mesh, centered coordinates, same transform as normal held blocks.
+    // Dirt sides are untinted, top is tinted, and the transparent grass side
+    // overhang is a flush tinted overlay using the same material/lighting path.
+    if (blockId === 1) {
+        const pos = [], uv = [], nrm = [], colAttr = [], tintAttr = [];
+        const greenTint = [0.55, 0.75, 0.4];
+        const noTint = [1, 1, 1];
+
+        const uvFor = (texIdx, u, v) => {
+            const tc = texIdx % 16, tr = Math.floor(texIdx / 16);
+            const eps = 0.01;
+            const uu = u <= 0 ? eps : (u >= 1 ? 1 - eps : u);
+            const vv = v <= 0 ? eps : (v >= 1 ? 1 - eps : v);
+            return [(tc + uu) / 16, 1.0 - ((tr + vv) / 16)];
+        };
+
+        const pushTri = (a, b, c, au, av, bu, bv, cu, cv, nx, ny, nz, tint) => {
+            pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+            uv.push(au, av, bu, bv, cu, cv);
+            nrm.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
+            colAttr.push(1, 1, 1, 1, 1, 1, 1, 1, 1);
+            tintAttr.push(tint[0], tint[1], tint[2], tint[0], tint[1], tint[2], tint[0], tint[1], tint[2]);
+        };
+
+        const pushQuad = (p0, p1, p2, p3, texIdx, nx, ny, nz, tint, vStart = 0, vEnd = 1) => {
+            const q0 = uvFor(texIdx, 0, vStart);
+            const q1 = uvFor(texIdx, 0, vEnd);
+            const q2 = uvFor(texIdx, 1, vEnd);
+            const q3 = uvFor(texIdx, 1, vStart);
+            pushTri(p0, p1, p2, q0[0], q0[1], q1[0], q1[1], q2[0], q2[1], nx, ny, nz, tint);
+            pushTri(p0, p2, p3, q0[0], q0[1], q2[0], q2[1], q3[0], q3[1], nx, ny, nz, tint);
+        };
+
+        const topTex = (typeof block.atlasIdx === 'object') ? block.atlasIdx.top : 0;
+        const sideTex = (typeof block.atlasIdx === 'object') ? block.atlasIdx.side : 28;
+        const bottomTex = (typeof block.atlasIdx === 'object') ? block.atlasIdx.bottom : 2;
+        const overlayTex = (typeof block.atlasIdx === 'object' && block.atlasIdx.overlay !== undefined) ? block.atlasIdx.overlay : 1;
+
+        // Base cube: centered exactly like THREE.BoxGeometry(1,1,1).
+        pushQuad([ 0.5, 0.5, 0.5], [ 0.5,-0.5, 0.5], [ 0.5,-0.5,-0.5], [ 0.5, 0.5,-0.5], sideTex,  1, 0, 0, noTint);
+        pushQuad([-0.5, 0.5,-0.5], [-0.5,-0.5,-0.5], [-0.5,-0.5, 0.5], [-0.5, 0.5, 0.5], sideTex, -1, 0, 0, noTint);
+        pushQuad([-0.5, 0.5,-0.5], [-0.5, 0.5, 0.5], [ 0.5, 0.5, 0.5], [ 0.5, 0.5,-0.5], topTex, 0, 1, 0, greenTint);
+        pushQuad([-0.5,-0.5, 0.5], [-0.5,-0.5,-0.5], [ 0.5,-0.5,-0.5], [ 0.5,-0.5, 0.5], bottomTex, 0,-1, 0, noTint);
+        pushQuad([-0.5, 0.5, 0.5], [-0.5,-0.5, 0.5], [ 0.5,-0.5, 0.5], [ 0.5, 0.5, 0.5], sideTex, 0, 0, 1, noTint);
+        pushQuad([ 0.5, 0.5,-0.5], [ 0.5,-0.5,-0.5], [-0.5,-0.5,-0.5], [-0.5, 0.5,-0.5], sideTex, 0, 0,-1, noTint);
+
+        // Flush grass side overhang. Use a microscopic offset only to prevent
+        // z-fighting; visually it sits flush with the dirt side, not separated.
+        const o = 0.00015;
+        const yTop = 0.5, yMid = 0.0;
+        pushQuad([ 0.5+o,yTop, 0.5], [ 0.5+o,yMid, 0.5], [ 0.5+o,yMid,-0.5], [ 0.5+o,yTop,-0.5], overlayTex,  1,0,0, greenTint, 0, 0.5);
+        pushQuad([-0.5-o,yTop,-0.5], [-0.5-o,yMid,-0.5], [-0.5-o,yMid, 0.5], [-0.5-o,yTop, 0.5], overlayTex, -1,0,0, greenTint, 0, 0.5);
+        pushQuad([-0.5,yTop, 0.5+o], [-0.5,yMid, 0.5+o], [ 0.5,yMid, 0.5+o], [ 0.5,yTop, 0.5+o], overlayTex, 0,0, 1, greenTint, 0, 0.5);
+        pushQuad([ 0.5,yTop,-0.5-o], [ 0.5,yMid,-0.5-o], [-0.5,yMid,-0.5-o], [-0.5,yTop,-0.5-o], overlayTex, 0,0,-1, greenTint, 0, 0.5);
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colAttr), 3));
+        geo.setAttribute('aBiomeTint', new THREE.BufferAttribute(new Float32Array(tintAttr), 3));
+
+        const mesh = new THREE.Mesh(geo, solidMaterial);
+        mesh.position.set(-0.24, -0.26, -0.18);
+        mesh.rotation.set(0, 90 * Math.PI / 180, 0);
+        mesh.scale.set(0.46 / 0.35, 0.46 / 0.35, 0.46 / 0.35);
+
+        const group = new THREE.Group();
+        group.add(mesh);
+        return group;
+    }
+
     // Slab: half-height box
     if (block.type === 'slab') {
         const geo = new THREE.BoxGeometry(1, 0.5, 1).toNonIndexed();
@@ -516,15 +627,10 @@ function buildBlockItemMesh(blockId) {
     // Apply green biome tint to held items: grass top face, all faces for plants
     const greenTint = [0.55, 0.75, 0.4];
     if (blockId === 1) {
-        // Grass block: tint top face (face index 2 = 6 verts starting at vert 12)
+        // v428: Grass Block item mesh must stay a full dirt-sided cube.
+        // Tint only the top face here; the side grass overhang is added below
+        // as a separate transparent overlay mesh so the dirt side is not green.
         for (let i = 12 * 3; i < 18 * 3; i += 3) {
-            biomeTints[i] = greenTint[0]; biomeTints[i+1] = greenTint[1]; biomeTints[i+2] = greenTint[2];
-        }
-        // Also tint side faces for the grass overlay effect
-        for (let i = 0; i < 12 * 3; i += 3) {
-            biomeTints[i] = greenTint[0]; biomeTints[i+1] = greenTint[1]; biomeTints[i+2] = greenTint[2];
-        }
-        for (let i = 18 * 3; i < biomeTints.length; i += 3) {
             biomeTints[i] = greenTint[0]; biomeTints[i+1] = greenTint[1]; biomeTints[i+2] = greenTint[2];
         }
     } else if ([14, 16, 22, 24, 43, 66, 67].includes(blockId)) {
@@ -545,6 +651,52 @@ function buildBlockItemMesh(blockId) {
     
     const group = new THREE.Group();
     group.add(mesh);
+
+    // v428: Grass side overhang overlay for held/dropped Grass Block only.
+    // This keeps the base cube untouched and preserves the existing block
+    // positioning/hotbar behavior. Coordinates are centered like BoxGeometry.
+    if (blockId === 1 && textureAtlas) {
+        const overlayTex = (typeof block.atlasIdx === 'object' && block.atlasIdx.overlay !== undefined) ? block.atlasIdx.overlay : 1;
+        const tx = overlayTex % 16;
+        const ty = Math.floor(overlayTex / 16);
+        const eps = 0.01;
+        const u0 = (tx + eps) / 16;
+        const u1 = (tx + 1 - eps) / 16;
+        const vTop = 1.0 - ((ty + eps) / 16);
+        const vMid = 1.0 - ((ty + 0.5) / 16);
+        const pos = [], uv = [], nrm = [], col = [], tint = [];
+        const gt = [0.55, 0.75, 0.4];
+        const pushTri = (a,b,c, au,av, bu,bv, cu,cv, nx,ny,nz) => {
+            pos.push(a[0],a[1],a[2], b[0],b[1],b[2], c[0],c[1],c[2]);
+            uv.push(au,av, bu,bv, cu,cv);
+            nrm.push(nx,ny,nz, nx,ny,nz, nx,ny,nz);
+            col.push(1,1,1, 1,1,1, 1,1,1);
+            tint.push(gt[0],gt[1],gt[2], gt[0],gt[1],gt[2], gt[0],gt[1],gt[2]);
+        };
+        const quad = (p0,p1,p2,p3,nx,ny,nz) => {
+            pushTri(p0,p1,p2, u0,vTop, u0,vMid, u1,vMid, nx,ny,nz);
+            pushTri(p0,p2,p3, u0,vTop, u1,vMid, u1,vTop, nx,ny,nz);
+        };
+        const o = 0.003, yTop = 0.5, yMid = 0.0;
+        quad([ 0.5+o,yTop, 0.5], [ 0.5+o,yMid, 0.5], [ 0.5+o,yMid,-0.5], [ 0.5+o,yTop,-0.5],  1,0,0);
+        quad([-0.5-o,yTop,-0.5], [-0.5-o,yMid,-0.5], [-0.5-o,yMid, 0.5], [-0.5-o,yTop, 0.5], -1,0,0);
+        quad([-0.5,yTop, 0.5+o], [-0.5,yMid, 0.5+o], [ 0.5,yMid, 0.5+o], [ 0.5,yTop, 0.5+o], 0,0, 1);
+        quad([ 0.5,yTop,-0.5-o], [ 0.5,yMid,-0.5-o], [-0.5,yMid,-0.5-o], [-0.5,yTop,-0.5-o], 0,0,-1);
+
+        const og = new THREE.BufferGeometry();
+        og.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        og.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        og.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+        og.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
+        og.setAttribute('aBiomeTint', new THREE.BufferAttribute(new Float32Array(tint), 3));
+
+        const om = new THREE.Mesh(og, solidMaterial);
+        om.position.copy(mesh.position);
+        om.rotation.copy(mesh.rotation);
+        om.scale.copy(mesh.scale);
+        group.add(om);
+    }
+
     return group;
 }
 

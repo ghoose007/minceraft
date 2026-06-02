@@ -16,6 +16,7 @@ window.openFurnace = function(x, y, z) {
 };
 
 window.closeFurnace = function() {
+    if (typeof window.hideItemTooltip === 'function') window.hideItemTooltip();
     const modal = document.getElementById('furnace-modal');
     if (modal) modal.classList.add('hidden');
     currentFurnacePos = null;

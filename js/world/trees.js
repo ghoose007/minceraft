@@ -28,6 +28,14 @@ function growTree(x, y, z, type) {
         return;
     }
 
+    // v435: Oak/Birch saplings now use the same small regular tree shape used
+    // by natural plains/forest worldgen, instead of the older custom sapling
+    // canopy. This matches the in-world naturally generated regular oak/birch.
+    if (type === 116 || type === 117) {
+        _growNaturalOakBirchSaplingTree(x, y, z, type);
+        return;
+    }
+
     let logId = 13, leafId = 14, height = 4 + Math.floor(Math.random() * 3);
     if (type === 117) { logId = 41; leafId = 43; height = 5 + Math.floor(Math.random() * 3); }
     if (type === 118) { logId = 21; leafId = 22; height = 6 + Math.floor(Math.random() * 3); }
@@ -81,6 +89,51 @@ function growTree(x, y, z, type) {
     // Trigger global lighting recalculation around the new canopy
     pendingBlockUpdates.push({x: x, y: y + Math.floor(height/2), z: z}); 
 }
+
+
+function _growNaturalOakBirchSaplingTree(x, y, z, type) {
+    const logId = (type === 117) ? 41 : 13;
+    const leafId = (type === 117) ? 43 : 14;
+    const trunkHeight = (type === 117)
+        ? (5 + Math.floor(Math.random() * 3))
+        : (4 + Math.floor(Math.random() * 3));
+
+    // v439: y is the sapling block position and therefore also the first trunk
+    // block position. The previous v435 helper copied worldgen's "ground y"
+    // convention and started the trunk at y+1, making bonemeal trees float.
+    for (let dy = 0; dy <= trunkHeight + 2; dy++) {
+        const id = getVoxel(x, y + dy, z) & 0xFF;
+        if (id !== 0 && id !== type && id !== leafId) return;
+    }
+
+    setVoxel(x, y, z, 0);
+
+    // Natural regular small-tree canopy shape, shifted to sapling-base coords.
+    for (let ly = y + trunkHeight - 3; ly <= y + trunkHeight; ly++) {
+        const yDist = ly - (y + trunkHeight - 1);
+        const radius = (yDist >= 0) ? 1 : 2;
+        for (let llx = -radius; llx <= radius; llx++) {
+            for (let llz = -radius; llz <= radius; llz++) {
+                if (Math.abs(llx) === radius && Math.abs(llz) === radius) {
+                    if (yDist >= 0 || Math.random() < 0.5) continue;
+                }
+                if (llx === 0 && llz === 0 && ly < y + trunkHeight) continue;
+                if ((getVoxel(x + llx, ly, z + llz) & 0xFF) === 0) {
+                    setVoxel(x + llx, ly, z + llz, leafId);
+                    pendingBlockUpdates.push({x: x + llx, y: ly, z: z + llz});
+                }
+            }
+        }
+    }
+
+    for (let ly = 0; ly < trunkHeight; ly++) {
+        setVoxel(x, y + ly, z, logId);
+        pendingBlockUpdates.push({x, y: y + ly, z});
+    }
+
+    pendingBlockUpdates.push({x, y: y + Math.floor(trunkHeight / 2), z});
+}
+
 
 // --- SMALL JUNGLE TREE (1x1 trunk, like MC's small jungle tree) ---
 function growSmallJungleTree(x, y, z) {

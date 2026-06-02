@@ -641,6 +641,7 @@ async function saveWorld(slot) {
             caves: GEN_CAVES,
             lava: GEN_LAVA,
             biomeScale: GEN_BIOME_SCALE,
+            effectiveBiomeScale: (typeof GEN_EFFECTIVE_BIOME_SCALE !== 'undefined' ? GEN_EFFECTIVE_BIOME_SCALE : GEN_BIOME_SCALE),
             smoothness: GEN_SMOOTHNESS,
             volatility: GEN_VOLATILITY_MULT,
             tempOffset: GEN_TEMP_OFFSET,
@@ -840,6 +841,7 @@ async function loadWorldFromSlot(slot) {
         GEN_CAVES = data.genParams.caves;
         GEN_LAVA = data.genParams.lava;
         GEN_BIOME_SCALE = data.genParams.biomeScale;
+        GEN_EFFECTIVE_BIOME_SCALE = data.genParams.effectiveBiomeScale || data.genParams.biomeScale || GEN_BIOME_SCALE;
         GEN_SMOOTHNESS = data.genParams.smoothness;
         GEN_VOLATILITY_MULT = data.genParams.volatility || 100;
         GEN_TEMP_OFFSET = data.genParams.tempOffset || 0;
@@ -908,6 +910,28 @@ async function loadWorldFromSlot(slot) {
                 worldOptions.xpenabled = false;
                 worldOptions.aetherEnabled = false;
             }
+        }
+        if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7) {
+            GEN_HUNGER_ENABLED = false;
+            GEN_XP_ENABLED = false;
+            GEN_RAVINE_FREQUENCY = 0;
+            GEN_SINGLE_BIOME = '';
+            GEN_SEA_LEVEL = 62;
+            GEN_STRUCTURES = true;
+            GEN_CAVES = true;
+            GEN_LAVA = false;
+            GEN_FOLIAGE_DENSITY = 0;
+            if (typeof GEN_AETHER_ENABLED !== 'undefined') GEN_AETHER_ENABLED = false;
+            if (typeof worldOptions !== 'undefined') {
+                worldOptions.hungerEnabled = false;
+                worldOptions.xpenabled = false;
+                worldOptions.aetherEnabled = false;
+                worldOptions.worldtype = 7;
+            }
+            // v437: Indev worlds always load with Smooth Lighting off and Fabulous unavailable.
+            if (typeof settingSmoothLighting !== 'undefined') settingSmoothLighting = false;
+            if (typeof settingGraphicsFabulous !== 'undefined') settingGraphicsFabulous = false;
+            if (typeof settingGraphicsFancy !== 'undefined') settingGraphicsFancy = true;
         }
         if (data.genParams.biomeOverrides) {
             GEN_BIOME_OVERRIDES = data.genParams.biomeOverrides;
@@ -1169,6 +1193,9 @@ async function _loadV4IntoData(slot, data) {
 // --- Save & Quit (called from pause menu) ---
 
 async function saveAndQuit() {
+    if (window.MinecraftChat && typeof window.MinecraftChat.reset === 'function') {
+        window.MinecraftChat.reset();
+    }
     if (window.MusicManager && typeof window.MusicManager.stopForMenu === 'function') {
         window.MusicManager.stopForMenu();
     }

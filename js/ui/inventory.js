@@ -304,7 +304,7 @@ function handleArmorSlotClick(slotIdx, e) {
 }
 
 // Recalculate player max health based on emerald armor bonus
-function _recalcArmorHealthBonus() {
+function _recalcArmorHealthBonus(forceHudRefresh) {
     const baseHealth = 20;
     let bonus = 0;
     for (const slot of armorSlots) {
@@ -313,9 +313,21 @@ function _recalcArmorHealthBonus() {
         if (data && data.bonusHealth) bonus += data.bonusHealth;
     }
     const newMax = baseHealth + bonus;
-    if (player.maxHealth !== newMax) {
+    const changed = player.maxHealth !== newMax;
+    if (changed) {
         player.maxHealth = newMax;
         if (player.health > player.maxHealth) player.health = player.maxHealth;
+    }
+
+    // v412/v413: emerald armor bonus hearts change HUD row count, and loaded
+    // non-emerald armor still needs the armor pips to render after save restore.
+    if (changed || forceHudRefresh) {
+        if (typeof window.forceRefreshSurvivalHUD === 'function') window.forceRefreshSurvivalHUD();
+        else {
+            if (typeof updateHealthUI === 'function') updateHealthUI();
+            if (typeof window.updateSurvivalHudLayout === 'function') window.updateSurvivalHudLayout(true);
+            if (typeof window.updateArmorBar === 'function') window.updateArmorBar();
+        }
     }
 }
 window._recalcArmorHealthBonus = _recalcArmorHealthBonus;
@@ -324,6 +336,11 @@ window._recalcArmorHealthBonus = _recalcArmorHealthBonus;
 window.updateArmorBar = function() {
     const bar = document.getElementById('armor-bar');
     if (!bar) return;
+    if (typeof window.updateSurvivalHudLayout === 'function') window.updateSurvivalHudLayout(false);
+    if (typeof gameMode !== 'undefined' && gameMode !== 'survival') {
+        bar.style.display = 'none';
+        return;
+    }
 
     // Calculate total armor defense points
     let totalDefense = 0;

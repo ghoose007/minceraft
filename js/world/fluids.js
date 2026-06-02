@@ -12,6 +12,28 @@
 // short-circuit (skip the conversion bookkeeping, queueNeighbors,
 // pendingBlockUpdates, etc.) instead of relying on a silent no-op
 // in the inner setVoxel call.
+
+// v439: when water/lava replaces plants, clean up linked multi-block plants.
+// In particular, water flowing into the lower half of two-high Tall Grass (219)
+// must also remove its top half (220), otherwise the top remains floating.
+function _fluidCleanupReplacedPlant(x, y, z, oldId) {
+    if (oldId === 219) {
+        if ((getVoxel(x, y + 1, z) & 0xFF) === 220) {
+            setVoxel(x, y + 1, z, 0);
+            pendingBlockUpdates.push({x, y: y + 1, z});
+            if (typeof queueNeighbors === 'function') queueNeighbors(x, y + 1, z);
+            if (typeof updateChunks === 'function') updateChunks(x, y + 1, z);
+        }
+    } else if (oldId === 220) {
+        if ((getVoxel(x, y - 1, z) & 0xFF) === 219) {
+            setVoxel(x, y - 1, z, 0);
+            pendingBlockUpdates.push({x, y: y - 1, z});
+            if (typeof queueNeighbors === 'function') queueNeighbors(x, y - 1, z);
+            if (typeof updateChunks === 'function') updateChunks(x, y - 1, z);
+        }
+    }
+}
+
 function _isFluidWriteableCoord(x, y, z) {
     if (typeof _halfW === 'undefined' || typeof CHUNKS_Z === 'undefined') return true;
     const ix = (x | 0) + _halfW;
@@ -188,6 +210,7 @@ function updateWater(x, y, z, dirtyBounds) {
     // spread into terrain that hasn't been created yet.
     if (belowId === 0 || isCrossBlock(belowId)) {
         if (!_isFluidWriteableCoord(x, y - 1, z)) return;
+        if (isCrossBlock(belowId)) _fluidCleanupReplacedPlant(x, y - 1, z, belowId);
         setVoxel(x, y - 1, z, 4, 8, 1, 0);
         _convertNeighborLava(x, y - 1, z); // immediate check for adjacent lava
         updateWaterQueue.add(getVoxelIndex(x, y - 1, z));
@@ -236,6 +259,7 @@ function updateWater(x, y, z, dirtyBounds) {
                     queueNeighbors(nx, ny, nz);
                     markDirty(nx, nz);
                 } else if (nId === 0 || isCrossBlock(nId) || (nId === 4 && ((nVal >> 8) & 0xF) < curLevel - 1 && !((nVal >> 13) & 0x1))) {
+                    if (isCrossBlock(nId)) _fluidCleanupReplacedPlant(nx, ny, nz, nId);
                     setVoxel(nx, ny, nz, 4, curLevel - 1, 0, 0);
                     if (nId !== 4) _convertNeighborLava(nx, ny, nz); // immediate check for adjacent lava
                     updateWaterQueue.add(getVoxelIndex(nx, ny, nz));
@@ -340,6 +364,7 @@ function updateLava(x, y, z, dirtyBounds) {
     // v332 Fix A: skip if the target chunk isn't generated.
     if (belowId === 0 || isCrossBlock(belowId)) {
         if (!_isFluidWriteableCoord(x, y - 1, z)) return;
+        if (isCrossBlock(belowId)) _fluidCleanupReplacedPlant(x, y - 1, z, belowId);
         setVoxel(x, y - 1, z, 27, maxLevel, 1, 0);
         _convertNeighborWater(x, y - 1, z); // convert any adjacent water immediately
         updateLavaQueue.add(getVoxelIndex(x, y - 1, z));
@@ -408,6 +433,7 @@ function updateLava(x, y, z, dirtyBounds) {
                         return;
                     }
                 } else if (nId === 0 || isCrossBlock(nId) || (nId === 27 && ((nVal >> 8) & 0xF) < curLevel - 1 && !((nVal >> 13) & 0x1))) {
+                    if (isCrossBlock(nId)) _fluidCleanupReplacedPlant(nx, ny, nz, nId);
                     setVoxel(nx, ny, nz, 27, curLevel - 1, 0, 0);
                     if (nId !== 27) _convertNeighborWater(nx, ny, nz); // convert any adjacent water
                     updateLavaQueue.add(getVoxelIndex(nx, ny, nz));

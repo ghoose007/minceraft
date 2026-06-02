@@ -120,6 +120,72 @@ function _isWoodedBadlandsColumn(x, y, z) {
     return _woodedBadlandsMask(x, z) > 0.5;
 }
 
+// v415: Rainforest terrain shaping.
+// Goal: fewer floating blobs/overhangs, more rough cliff faces and flatter broken
+// terrace tops. This is used by both the regular Rainforest biome and the
+// Beta 1.7.3 Rain Forest biome.
+function _rainforestCliffShape(x, z, isBeta173Terrain) {
+    if (typeof _wgPerlinMountains === 'undefined' || !_wgPerlinMountains ||
+        typeof _wgPerlinVolatility === 'undefined' || !_wgPerlinVolatility ||
+        typeof _wgPerlinElevation === 'undefined' || !_wgPerlinElevation) {
+        return { cliff: 0.0, terrace: 0.0, rough: 0.0 };
+    }
+
+    const broad = _wgPerlinMountains.fbm(x / 165 + 2900, z / 165 - 2900, 4);
+    const ridgeA = 1.0 - Math.abs(_wgPerlinMountains.fbm(x / 82 - 780, z / 82 + 780, 3));
+    const ridgeB = 1.0 - Math.abs(_wgPerlinVolatility.fbm(x / 46 + 5100, z / 46 - 5100, 3));
+    const terraceNoise = _wgPerlinElevation.fbm(x / 58 - 2200, z / 58 + 2200, 3);
+
+    const broadMask = _smoothstep(-0.10, 0.38, broad);
+    const cliff = Math.max(_smoothstep(0.52, 0.84, ridgeA), _smoothstep(0.60, 0.90, ridgeB) * 0.72) * broadMask;
+    const terrace = _smoothstep(-0.04, 0.34, terraceNoise) * broadMask;
+    const rough = _wgPerlinVolatility.fbm(x / 24 + 1200, z / 24 - 1200, 2) * (isBeta173Terrain ? 1.15 : 0.90);
+
+    return { cliff: cliff, terrace: terrace, rough: rough };
+}
+
+
+function _pickMushroomId(chunkRng) {
+    // Brown mushrooms are a little more common than red mushrooms.
+    return chunkRng() < 0.68 ? 221 : 222;
+}
+
+function _canPlaceMushroomAt(x, y, z) {
+    if (y <= 1 || y >= WORLD_HEIGHT - 1) return false;
+    if ((getVoxel(x, y, z) & 0xFF) !== 0) return false;
+    const groundId = getVoxel(x, y - 1, z) & 0xFF;
+    // Natural mushroom support: grass/dirt/stone/gravel/mossy cobble.
+    if (groundId !== 1 && groundId !== 2 && groundId !== 3 && groundId !== 5 && groundId !== 48) return false;
+    // Avoid placing into water/lava-adjacent pockets.
+    for (const [dx, dy, dz] of [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,-1,0]]) {
+        const n = getVoxel(x + dx, y + dy, z + dz) & 0xFF;
+        if (n === 4 || n === 27) return false;
+    }
+    return true;
+}
+
+function _placeCaveMushroomsForChunk(cx, cz, chunkRng) {
+    // v406: sparse cave mushrooms. This runs after cave carving, so it can
+    // place mushrooms on newly exposed cave floors without affecting terrain.
+    const startX = cx * CHUNK_SIZE - (WORLD_WIDTH / 2);
+    const startZ = cz * CHUNK_SIZE - (WORLD_DEPTH / 2);
+    const attempts = 3 + Math.floor(chunkRng() * 3); // 3-5 attempts/chunk, most fail
+    for (let i = 0; i < attempts; i++) {
+        if (chunkRng() > 0.32) continue;
+        const x = startX + Math.floor(chunkRng() * CHUNK_SIZE);
+        const z = startZ + Math.floor(chunkRng() * CHUNK_SIZE);
+        const surfaceY = getHighestBlock(x, z);
+        const maxY = Math.min(surfaceY - 3, 58);
+        if (maxY < 8) continue;
+        const y = 6 + Math.floor(chunkRng() * (maxY - 5));
+        if (!_canPlaceMushroomAt(x, y, z)) continue;
+        // Need at least one air block above so the X-pattern plant is not buried.
+        if ((getVoxel(x, y + 1, z) & 0xFF) !== 0) continue;
+        setVoxel(x, y, z, _pickMushroomId(chunkRng));
+    }
+}
+
+
 function _placeFoliageGrass(x, y, z, chunkRng) {
     const twoBlockChance = 0.25;
     const cellY2 = y + 2;
@@ -425,6 +491,275 @@ function setupSkyblockStarterTree() {
 if (typeof window !== 'undefined') window.setupSkyblockStarterTree = setupSkyblockStarterTree;
 
 
+
+// v430: Indev Island fixed 256x256 generator.
+function _indevIslandFalloff(x, z) {
+    const halfW = WORLD_WIDTH / 2;
+    const halfD = WORLD_DEPTH / 2;
+    const nx = Math.abs(x) / Math.max(1, halfW);
+    const nz = Math.abs(z) / Math.max(1, halfD);
+    const edge = Math.max(nx, nz);
+    // v431: broader coastal taper. Center terrain stays near sea level,
+    // then fades into beaches/ocean before the hard world border.
+    return Math.max(0.0, Math.min(1.0, (0.82 - edge) / 0.24));
+}
+
+function _generateIndevOakTree(x, y, z, rng) {
+    // v434: match the normal oak sapling growTree() shape exactly, but keep
+    // this worldgen-safe implementation because workers do not load trees.js.
+    const logId = 13;
+    const leafId = 14;
+    const height = 4 + Math.floor(rng() * 3);
+
+    // Same space check as regular oak sapling growth.
+    for (let dy = 0; dy <= height; dy++) {
+        const id = getVoxel(x, y + dy, z) & 0xFF;
+        if (id !== 0 && id !== 116 && id !== leafId) return false;
+    }
+
+    // Regular Oak/Birch canopy shape from growTree().
+    for (let dy = height - 3; dy <= height + 1; dy++) {
+        const radius = (dy >= height) ? 1 : 2;
+        for (let dx = -radius; dx <= radius; dx++) {
+            for (let dz = -radius; dz <= radius; dz++) {
+                if (Math.abs(dx) === radius && Math.abs(dz) === radius && (rng() < 0.5 || dy >= height)) continue;
+                if ((getVoxel(x + dx, y + dy, z + dz) & 0xFF) === 0) {
+                    setVoxel(x + dx, y + dy, z + dz, leafId);
+                }
+            }
+        }
+    }
+
+    for (let dy = 0; dy < height; dy++) {
+        setVoxel(x, y + dy, z, logId);
+    }
+    return true;
+}
+
+function _carveIndevCavesForChunk(cx, cz, rng) {
+    // v434: Indev now uses the same worm-style cave carver as normal overworld
+    // generation, just without ravines and without the older custom surface
+    // mouth bias from v430.
+    if (!GEN_CAVES) return;
+
+    const halfW = WORLD_WIDTH / 2;
+    const halfD = WORLD_DEPTH / 2;
+    const startX = cx * CHUNK_SIZE - halfW;
+    const startZ = cz * CHUNK_SIZE - halfD;
+
+    const caveMinY = (typeof GEN_CAVE_MIN_Y !== 'undefined') ? GEN_CAVE_MIN_Y : 2;
+    const caveLavaY = (typeof GEN_CAVE_LAVA_Y !== 'undefined') ? GEN_CAVE_LAVA_Y : 6;
+    const tunnelFreqMult = (typeof GEN_TUNNEL_FREQUENCY !== 'undefined' ? GEN_TUNNEL_FREQUENCY : 100) / 100;
+    const tunnelLenMult = (typeof GEN_TUNNEL_LENGTH !== 'undefined' ? GEN_TUNNEL_LENGTH : 100) / 100;
+    const tunnelRadMult = (typeof GEN_TUNNEL_RADIUS !== 'undefined' ? GEN_TUNNEL_RADIUS : 100) / 100;
+    const tunnelMaxY = (typeof GEN_TUNNEL_MAX_Y !== 'undefined') ? GEN_TUNNEL_MAX_Y : 80;
+    const tunnelBranchChance = (typeof GEN_TUNNEL_BRANCH !== 'undefined' ? GEN_TUNNEL_BRANCH : 50) / 100;
+    const caveSizeMult = (typeof GEN_CAVE_SIZE !== 'undefined' ? GEN_CAVE_SIZE : 100) / 100;
+
+    const chunkMinX = startX;
+    const chunkMaxX = startX + CHUNK_SIZE - 1;
+    const chunkMinZ = startZ;
+    const chunkMaxZ = startZ + CHUNK_SIZE - 1;
+
+    const carveWorm = (wrng, startWX, startWY, startWZ, maxSteps, baseRadius, startYaw, startPitch, depth) => {
+        let wx = startWX, wy = startWY, wz = startWZ;
+        let yaw = startYaw, pitch = startPitch;
+        const rad = baseRadius * tunnelRadMult;
+
+        for (let step = 0; step < maxSteps; step++) {
+            const t = step / maxSteps;
+            let taper = 1.0;
+            if (t < 0.08) taper = t / 0.08;
+            else if (t > 0.9) taper = (1.0 - t) / 0.1;
+            taper = Math.max(0, Math.min(1, taper));
+
+            const roomWobble = 1.0 + Math.sin(step * 0.12) * 0.4 * caveSizeMult;
+            const r = Math.max(0.6, rad * taper * roomWobble);
+
+            yaw += (wrng() - 0.5) * 0.5;
+            pitch += (wrng() - 0.5) * 0.35;
+            pitch = Math.max(-1.2, Math.min(0.6, pitch));
+
+            wx += Math.cos(yaw) * Math.cos(pitch);
+            wy += Math.sin(pitch);
+            wz += Math.sin(yaw) * Math.cos(pitch);
+
+            if (wy < caveMinY + 1) { pitch = Math.abs(pitch) * 0.3; wy = caveMinY + 1; }
+            if (wy > tunnelMaxY) { pitch = -Math.abs(pitch) * 0.5; wy = tunnelMaxY; }
+
+            const branchRoll = wrng();
+            const branchShouldSpawn = (depth < 2 && step > 8 && step < maxSteps - 8 && branchRoll < tunnelBranchChance * 0.025);
+
+            const cix = Math.floor(wx), ciy = Math.floor(wy), ciz = Math.floor(wz);
+            const ri = Math.ceil(r) + 1;
+            const sphereInChunk = (cix + ri >= chunkMinX && cix - ri <= chunkMaxX &&
+                                   ciz + ri >= chunkMinZ && ciz - ri <= chunkMaxZ);
+
+            if (sphereInChunk) {
+                const rSq = r * r;
+                for (let dx = -ri; dx <= ri; dx++) {
+                    for (let dy = -ri; dy <= ri; dy++) {
+                        for (let dz = -ri; dz <= ri; dz++) {
+                            const distSq = dx * dx + dy * dy * 1.4 + dz * dz;
+                            if (distSq > rSq) continue;
+
+                            const bx = cix + dx, by = ciy + dy, bz = ciz + dz;
+                            if (bx < chunkMinX || bx > chunkMaxX || bz < chunkMinZ || bz > chunkMaxZ) continue;
+                            if (by < caveMinY || by >= WORLD_HEIGHT - 1) continue;
+
+                            const blockId = getVoxel(bx, by, bz) & 0xFF;
+                            if (blockId !== 3 && blockId !== 2 && blockId !== 1 && blockId !== 15 &&
+                                blockId !== 19 && blockId !== 5 && blockId !== 39 && blockId !== 61) continue;
+
+                            const above1 = getVoxel(bx, by + 1, bz) & 0xFF;
+                            const above2 = getVoxel(bx, by + 2, bz) & 0xFF;
+                            if ((blockId === 1 || blockId === 15) && (above1 === 0 || above2 === 0)) continue;
+
+                            if (by <= caveLavaY && typeof GEN_LAVA !== 'undefined' && GEN_LAVA) {
+                                setVoxel(bx, by, bz, 27, 8, 0, 1);
+                            } else {
+                                setVoxel(bx, by, bz, 0);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (branchShouldSpawn) {
+                const branchYaw = yaw + (wrng() < 0.5 ? Math.PI / 2 : -Math.PI / 2) + (wrng() - 0.5) * 0.8;
+                const branchPitch = pitch * 0.5 + (wrng() - 0.5) * 0.3;
+                const branchLen = Math.floor(maxSteps * (0.35 + wrng() * 0.35));
+                const branchRad = baseRadius * (0.65 + wrng() * 0.25);
+                carveWorm(wrng, wx, wy, wz, branchLen, branchRad, branchYaw, branchPitch, depth + 1);
+            }
+        }
+    };
+
+    const checkRadius = 6;
+    for (let rcx = cx - checkRadius; rcx <= cx + checkRadius; rcx++) {
+        for (let rcz = cz - checkRadius; rcz <= cz + checkRadius; rcz++) {
+            const crng = _chunkSeededRandom(rcx * 17 + 1337, rcz * 17 + 7331);
+            if (crng() > 0.055 * tunnelFreqMult) continue;
+
+            const ox = rcx * CHUNK_SIZE - halfW + Math.floor(crng() * CHUNK_SIZE);
+            const oz = rcz * CHUNK_SIZE - halfD + Math.floor(crng() * CHUNK_SIZE);
+            if (_indevIslandFalloff(ox, oz) < 0.08) continue;
+
+            const surfY = getHighestBlock(ox, oz);
+            if (surfY < GEN_SEA_LEVEL - 8) continue;
+
+            const oy = Math.max(caveMinY + 4, Math.min(tunnelMaxY, surfY - (8 + Math.floor(crng() * 32))));
+            const wormLength = Math.floor((55 + crng() * 75) * tunnelLenMult);
+            const wormRadius = (1.2 + crng() * 1.6) * caveSizeMult;
+            const wormYaw = crng() * Math.PI * 2;
+            const pitchRoll = crng();
+            let wormPitch;
+            if (pitchRoll < 0.3) wormPitch = -0.05 + crng() * 0.15;
+            else if (pitchRoll < 0.6) wormPitch = -(0.1 + crng() * 0.3);
+            else wormPitch = -(0.3 + crng() * 0.6);
+
+            carveWorm(crng, ox, oy, oz, wormLength, wormRadius, wormYaw, wormPitch, 0);
+        }
+    }
+}
+
+function _generateIndevIslandChunk(cx, cz) {
+    _markChunkGenerated(cx, cz);
+    _getOrCreateChunkFast(cx, cz);
+    const halfW = WORLD_WIDTH / 2;
+    const halfD = WORLD_DEPTH / 2;
+    const startX = cx * CHUNK_SIZE - halfW;
+    const startZ = cz * CHUNK_SIZE - halfD;
+    const rng = _chunkSeededRandom(cx * 577 + 13, cz * 997 + 31);
+    const INDEV_ID = (typeof BIOME_IDS !== 'undefined' && BIOME_IDS.indev_forest !== undefined) ? BIOME_IDS.indev_forest : 18;
+
+    if (typeof chunkBiomeCache !== 'undefined') {
+        const biomes = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
+        biomes.fill(INDEV_ID);
+        chunkBiomeCache.set(cx + ',' + cz, { biomes });
+    }
+
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+            const x = startX + lx;
+            const z = startZ + lz;
+            const gIdx = (x + halfW) + (z + halfD) * WORLD_WIDTH;
+            if (gIdx >= 0 && gIdx < WORLD_WIDTH * WORLD_DEPTH) biomeMap[gIdx] = 'indev_forest';
+
+            const falloff = _indevIslandFalloff(x, z);
+            const round = Math.max(0, Math.min(1, falloff));
+            // Always bedrock floor. Even at the world edge, generate a real
+            // ocean floor inside the 256x256 border instead of dropping straight
+            // from water to bedrock.
+            setVoxel(x, 0, z, 18);
+
+            const roll = _wgPerlinElevation.fbm(x / 48, z / 48, 4) * 2.2;
+            const fine = _wgPerlinVolatility.fbm(x / 24 + 80, z / 24 - 80, 3) * 0.9;
+            // v431: rare cliff ridges only. Most terrain stays close to sea level.
+            const cliffRidge = 1.0 - Math.abs(_wgPerlinMountains.fbm(x / 68 + 300, z / 68 - 300, 3));
+            const cliffSelect = _wgPerlinVolatility.fbm(x / 115 - 1400, z / 115 + 1400, 2);
+            const cliffMask = _smoothstep(0.86, 0.965, cliffRidge) * _smoothstep(0.22, 0.56, cliffSelect) * round;
+            const cliff = cliffMask * (9.0 + ((_wgPerlinVolatility.noise2D(x / 19 + 91, z / 19 - 91) + 1) * 0.5) * 5.0);
+            let h = GEN_SEA_LEVEL + 4 + roll + fine + cliff;
+            // v434: edge/ocean columns keep a proper seabed, not bedrock-only.
+            // At the hard border it is still a normal ocean floor around y=49-53.
+            const oceanFloorNoise = _wgPerlinSeabed.fbm(x / 38 + 240, z / 38 - 240, 3) * 2.2;
+            const oceanTarget = GEN_SEA_LEVEL - 11 + round * 11 + oceanFloorNoise;
+            h = h * round + oceanTarget * (1.0 - round);
+            const height = Math.max(42, Math.min(86, Math.floor(h)));
+            const beach = height <= GEN_SEA_LEVEL + 1 || (round < 0.38 && height <= GEN_SEA_LEVEL + 4);
+
+            for (let y = 1; y <= height; y++) {
+                let id = 3;
+                if (y === height) {
+                    if (height < GEN_SEA_LEVEL - 1) {
+                        const seabedNoise = _wgPerlinSeabed.fbm(x / 45, z / 45, 2);
+                        const clayNoise = _wgPerlinClay.fbm(x / 20, z / 20, 2);
+                        id = 5; // gravel base, like regular ocean floor
+                        if (seabedNoise > 0.25) id = 2;
+                        else if (seabedNoise < -0.25) id = 15;
+                        if (clayNoise > 0.45) id = 61;
+                    } else {
+                        id = beach ? 15 : 1;
+                    }
+                }
+                else if (y >= height - 3) {
+                    if (height < GEN_SEA_LEVEL - 1) {
+                        const seabedNoise = _wgPerlinSeabed.fbm(x / 45, z / 45, 2);
+                        const clayNoise = _wgPerlinClay.fbm(x / 20, z / 20, 2);
+                        id = 5;
+                        if (seabedNoise > 0.25) id = 2;
+                        else if (seabedNoise < -0.25) id = 15;
+                        if (clayNoise > 0.45) id = 61;
+                    } else {
+                        id = beach ? 15 : 2;
+                    }
+                }
+                setVoxel(x, y, z, id);
+            }
+            for (let y = height + 1; y <= GEN_SEA_LEVEL; y++) setVoxel(x, y, z, 4, 8, 0, 1);
+        }
+    }
+
+    _carveIndevCavesForChunk(cx, cz, rng);
+
+    // Oak trees only. No tallgrass/flowers/sugarcane/other plants.
+    if (GEN_STRUCTURES) {
+        for (let lx = 1; lx < CHUNK_SIZE - 1; lx++) {
+            for (let lz = 1; lz < CHUNK_SIZE - 1; lz++) {
+                const x = startX + lx, z = startZ + lz;
+                if (_indevIslandFalloff(x, z) < 0.50) continue;
+                if (rng() > 0.010) continue;
+                const y = getHighestBlock(x, z);
+                if (y < GEN_SEA_LEVEL || (getVoxel(x, y, z) & 0xFF) !== 1) continue;
+                if ((getVoxel(x, y + 1, z) & 0xFF) !== 0) continue;
+                _generateIndevOakTree(x, y, z, rng);
+            }
+        }
+    }
+}
+
+
 function generateChunkColumn(cx, cz) {
     if (_isChunkGenerated(cx, cz)) return;
     // v332 Fix C: open the worldgen-allocate window. Tree leaves on a
@@ -596,6 +931,22 @@ function _generateNormalChunk(cx, cz) {
             volatility = biomeData.volMap[bIdx];
             const biomeNameForTerrain = BIOME_NAMES[biomeData.biomes[bIdx]];
 
+            // v436: Indev Island keeps the normal overworld generator, but
+            // forces the outer 16-block perimeter to taper down into ocean so
+            // the 256x256 world still reads as an island.
+            if (typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 7) {
+                const edgeDist = Math.min(
+                    (WORLD_WIDTH / 2 - 1) - Math.abs(x),
+                    (WORLD_DEPTH / 2 - 1) - Math.abs(z)
+                );
+                const edgeT = Math.max(0.0, Math.min(1.0, edgeDist / 16.0));
+                const smoothEdgeT = edgeT * edgeT * (3.0 - 2.0 * edgeT);
+                const seabedNoise = _wgPerlinSeabed.fbm(x / 38 + 240, z / 38 - 240, 3) * 2.0;
+                const oceanFloorTarget = GEN_SEA_LEVEL - 10 + seabedNoise;
+                baseHeight = baseHeight * smoothEdgeT + oceanFloorTarget * (1.0 - smoothEdgeT);
+                volatility *= (0.35 + 0.65 * smoothEdgeT);
+            }
+
             // Beta 1.7.3 terrain preset modifiers. These are now read from
             // betaElevScale/betaVolScale/betaMountainScale/betaSwampClamp,
             // which are blurred in _computeChunkBiomeData together with the
@@ -606,11 +957,13 @@ function _generateNormalChunk(cx, cz) {
             let betaElevScale = 1.0;
             let betaVolScale = 1.0;
             let betaSwampClamp = 0.0;
+            let betaOceanBlend = 0.0;
             if (isBeta173Terrain && biomeData.betaElevScale && biomeData.betaVolScale && biomeData.betaMountainScale) {
                 betaElevScale = biomeData.betaElevScale[bIdx];
                 betaVolScale = biomeData.betaVolScale[bIdx];
                 betaMountainScale = biomeData.betaMountainScale[bIdx];
                 betaSwampClamp = biomeData.betaSwampClamp ? biomeData.betaSwampClamp[bIdx] : 0.0;
+                betaOceanBlend = biomeData.betaOceanBlend ? biomeData.betaOceanBlend[bIdx] : 0.0;
                 if (betaSwampClamp > 0.001) {
                     const swampPocketNoise = _wgPerlinElevation.fbm(x / 42, z / 42, 3);
                     const swampWetMask = Math.max(0.0, Math.min(1.0, (0.34 - swampPocketNoise) / 0.68));
@@ -709,7 +1062,7 @@ function _generateNormalChunk(cx, cz) {
                 // Keep oceans water-shaped even under the global Beta pass,
                 // but do not make the seafloor flat. Add broad rolling
                 // underwater hills/valleys around the same average depth.
-                if (biomeNameForTerrain === 'ocean') {
+                if (betaOceanBlend > 0.001) {
                     const oceanRollA = _wgPerlinSeabed.fbm(x / 88, z / 88, 4);
                     const oceanRollB = _wgPerlinElevation.fbm(x / 145 + 900, z / 145 - 900, 3);
                     const oceanRidge = 1.0 - Math.abs(_wgPerlinSeabed.fbm(x / 54 - 300, z / 54 + 300, 2));
@@ -720,13 +1073,51 @@ function _generateNormalChunk(cx, cz) {
                         + oceanRollB * 3.5
                         + oceanHill * 2.0;
 
-                    // Stay safely underwater, but allow rolling seafloor relief.
+                    // v389: Beta-only ocean/land terrain blend. The ocean biome
+                    // label is still binary, but terrain uses the smoothed
+                    // betaOceanBlend weight from biomes.js so land slopes into the
+                    // seabed instead of cutting abruptly at the shoreline.
                     const cappedOceanFloor = Math.min(GEN_SEA_LEVEL - 4, Math.max(GEN_SEA_LEVEL - 27, targetOceanFloor));
-                    baseHeight = baseHeight * 0.20 + cappedOceanFloor * 0.80;
-                    volatility = Math.max(volatility * 0.45, 2.5 + Math.abs(oceanRollA) * 3.0);
+                    const oceanBlend = _smoothstep(0.0, 1.0, betaOceanBlend);
+                    baseHeight = baseHeight * (1.0 - oceanBlend) + (baseHeight * 0.20 + cappedOceanFloor * 0.80) * oceanBlend;
+                    volatility = volatility * (1.0 - oceanBlend) + Math.max(volatility * 0.45, 2.5 + Math.abs(oceanRollA) * 3.0) * oceanBlend;
                 }
             }
             
+            // v415: Rainforest-specific cliff/terrace shaping.
+            // Applies to both regular Rainforest and Beta 1.7.3 Rain Forest.
+            // It reduces the loose 3D volatility that caused floating terrain,
+            // then adds stepped ridge height so the biome reads as cliff faces
+            // with flatter rough terraces.
+            const rainforestWeight = (biomeData.rainforestWeight)
+                ? biomeData.rainforestWeight[bIdx]
+                : (biomeNameForTerrain === 'rainforest' ? 1.0 : 0.0);
+            const isRainforestTerrain = rainforestWeight > 0.02;
+            let rainforestCliff = 0.0;
+            if (isRainforestTerrain) {
+                const rf = _rainforestCliffShape(x, z, isBeta173Terrain);
+                rainforestCliff = rf.cliff * rainforestWeight;
+
+                const cliffHeight = rainforestCliff * (isBeta173Terrain ? 30.0 : 24.0) * _wgTerrainMult * shoreDampen;
+                const roughHeight = rf.rough * rainforestWeight * (isBeta173Terrain ? 5.0 : 4.0) * _wgTerrainMult * shoreDampen;
+                baseHeight += cliffHeight + roughHeight;
+
+                // Terrace only the upper/lifted parts. Mix through the blurred
+                // Rainforest mask so Beta Rain Forest borders do not hard-cut.
+                if (rf.terrace > 0.08 && baseHeight > GEN_SEA_LEVEL + 8) {
+                    const step = isBeta173Terrain ? 5.0 : 4.0;
+                    const stepped = Math.round(baseHeight / step) * step;
+                    const terraceMix = Math.min(0.72, rf.terrace * 0.55 * rainforestWeight);
+                    baseHeight = baseHeight * (1.0 - terraceMix) + stepped * terraceMix;
+                }
+
+                // Lower rainforest 3D-carving strength. Blend the reduction at
+                // biome edges instead of switching abruptly on the raw biome label.
+                const volTarget = volatility * (isBeta173Terrain ? 0.58 : 0.50);
+                volatility = volatility * (1.0 - rainforestWeight) + volTarget * rainforestWeight;
+                volatility += rainforestCliff * (isBeta173Terrain ? 8.5 : 7.0);
+            }
+
             // --- MACRO MOUNTAIN FORMATIONS ---
             const mountainScale = _wgSmoothness * 3.5; 
             const mNoise = _wgPerlinMountains.fbm(x / mountainScale, z / mountainScale, 4);
@@ -771,7 +1162,10 @@ function _generateNormalChunk(cx, cz) {
                 const anomaly = _wgPerlinElevation.noise3D(x / 120, y / 120, z / 120);
                 let activeVolatility = volatility;
                 if (anomaly > 0.2) {
-                    activeVolatility *= (1.0 + (anomaly - 0.2) * 5.0);
+                    // v415: Rainforest gets a reduced anomaly boost so the biome
+                    // forms cliffy terraces instead of floating terrain blobs.
+                    const anomalyBoost = isRainforestTerrain ? (5.0 - 3.0 * rainforestWeight) : 5.0;
+                    activeVolatility *= (1.0 + (anomaly - 0.2) * anomalyBoost);
                 }
                 
                 let betaCliffDensityBonus = 0.0;
@@ -779,18 +1173,38 @@ function _generateNormalChunk(cx, cz) {
                     // Global old-Beta overhang/shelf potential. This is
                     // intentionally not biome-specific: forest, plains,
                     // savanna, etc. can all inherit odd Beta terrain.
+                    // v415: Rainforest uses a much weaker shelf/pocket bonus
+                    // to avoid floating terrain while retaining cliff ledges.
                     const shelfNoise = _wgPerlin3D.noise3D(x / 58, y / 35, z / 58);
                     const pocketNoise = _wgPerlin3D.noise3D(x / 92 + 600, y / 70 - 600, z / 92 + 1200);
+                    const betaShelfMult = isRainforestTerrain ? (1.0 - 0.68 * rainforestWeight) : 1.0;
                     if (shelfNoise > 0.34) {
-                        betaCliffDensityBonus += (shelfNoise - 0.34) * 11.5;
+                        betaCliffDensityBonus += (shelfNoise - 0.34) * 11.5 * betaShelfMult;
                     }
                     if (pocketNoise > 0.42 && y > baseHeight - 10) {
-                        betaCliffDensityBonus += (pocketNoise - 0.42) * 8.0;
+                        betaCliffDensityBonus += (pocketNoise - 0.42) * 8.0 * betaShelfMult;
                     }
                 }
 
                 let density = -falloff + (n3D * activeVolatility) + betaCliffDensityBonus;
-                
+
+
+                if (isRainforestTerrain && rainforestCliff > 0.05) {
+
+
+                    const cliffWallBand = Math.max(0.0, Math.min(1.0, (baseHeight + 7.0 - y) / 18.0));
+
+
+                    density += rainforestCliff * cliffWallBand * (isBeta173Terrain ? 2.8 : 2.2);
+
+
+                    if (y > baseHeight + 10.0) density -= rainforestCliff * 2.5;
+
+
+                }
+
+
+
                 if (density > 0) {
                     setVoxel(x, y, z, 3);
                 } else if (y <= GEN_SEA_LEVEL) {
@@ -875,7 +1289,7 @@ function _generateNormalChunk(cx, cz) {
                             }
                             
                             // Swamp: use dirt for blocks at or below water level
-                            if (biome === 'swamp' && y <= GEN_SEA_LEVEL) {
+                            if ((biome === 'swamp' || biome === 'indev_forest') && y <= GEN_SEA_LEVEL) {
                                 const aboveId = getVoxel(x, y + 1, z) & 0xFF;
                                 if (aboveId === 4) surfId = 2; // Dirt under water
                             }
@@ -1186,9 +1600,14 @@ function _generateNormalChunk(cx, cz) {
             }
         }
     }
-    
+
+    if (GEN_CAVES) {
+        const mushroomRng = _chunkSeededRandom(cx * 17 + 99173, cz * 17 + 44729);
+        _placeCaveMushroomsForChunk(cx, cz, mushroomRng);
+    }
+
     // PHASE 3.5: Ravines
-    if (GEN_CAVES && (typeof GEN_WORLD_TYPE === 'undefined' || GEN_WORLD_TYPE !== 6)) {
+    if (GEN_CAVES && (typeof GEN_WORLD_TYPE === 'undefined' || (GEN_WORLD_TYPE !== 6 && GEN_WORLD_TYPE !== 7))) {
         const ravineFreq = (typeof GEN_RAVINE_FREQUENCY !== 'undefined' ? GEN_RAVINE_FREQUENCY : 100) / 100;
         const ravineDepthMult = (typeof GEN_RAVINE_DEPTH !== 'undefined' ? GEN_RAVINE_DEPTH : 100) / 100;
         const ravineWideMult = (typeof GEN_RAVINE_WIDTH !== 'undefined' ? GEN_RAVINE_WIDTH : 100) / 100;
@@ -1537,6 +1956,7 @@ function _generateNormalChunk(cx, cz) {
                         treeChance = (surfId === 1) ? 0.010 : 0.002;
                     }
                     else if (biome === 'swamp') treeChance = 0.008;
+                    else if (biome === 'indev_forest') treeChance = 0.008;
                     else if (biome === 'jungle') treeChance = 0.035;
                     else if (biome === 'extreme_hills') treeChance = 0.003;
                 }
@@ -1761,14 +2181,14 @@ function _generateNormalChunk(cx, cz) {
                                 }
                             }
                         }
-                    } else if ((biome === 'forest' || biome === 'alpha_forest' || biome === 'rainforest' || biome === 'seasonal_forest' || biome === 'savanna' || biome === 'plains' || biome === 'extreme_hills' || biome === 'badlands') && surfId === 1) {
+                    } else if ((biome === 'forest' || biome === 'alpha_forest' || biome === 'indev_forest' || biome === 'rainforest' || biome === 'seasonal_forest' || biome === 'savanna' || biome === 'plains' || biome === 'extreme_hills' || biome === 'badlands') && surfId === 1) {
                         let logId = 13, leafId = 14, isBirch = false;
                         
                         if ((biome === 'forest' || biome === 'seasonal_forest') && seededRandom() < 0.3) {
                             logId = 41; leafId = 43; isBirch = true;
                         }
                         
-                        if (seededRandom() < ((typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 6 && biome === 'rainforest') ? 0.333 : 0.1) && !isBirch) {
+                        if (biome !== 'indev_forest' && seededRandom() < ((typeof GEN_WORLD_TYPE !== 'undefined' && GEN_WORLD_TYPE === 6 && biome === 'rainforest') ? 0.333 : 0.1) && !isBirch) {
                             // ----------------------------------------------------------
                             // LARGE OAK — accurate to MC's BigTreeFeature.
                             //
@@ -2095,6 +2515,10 @@ function _generateNormalChunk(cx, cz) {
                     } else if (biome === 'taiga' && surfId === 1) {
                         if (r < (isBeta173Decor ? 0.10 : 0.15) * folMult) _placeFoliageGrass(x, y, z, seededRandom);
                         else if (isBeta173Decor && r < 0.13 * folMult) setVoxel(x, y+1, z, 24); // Bush = fern
+                    } else if (biome === 'extreme_hills' && surfId === 1) {
+                        // v398: Extreme Hills gets sparse regular one-block tall grass only.
+                        // Keep this direct block placement so it never generates a double-height plant.
+                        if (r < 0.11 * folMult) setVoxel(x, y+1, z, 16);
                     } else if (biome === 'tundra' && surfId === 39) {
                         setVoxel(x, y+1, z, 40, 1);
                     } else if (biome === 'ice_spikes' && surfId === 39) {
@@ -2108,6 +2532,7 @@ function _generateNormalChunk(cx, cz) {
                     } else if (biome === 'swamp' && surfId === 1) {
                         if (r < (isBeta173Decor ? 0.16 : 0.25) * folMult) _placeFoliageGrass(x, y, z, seededRandom);
                         else if (r < (isBeta173Decor ? 0.18 : 0.26) * folMult) setVoxel(x, y+1, z, 24); // Bush
+                        else if (r < (isBeta173Decor ? 0.205 : 0.295) * folMult) setVoxel(x, y+1, z, _pickMushroomId(seededRandom)); // Mushrooms
                     } else if (biome === 'jungle' && surfId === 1) {
                         // Very dense ground cover like MC jungle
                         if (r < 0.45 * folMult) _placeFoliageGrass(x, y, z, seededRandom);
@@ -2159,7 +2584,7 @@ function _generateNormalChunk(cx, cz) {
     }
 
     // PHASE 7.6: Sugarcane
-    for (let attempt = 0; attempt < 12; attempt++) { 
+    if (typeof GEN_WORLD_TYPE === 'undefined' || GEN_WORLD_TYPE !== 7) for (let attempt = 0; attempt < 12; attempt++) { 
         const sx = startX + Math.floor(seededRandom() * CHUNK_SIZE);
         const sz = startZ + Math.floor(seededRandom() * CHUNK_SIZE);
         const sy = getHighestBlock(sx, sz);

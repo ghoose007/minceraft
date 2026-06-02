@@ -39,6 +39,14 @@ function _glassMaterialForChunk(cx, cz) {
     return _shouldChunkUseMipAtlas(cx, cz) ? (glassMaterialMip || glassMaterial) : glassMaterial;
 }
 
+function _cmFaceShade(nx, ny, nz) {
+    if (ny > 0) return 1.0;
+    if (ny < 0) return 0.5;
+    if (nz !== 0) return 0.8;
+    if (nx !== 0) return 0.6;
+    return 1.0;
+}
+
 function updateChunkMipMaterials(group, cx, cz, pCx = null, pCz = null) {
     if (!group || typeof solidMaterial === 'undefined') return;
     const previous = !!group.userData.usesMipAtlas;
@@ -258,7 +266,9 @@ function _buildChunkMeshDataOnly(cx, cz) {
                         }
                         
                         if (draw) {
-                            // All faces use slabHeights so sides are half-height and top/bottom are at correct Y
+                            // All faces use slabHeights so sides are half-height and top/bottom are at correct Y.
+                            // v390: pushFace now treats slab heights as real half-block geometry for AO,
+                            // not as a recessed farmland-style top face.
                             pushFace(x, y, z, face, solidPositions, solidNormals, solidUvs, solidColors, solidBiomeTints, id, slabHeights, slabOff, val);
                         }
                     }
@@ -338,36 +348,76 @@ function _buildChunkMeshDataOnly(cx, cz) {
                     const nt=(dx,dy,dz)=>{const n=getVoxel(x+dx,y+dy,z+dz)&0xFF;return n===0||isBlockTransparent(n);};
                     
                     const Q=(ax,ay,az,bx,by,bz,cx,cy,cz,dx,dy,dz,a,b,c,d,n)=>{
-                        // Check if this face is on the outer bounding box of the voxel
-                        const isExt = (n[0]===1 && ax===x+1) || (n[0]===-1 && ax===x) || 
-                                      (n[1]===1 && ay===y+1) || (n[1]===-1 && ay===y) || 
+                        // v391: stair quads used to emit one flat light value for the whole face,
+                        // so stairs looked oddly lit and had no ambient occlusion. Treat each
+                        // stair quad like normal block geometry and sample per-vertex lighting/AO.
+                        const isExt = (n[0]===1 && ax===x+1) || (n[0]===-1 && ax===x) ||
+                                      (n[1]===1 && ay===y+1) || (n[1]===-1 && ay===y) ||
                                       (n[2]===1 && az===z+1) || (n[2]===-1 && az===z);
-                        
-                        // External faces sample from neighbor; internal faces (step tops, inner walls)
-                        // sample from the stair block itself since it has open air space
+
                         const lx = isExt ? n[0] : 0;
                         const ly = isExt ? n[1] : 0;
                         const lz = isExt ? n[2] : 0;
-                        
-                        // For internal upward faces, sample from above (y+1) since stair block
-                        // itself may have 0 light stored
-                        let sampleX = x+lx, sampleY = y+ly, sampleZ = z+lz;
-                        if (!isExt && n[1] === 1) { sampleY = y + 1; }
-                        
-                        let sh = 1.0;
-                        if (n[1] === -1) sh = 0.5;
-                        else if (Math.abs(n[0]) === 1) sh = 0.8;
-                        else if (Math.abs(n[2]) === 1) sh = 0.6;
-                        
-                        const sl = getSunLight(sampleX, sampleY, sampleZ) / 15.0;
-                        const tl = getTorchLight(sampleX, sampleY, sampleZ) / 15.0;
-                        
-                        solidPositions.push(ax,ay,az,bx,by,bz,cx,cy,cz,ax,ay,az,cx,cy,cz,dx,dy,dz);
-                        solidUvs.push(a[0],a[1],b[0],b[1],c[0],c[1],a[0],a[1],c[0],c[1],d[0],d[1]);
-                        for(let i=0;i<6;i++){
-                            solidColors.push(sl*sh, tl*sh, sh);
-                            solidBiomeTints.push(1, 1, 1);
-                            solidNormals.push(n[0],n[1],n[2]);
+
+                        const sh = _cmFaceShade(n[0], n[1], n[2]);
+
+                        const verts = [
+                            {p:[ax,ay,az], uv:a},
+                            {p:[bx,by,bz], uv:b},
+                            {p:[cx,cy,cz], uv:c},
+                            {p:[dx,dy,dz], uv:d}
+                        ];
+
+                        const lit = [];
+                        for (const vtx of verts) {
+                            const px = vtx.p[0] - x;
+                            const py = vtx.p[1] - y;
+                            const pz = vtx.p[2] - z;
+
+                            let ddx = 0, ddy = 0, ddz = 0;
+                            if (lx === 0) ddx = Math.max(-1, Math.min(1, px * 2 - 1));
+                            if (ly === 0) ddy = Math.max(-1, Math.min(1, py * 2 - 1));
+                            if (lz === 0) ddz = Math.max(-1, Math.min(1, pz * 2 - 1));
+
+                            let sunL, torchL, ao = 0;
+                            if (settingSmoothLighting) {
+                                const lData = getVertexLighting(x, y, z, lx, ly, lz, ddx, ddy, ddz);
+                                sunL = lData.sun;
+                                torchL = lData.torch;
+                                ao = lData.ao;
+                            } else {
+                                let sampleX = x + lx, sampleY = y + ly, sampleZ = z + lz;
+                                if (!isExt && n[1] === 1) sampleY = y + 1;
+                                sunL = getSunLight(sampleX, sampleY, sampleZ);
+                                torchL = getTorchLight(sampleX, sampleY, sampleZ);
+                            }
+
+                            const shadeAO = sh * (1.0 - (ao * 0.25));
+                            lit.push({
+                                r: (sunL / 15.0) * shadeAO,
+                                g: (torchL / 15.0) * shadeAO,
+                                b: shadeAO,
+                                ao: ao
+                            });
+                        }
+
+                        const flip = lit[0].ao + lit[2].ao > lit[1].ao + lit[3].ao;
+                        const emitTri = (i0, i1, i2) => {
+                            const v0 = verts[i0], v1 = verts[i1], v2 = verts[i2];
+                            const l0 = lit[i0], l1 = lit[i1], l2 = lit[i2];
+                            solidPositions.push(v0.p[0],v0.p[1],v0.p[2], v1.p[0],v1.p[1],v1.p[2], v2.p[0],v2.p[1],v2.p[2]);
+                            solidUvs.push(v0.uv[0],v0.uv[1], v1.uv[0],v1.uv[1], v2.uv[0],v2.uv[1]);
+                            solidColors.push(l0.r,l0.g,l0.b, l1.r,l1.g,l1.b, l2.r,l2.g,l2.b);
+                            solidBiomeTints.push(1,1,1, 1,1,1, 1,1,1);
+                            solidNormals.push(n[0],n[1],n[2], n[0],n[1],n[2], n[0],n[1],n[2]);
+                        };
+
+                        if (flip) {
+                            emitTri(0,1,3);
+                            emitTri(1,2,3);
+                        } else {
+                            emitTri(0,1,2);
+                            emitTri(0,2,3);
                         }
                     };
                     
@@ -542,10 +592,63 @@ function _buildChunkMeshDataOnly(cx, cz) {
                     continue;
                 }
 
+                // v423: Dedicated Sugarcane renderer.
+                // Sugarcane visually remains an X-pattern plant, but it must not
+                // use the generic cross-face AO/neighbor-lighting path because
+                // nearby cardinal/diagonal full blocks can over-darken one side.
+                // This path uses uniform local ambient light while keeping the
+                // normal chunk material FrontSide and emitting both windings.
+                if (id === 52) {
+                    const texIdx = (BLOCK_DATA[id] && typeof BLOCK_DATA[id].atlasIdx === 'number') ? BLOCK_DATA[id].atlasIdx : 52;
+                    const tx = texIdx % 16, ty = Math.floor(texIdx / 16);
+                    const eps = 0.01;
+                    const u0 = (tx + eps) / 16;
+                    const u1 = (tx + 1 - eps) / 16;
+                    const v0 = 1.0 - ((ty + 1 - eps) / 16);
+                    const v1 = 1.0 - ((ty + eps) / 16);
+
+                    let sun = getSunLight(x, y, z);
+                    let torch = getTorchLight(x, y, z);
+                    const aboveId = getVoxel(x, y + 1, z) & 0xFF;
+                    if (aboveId === 0 || isCrossBlock(aboveId) || isBlockTransparent(aboveId)) {
+                        sun = Math.max(sun, getSunLight(x, y + 1, z));
+                        torch = Math.max(torch, getTorchLight(x, y + 1, z));
+                    }
+                    const sl = sun / 15.0;
+                    const tl = torch / 15.0;
+
+                    const bTint = [1, 1, 1];
+                    const pushTri = (a, b, c, au, av, bu, bv, cu, cv, nx, ny, nz) => {
+                        solidPositions.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+                        solidUvs.push(au, av, bu, bv, cu, cv);
+                        solidColors.push(sl, tl, 1.0, sl, tl, 1.0, sl, tl, 1.0);
+                        solidBiomeTints.push(bTint[0], bTint[1], bTint[2], bTint[0], bTint[1], bTint[2], bTint[0], bTint[1], bTint[2]);
+                        solidNormals.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
+                    };
+                    const pushQuad2 = (p0, p1, p2, p3, nx, ny, nz) => {
+                        // Front
+                        pushTri(p0, p1, p2, u0, v1, u0, v0, u1, v0, nx, ny, nz);
+                        pushTri(p0, p2, p3, u0, v1, u1, v0, u1, v1, nx, ny, nz);
+                        // Back, reversed winding, same UVs/light.
+                        pushTri(p2, p1, p0, u1, v0, u0, v0, u0, v1, -nx, -ny, -nz);
+                        pushTri(p3, p2, p0, u1, v1, u1, v0, u0, v1, -nx, -ny, -nz);
+                    };
+
+                    const y0 = y, y1 = y + 1;
+                    const cx = x + 0.5, cz = z + 0.5;
+                    const half = 0.4;
+
+                    // Two centered diagonal planes: true X-pattern with no
+                    // face-direction AO or adjacent-block darkening.
+                    pushQuad2([cx - half, y1, cz - half], [cx - half, y0, cz - half], [cx + half, y0, cz + half], [cx + half, y1, cz + half], 0.707, 0, -0.707);
+                    pushQuad2([cx + half, y1, cz - half], [cx + half, y0, cz - half], [cx - half, y0, cz + half], [cx - half, y1, cz + half], 0.707, 0, 0.707);
+                    continue;
+                }
+
                 // Standard Cross Block Rendering (Skipping Fire)
                 if (isCrossBlock(id) && id !== 89) { 
                     let offset = null;
-                    if (id !== 17 && id !== 52 && id !== 116 && id !== 117 && id !== 118) {
+                    if (id !== 17 && id !== 52 && id !== 116 && id !== 117 && id !== 118 && id !== 221 && id !== 222) {
                         // v338: 2-block tall grass — the top half (220) must
                         // pick up the SAME random offset and rotation as the
                         // bottom half (219) directly below it. Hashing
@@ -587,10 +690,7 @@ function _buildChunkMeshDataOnly(cx, cz) {
                     // Single-sided quad only (glass panes should not show inner faces)
                     const PQ = (ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz,
                                 au,av, bu,bv, cu,cv, du,dv, nx,ny,nz) => {
-                        let sh = 1.0;
-                        if (ny === -1) sh = 0.5;
-                        else if (nx !== 0) sh = 0.8;
-                        else if (nz !== 0) sh = 0.6;
+                        let sh = _cmFaceShade(nx, ny, nz);
                         solidPositions.push(ax,ay,az, bx,by,bz, cx,cy,cz, ax,ay,az, cx,cy,cz, dx,dy,dz);
                         solidUvs.push(au,av, bu,bv, cu,cv, au,av, cu,cv, du,dv);
                         for(let i=0;i<6;i++){ solidColors.push(sl*sh,tl*sh,sh); solidBiomeTints.push(1,1,1); solidNormals.push(nx,ny,nz); }
@@ -721,7 +821,7 @@ function _buildChunkMeshDataOnly(cx, cz) {
                     const DQ1 = (ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz,
                                 au,av, bu,bv, cu,cv, du,dv, nx,ny,nz) => {
                         let sh = 1.0;
-                        if (ny === -1) sh = 0.5; else if (nx !== 0) sh = 0.8; else if (nz !== 0) sh = 0.6;
+                        sh = _cmFaceShade(nx, ny, nz);
                         solidPositions.push(ax,ay,az, bx,by,bz, cx,cy,cz, ax,ay,az, cx,cy,cz, dx,dy,dz);
                         solidUvs.push(au,av, bu,bv, cu,cv, au,av, cu,cv, du,dv);
                         for(let i=0;i<6;i++){ solidColors.push(sl*sh,tl*sh,sh); solidBiomeTints.push(1,1,1); solidNormals.push(nx,ny,nz); }
@@ -825,7 +925,7 @@ function _buildChunkMeshDataOnly(cx, cz) {
                     const TQ = (ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz,
                                 au,av, bu,bv, cu,cv, du,dv, nx,ny,nz) => {
                         let sh = 1.0;
-                        if (ny === -1) sh = 0.5; else if (nx !== 0) sh = 0.8; else if (nz !== 0) sh = 0.6;
+                        sh = _cmFaceShade(nx, ny, nz);
                         solidPositions.push(ax,ay,az, bx,by,bz, cx,cy,cz, ax,ay,az, cx,cy,cz, dx,dy,dz);
                         solidUvs.push(au,av, bu,bv, cu,cv, au,av, cu,cv, du,dv);
                         for(let i=0;i<6;i++){ solidColors.push(sl*sh,tl*sh,sh); solidBiomeTints.push(1,1,1); solidNormals.push(nx,ny,nz); }
@@ -904,10 +1004,7 @@ function _buildChunkMeshDataOnly(cx, cz) {
                     // UVs: each vert gets (u,v) explicitly
                     const FQ = (ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz,
                                 au,av, bu,bv, cu,cv, du,dv, n) => {
-                        let sh = 1.0;
-                        if (n[1] === -1) sh = 0.5;
-                        else if (n[0] !== 0) sh = 0.8;
-                        else if (n[2] !== 0) sh = 0.6;
+                        const sh = _cmFaceShade(n[0], n[1], n[2]);
                         // Front: a,b,c + a,c,d
                         solidPositions.push(ax,ay,az, bx,by,bz, cx,cy,cz, ax,ay,az, cx,cy,cz, dx,dy,dz);
                         solidUvs.push(au,av, bu,bv, cu,cv, au,av, cu,cv, du,dv);
@@ -1254,7 +1351,7 @@ function _buildChunkMeshDataOnly(cx, cz) {
                                 const flx=x+fd[0], fly=y+fd[1], flz=z+fd[2];
                                 const fsl=getSunLight(flx,fly,flz)/15.0;
                                 const ftl=getTorchLight(flx,fly,flz)/15.0;
-                                const fsh=(fd[1]===1)?1.0:(fd[1]===-1)?0.6:(fd[0]!==0)?0.7:0.8;
+                                const fsh=_cmFaceShade(fd[0],fd[1],fd[2]);
                                 
                                 // Determine UV rotation based on piston direction relative to this face
                                 // The "top" of the texture (v=v1) should map to the edge closest to the piston face
@@ -1373,7 +1470,7 @@ function _buildChunkMeshDataOnly(cx, cz) {
                             const flx=x+fd[0], fly=y+fd[1], flz=z+fd[2];
                             const sl2 = getSunLight(flx,fly,flz)/15.0;
                             const tl2 = getTorchLight(flx,fly,flz)/15.0;
-                            const sh2 = (fd[1]===1)?1.0:(fd[1]===-1)?0.6:(fd[0]!==0)?0.7:0.8;
+                            const sh2 = _cmFaceShade(fd[0],fd[1],fd[2]);
                             
                             const mc = modCorners;
                             solidPositions.push(
@@ -1628,7 +1725,7 @@ function _buildChunkMeshDataOnly(cx, cz) {
                     const BQ = (ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz,
                                au,av, bu,bv, cu,cv, du,dv, nx,ny,nz) => {
                         let sh = 1.0;
-                        if (ny === -1) sh = 0.5; else if (nx !== 0) sh = 0.8; else if (nz !== 0) sh = 0.6;
+                        sh = _cmFaceShade(nx, ny, nz);
                         solidPositions.push(ax,ay,az, bx,by,bz, cx,cy,cz, ax,ay,az, cx,cy,cz, dx,dy,dz);
                         solidUvs.push(au,av, bu,bv, cu,cv, au,av, cu,cv, du,dv);
                         for(let i=0;i<6;i++) { solidColors.push(bsl*sh,btl*sh,sh); solidBiomeTints.push(1,1,1); solidNormals.push(nx,ny,nz); }
@@ -1685,7 +1782,7 @@ function _buildChunkMeshDataOnly(cx, cz) {
                     const LQ = (ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz,
                                au,av, bu,bv, cu,cv, du,dv, nx,ny,nz) => {
                         let sh = 1.0;
-                        if (ny === -1) sh = 0.5; else if (nx !== 0) sh = 0.8; else if (nz !== 0) sh = 0.6;
+                        sh = _cmFaceShade(nx, ny, nz);
                         solidPositions.push(ax,ay,az, bx,by,bz, cx,cy,cz, ax,ay,az, cx,cy,cz, dx,dy,dz);
                         solidUvs.push(au,av, bu,bv, cu,cv, au,av, cu,cv, du,dv);
                         for(let i=0;i<6;i++) { solidColors.push(lsl*sh,ltl*sh,sh); solidBiomeTints.push(1,1,1); solidNormals.push(nx,ny,nz); }

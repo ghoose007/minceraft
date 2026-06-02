@@ -11,6 +11,16 @@ const blockFaces = [
     { dir: [0, 0, -1], corners: [ {pos: [1, 1, 0], uv: [0, 1]}, {pos: [1, 0, 0], uv: [0, 0]}, {pos: [0, 0, 0], uv: [1, 0]}, {pos: [0, 1, 0], uv: [1, 1]} ] }  
 ];
 
+// Minecraft-style directional face brightness used by the chunk mesh.
+// Keep this centralized so +X/-X, +Z/-Z, top, and bottom are shaded consistently.
+function getBlockFaceShade(nx, ny, nz) {
+    if (ny > 0) return 1.0;      // top
+    if (ny < 0) return 0.5;      // bottom
+    if (nz !== 0) return 0.8;    // north/south
+    if (nx !== 0) return 0.6;    // east/west
+    return 1.0;
+}
+
 // Minecraft Fire: 4 planes pulled inward from block edges to prevent z-fighting with adjacent blocks
 const fireFacesFull = [
     // South face (Z+), bottom at z=0.95, top tilts to z=0.85
@@ -93,7 +103,7 @@ function _isAlphaForestAt(x, z) {
     const ix = (x | 0) + halfW;
     const iz = (z | 0) + halfD;
     if (ix < 0 || ix >= WORLD_WIDTH || iz < 0 || iz >= WORLD_DEPTH) return false;
-    return biomeMap[ix + iz * WORLD_WIDTH] === 'alpha_forest';
+    return biomeMap[ix + iz * WORLD_WIDTH] === 'alpha_forest' || biomeMap[ix + iz * WORLD_WIDTH] === 'indev_forest';
 }
 
 function getSmoothedBiomeTint(bx, bz) {
@@ -115,8 +125,8 @@ function getSmoothedBiomeTint(bx, bz) {
     const halfWb = WORLD_WIDTH / 2;
     const halfDb = WORLD_DEPTH / 2;
     const selfBiomeFast = biomeMap[(bx + halfWb) + (bz + halfDb) * WORLD_WIDTH];
-    if (selfBiomeFast === 'alpha_forest') {
-        const result = BIOME_COLORS['alpha_forest'] || [1,1,1];
+    if (selfBiomeFast === 'alpha_forest' || selfBiomeFast === 'indev_forest') {
+        const result = BIOME_COLORS[selfBiomeFast] || BIOME_COLORS['alpha_forest'] || [1,1,1];
         _biomeTintCache.set(cacheKey, result);
         return result;
     }
@@ -174,8 +184,8 @@ function getSmoothedFoliageTint(bx, bz) {
     const halfWb = WORLD_WIDTH / 2;
     const halfDb = WORLD_DEPTH / 2;
     const selfBiomeFast = biomeMap[(bx + halfWb) + (bz + halfDb) * WORLD_WIDTH];
-    if (selfBiomeFast === 'alpha_forest') {
-        const result = BIOME_FOLIAGE_COLORS['alpha_forest'] || [1,1,1];
+    if (selfBiomeFast === 'alpha_forest' || selfBiomeFast === 'indev_forest') {
+        const result = BIOME_FOLIAGE_COLORS[selfBiomeFast] || BIOME_FOLIAGE_COLORS['alpha_forest'] || [1,1,1];
         _biomeFoliageTintCache.set(cacheKey, result);
         return result;
     }
@@ -283,7 +293,7 @@ function pushFaceUnlit(x, y, z, face, positions, normals, uvs, colors, biomeTint
     }
 
     const c0 = face.corners[0], c1 = face.corners[1], c2 = face.corners[2], c3 = face.corners[3];
-    const isPlant = blockId === 16 || blockId === 23 || blockId === 24 || blockId === 26 || blockId === 42 || blockId === 116 || blockId === 117 || blockId === 118 || blockId === 137;
+    const isPlant = blockId === 16 || blockId === 23 || blockId === 24 || blockId === 26 || blockId === 42 || blockId === 52 || blockId === 116 || blockId === 117 || blockId === 118 || blockId === 137 || blockId === 221 || blockId === 222;
     const isCactus = blockId === 20;
     const isTorch = blockId === 17 || blockId === 206; 
 
@@ -330,7 +340,8 @@ function pushFaceUnlit(x, y, z, face, positions, normals, uvs, colors, biomeTint
 
         const p0 = getP(c0.pos), p1 = getP(c1.pos), p2 = getP(c2.pos), p3 = getP(c3.pos);
         
-        const shade = (blockId === 17 || blockId === 27) ? 1.0 : faceTint[0]; 
+        // v419: Sugarcane is an X-pattern plant. Keep both crossed faces evenly lit, like mushrooms.
+        const shade = (blockId === 17 || blockId === 27 || blockId === 52 || blockId === 221 || blockId === 222) ? 1.0 : faceTint[0]; 
 
         positions.push(p0[0], p0[1], p0[2],  p1[0], p1[1], p1[2],  p2[0], p2[1], p2[2]);
         uvs.push(uv0[0], uv0[1], uv1[0], uv1[1], uv2[0], uv2[1]);
@@ -343,6 +354,24 @@ function pushFaceUnlit(x, y, z, face, positions, normals, uvs, colors, biomeTint
         if (biomeTints) biomeTints.push(bTint[0], bTint[1], bTint[2], bTint[0], bTint[1], bTint[2], bTint[0], bTint[1], bTint[2]);
         
         for(let i=0; i<6; i++) normals.push(face.dir[0], face.dir[1], face.dir[2]);
+
+        // v420: Sugarcane cross quads need true back-facing triangles because
+        // world chunk materials stay FrontSide for normal block correctness.
+        // Reversed winding + same UV/colors makes the back side visible with
+        // identical lighting instead of appearing dark/culled.
+        if (blockId === 52) {
+            positions.push(p2[0], p2[1], p2[2],  p1[0], p1[1], p1[2],  p0[0], p0[1], p0[2]);
+            uvs.push(uv2[0], uv2[1], uv1[0], uv1[1], uv0[0], uv0[1]);
+            colors.push(1.0, 1.0, shade,  1.0, 1.0, shade,  1.0, 1.0, shade);
+            if (biomeTints) biomeTints.push(bTint[0], bTint[1], bTint[2], bTint[0], bTint[1], bTint[2], bTint[0], bTint[1], bTint[2]);
+
+            positions.push(p3[0], p3[1], p3[2],  p2[0], p2[1], p2[2],  p0[0], p0[1], p0[2]);
+            uvs.push(uv3[0], uv3[1], uv2[0], uv2[1], uv0[0], uv0[1]);
+            colors.push(1.0, 1.0, shade,  1.0, 1.0, shade,  1.0, 1.0, shade);
+            if (biomeTints) biomeTints.push(bTint[0], bTint[1], bTint[2], bTint[0], bTint[1], bTint[2], bTint[0], bTint[1], bTint[2]);
+
+            for(let i=0; i<6; i++) normals.push(-face.dir[0], -face.dir[1], -face.dir[2]);
+        }
     };
 
     let baseTint = [1,1,1];
@@ -358,6 +387,45 @@ function pushFaceUnlit(x, y, z, face, positions, normals, uvs, colors, biomeTint
 }
 
 const _vlResult = { ao: 0, sun: 0, torch: 0 };
+
+// v421/v422: Sugarcane cross faces should not be darkened by full blocks adjacent
+// to cardinal OR diagonal positions around the crossed planes. Cross plants are visual billboards in the center of the
+// block, so use the brightest local plant light from the cane cell, the cell
+// above, and non-solid side cells instead of face-direction AO/occlusion.
+const _crossPlantLightResult = { sun: 0, torch: 0 };
+function _getCrossPlantFlatLight(x, y, z) {
+    let sun = getSunLight(x, y, z);
+    let torch = getTorchLight(x, y, z);
+
+    // v422: include diagonals as well as cardinal side cells. A diagonal
+    // full block can affect vertex lighting/AO on crossed quads, so Sugarcane
+    // uses the brightest valid plant light from the full 3x3 ring around it
+    // at both the cane level and one block above.
+    const samples = [[0, 1, 0]];
+    for (let dx = -1; dx <= 1; dx++) {
+        for (let dz = -1; dz <= 1; dz++) {
+            if (dx === 0 && dz === 0) continue;
+            samples.push([dx, 0, dz]);
+            samples.push([dx, 1, dz]);
+        }
+    }
+
+    for (const s of samples) {
+        const sx = x + s[0], sy = y + s[1], sz = z + s[2];
+        const id = getVoxel(sx, sy, sz) & 0xFF;
+        // Do not sample inside full opaque blocks. Use air/transparent/cross/fluid
+        // neighboring cells as available light sources around the plant.
+        if (id !== 0 && !isFluidBlock(id) && !isCrossBlock(id) && !isBlockTransparent(id)) continue;
+        const sl = getSunLight(sx, sy, sz);
+        const tl = getTorchLight(sx, sy, sz);
+        if (sl > sun) sun = sl;
+        if (tl > torch) torch = tl;
+    }
+
+    _crossPlantLightResult.sun = sun;
+    _crossPlantLightResult.torch = torch;
+    return _crossPlantLightResult;
+}
 
 function getVertexLighting(bx, by, bz, nx, ny, nz, dx, dy, dz) {
     const cx = bx + nx, cy = by + ny, cz = bz + nz;
@@ -449,7 +517,7 @@ function pushFace(x, y, z, face, positions, normals, uvs, colors, biomeTints, bl
     // not a plant/cactus/torch, no foliage tinting needed, atlasIdx is a simple number.
     // ==========================================
     const _isFast = !heights && !offset
-        && blockId !== 16 && blockId !== 23 && blockId !== 24 && blockId !== 26
+        && blockId !== 16 && blockId !== 23 && blockId !== 24 && blockId !== 26 && blockId !== 221 && blockId !== 222
         && blockId !== 116 && blockId !== 117 && blockId !== 118 && blockId !== 137
         && blockId !== 20 && blockId !== 17 && blockId !== 206
         && blockId !== 14 && blockId !== 97 && blockId !== 66
@@ -470,11 +538,7 @@ function pushFace(x, y, z, face, positions, normals, uvs, colors, biomeTints, bl
         // Compute lighting per corner (4 corners)
         const c0 = face.corners[0], c1 = face.corners[1], c2 = face.corners[2], c3 = face.corners[3];
         
-        let shade = 1.0;
-        if (face.dir[1] === 1) shade = 1.0;
-        else if (face.dir[1] === -1) shade = 0.5;
-        else if (face.dir[2] !== 0) shade = 0.8;
-        else shade = 0.6;
+        const shade = getBlockFaceShade(face.dir[0], face.dir[1], face.dir[2]);
         
         let sun0, sun1, sun2, sun3, torch0, torch1, torch2, torch3;
         let ao0 = 0, ao1 = 0, ao2 = 0, ao3 = 0;
@@ -706,13 +770,26 @@ function pushFace(x, y, z, face, positions, normals, uvs, colors, biomeTints, bl
 
         let sunL, torchL, ao = 0;
 
-        // Determine if this face is pushed inward (Farmland top)
-        let isRecessed = (heights && face.dir[1] === 1 && heights.h00 < 1);
+        // Determine if this face is pushed inward.
+        // Farmland uses `heights` to recess its top, so it needs the old
+        // inside-sampling behavior. Slabs also use `heights`, but they are
+        // real half-block geometry and must use normal full-block AO sampling;
+        // otherwise half slabs lose the same ambient occlusion that full cubes get.
+        const isSlabGeometry = blockData && blockData.type === 'slab';
+        let isRecessed = (!isSlabGeometry && heights && face.dir[1] === 1 && heights.h00 < 1);
         
-        // Add Crops (64) to the flat lighting group alongside cross blocks
+        // Add Crops (64) to the flat lighting group alongside cross blocks.
+        // v421: Sugarcane uses brightest local plant light so adjacent full
+        // blocks cannot darken one crossed side/face.
         if (isCrossBlock(blockId) || blockId === 64 || blockId === 17 || blockId === 27) {
-            sunL = getSunLight(x, y, z);
-            torchL = getTorchLight(x, y, z);
+            if (blockId === 52) {
+                const plantLight = _getCrossPlantFlatLight(x, y, z);
+                sunL = plantLight.sun;
+                torchL = plantLight.torch;
+            } else {
+                sunL = getSunLight(x, y, z);
+                torchL = getTorchLight(x, y, z);
+            }
             if (blockId === 17 || blockId === 27) torchL = 14;
             if (blockId === 206) torchL = 7;
         } else if (!settingSmoothLighting) {
@@ -741,18 +818,19 @@ function pushFace(x, y, z, face, positions, normals, uvs, colors, biomeTints, bl
         const torchStrength = torchL / 15.0;
         
         let shade = 1.0;
+        // v419: cross plants, including Sugarcane 52, skip directional face shading.
         if (!isCrossBlock(blockId) && blockId !== 17 && blockId !== 27) {
-            if (face.dir[1] === 1) shade = 1.0;
-            else if (face.dir[1] === -1) shade = 0.5;
-            else if (face.dir[2] !== 0) shade = 0.8; 
-            else shade = 0.6;                        
+            shade = getBlockFaceShade(face.dir[0], face.dir[1], face.dir[2]);
         }
 
-        const shadeAO = shade * (1.0 - (ao * 0.25));
+        // v421: Sugarcane X-cross quads should use flat plant lighting and no
+        // adjacency AO, otherwise a full block beside the cane darkens the
+        // opposite visual plane.
+        const shadeAO = (blockId === 52) ? shade : shade * (1.0 - (ao * 0.25));
         c.color = [sunStrength * shadeAO, torchStrength * shadeAO, shadeAO];
     }
     
-    const isPlant = blockId === 16 || blockId === 23 || blockId === 24 || blockId === 26 || blockId === 116 || blockId === 117 || blockId === 118 || blockId === 137;
+    const isPlant = blockId === 16 || blockId === 23 || blockId === 24 || blockId === 26 || blockId === 52 || blockId === 116 || blockId === 117 || blockId === 118 || blockId === 137 || blockId === 221 || blockId === 222;
     const isCactus = blockId === 20;
     const isTorch = blockId === 17 || blockId === 206; 
 
@@ -911,6 +989,48 @@ function pushFace(x, y, z, face, positions, normals, uvs, colors, biomeTints, bl
                 normals.push(nx, face.dir[1], nz);
             } else {
                 normals.push(face.dir[0], face.dir[1], face.dir[2]);
+            }
+        }
+
+        // v420: Sugarcane needs double-sided crossed quads, but the chunk
+        // material should stay FrontSide. Emit reversed back triangles for
+        // Sugarcane only, using the same UVs, vertex colors, and biome tint.
+        if (blockId === 52) {
+            const _sx0 = xPos(c0.pos), _sy0 = yPos(c0.pos), _sz0 = zPos(c0.pos);
+            const _sx1 = xPos(c1.pos), _sy1 = yPos(c1.pos), _sz1 = zPos(c1.pos);
+            const _sx2 = xPos(c2.pos), _sy2 = yPos(c2.pos), _sz2 = zPos(c2.pos);
+            const _sx3 = xPos(c3.pos), _sy3 = yPos(c3.pos), _sz3 = zPos(c3.pos);
+
+            if (flipQuad) {
+                positions.push(_sx3, _sy3, _sz3,  _sx1, _sy1, _sz1,  _sx0, _sy0, _sz0);
+                uvs.push(uv3[0], uv3[1],  uv1[0], uv1[1],  uv0[0], uv0[1]);
+                colors.push(c3.color[0], c3.color[1], c3.color[2], c1.color[0], c1.color[1], c1.color[2], c0.color[0], c0.color[1], c0.color[2]);
+                if (biomeTints) biomeTints.push(bColor[0], bColor[1], bColor[2], bColor[0], bColor[1], bColor[2], bColor[0], bColor[1], bColor[2]);
+
+                positions.push(_sx3, _sy3, _sz3,  _sx2, _sy2, _sz2,  _sx1, _sy1, _sz1);
+                uvs.push(uv3[0], uv3[1],  uv2[0], uv2[1],  uv1[0], uv1[1]);
+                colors.push(c3.color[0], c3.color[1], c3.color[2], c2.color[0], c2.color[1], c2.color[2], c1.color[0], c1.color[1], c1.color[2]);
+                if (biomeTints) biomeTints.push(bColor[0], bColor[1], bColor[2], bColor[0], bColor[1], bColor[2], bColor[0], bColor[1], bColor[2]);
+            } else {
+                positions.push(_sx2, _sy2, _sz2,  _sx1, _sy1, _sz1,  _sx0, _sy0, _sz0);
+                uvs.push(uv2[0], uv2[1],  uv1[0], uv1[1],  uv0[0], uv0[1]);
+                colors.push(c2.color[0], c2.color[1], c2.color[2], c1.color[0], c1.color[1], c1.color[2], c0.color[0], c0.color[1], c0.color[2]);
+                if (biomeTints) biomeTints.push(bColor[0], bColor[1], bColor[2], bColor[0], bColor[1], bColor[2], bColor[0], bColor[1], bColor[2]);
+
+                positions.push(_sx3, _sy3, _sz3,  _sx2, _sy2, _sz2,  _sx0, _sy0, _sz0);
+                uvs.push(uv3[0], uv3[1],  uv2[0], uv2[1],  uv0[0], uv0[1]);
+                colors.push(c3.color[0], c3.color[1], c3.color[2], c2.color[0], c2.color[1], c2.color[2], c0.color[0], c0.color[1], c0.color[2]);
+                if (biomeTints) biomeTints.push(bColor[0], bColor[1], bColor[2], bColor[0], bColor[1], bColor[2], bColor[0], bColor[1], bColor[2]);
+            }
+
+            for(let i=0; i<6; i++) {
+                if (offset && offset.rot !== undefined && face.dir[1] === 0) {
+                    const nx = face.dir[0] * Math.cos(offset.rot) - face.dir[2] * Math.sin(offset.rot);
+                    const nz = face.dir[0] * Math.sin(offset.rot) + face.dir[2] * Math.cos(offset.rot);
+                    normals.push(-nx, -face.dir[1], -nz);
+                } else {
+                    normals.push(-face.dir[0], -face.dir[1], -face.dir[2]);
+                }
             }
         }
     };
